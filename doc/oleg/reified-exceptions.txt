@@ -1,0 +1,91 @@
+From posting-system@google.com Mon Jun 10 17:16:34 2002
+Date: Mon, 10 Jun 2002 13:16:23 -0700
+From: oleg@pobox.com (oleg@pobox.com)
+Newsgroups: comp.lang.scheme
+Subject: Re: multilambda implementation: recreational macrology challenge!
+References: <3CFE82D7.1355074F@sonic.net> <87lm9tgqh6.fsf@radish.petrofsky.org> <3CFEEA0F.6040009@sonic.net>
+Message-ID: <7eb8ac3e.0206101216.1eb26713@posting.google.com>
+Status: OR
+
+This article demonstrates that a lexical-scoped exception handling is
+possible to some extent. We shall also show how to add 1 to the
+_value_ of (car '()) and store the result, without terminating the
+computation.
+
+The technique of this article may be considered R5RS. The modality in
+the previous sentence comes entirely from R5RS. Section 6.4 of R5RS
+specifically says "Calling force on an object that is not a promise
+may simply return the object; Some implementations may implement
+'implicit forcing, where the value of a promise is forced by
+primitive procedures like cdr and +:". Such implementations do
+exist. For example, in Gambit-3.0 a force applied to a value that is
+not a promise simply returns that value. Gambit-3.0 _compiler_ with an
+undocumented flag can implicitly force promises. In this article, we
+will use Bigloo 2.4b system, which permits neither of these
+extensions. Therefore, we have to appropriately generalize force
+
+     (set! force
+	   (let ((force force))
+	     (lambda (x) (if (procedure? x) (force x) x))))
+
+and explicitly forcify +, -, car, cdr (but not cons or vector)
+procedures. We also assume SRFI-12 (which has been implemented for
+Bigloo and Gambit: http://pobox.com/~oleg/ftp/Scheme/util.html#srfi-12
+Chicken also supports SRFI-12).
+
+   (define (force-catch proc . args)
+     (handle-exceptions exc
+	(begin (cerr "Exception: " exc nl) (delay (abort exc)))
+	(apply proc (map force args))))
+
+
+   (define (if-error x thunk)
+     (handle-exceptions exc (thunk) (force x)))
+
+   (set! + (let ((+ +)) (lambda args (apply force-catch (cons + args)))))
+   (set! - (let ((- -)) (lambda args (apply force-catch (cons - args)))))
+   (set! * (let ((* *)) (lambda args (apply force-catch (cons * args)))))
+   (set! / (let ((/ /)) (lambda args (apply force-catch (cons / args)))))
+   (set! car (let ((car car)) 
+	(lambda args (apply force-catch (cons car args)))))
+   (set! cdr (let ((cdr cdr)) (lambda args (apply force-catch
+	(cons cdr args)))))
+
+With the preliminaries out of the way, let the fun begin.
+
+     (display "Fun Begins") (newline)
+
+     (display (+ 4 (/ 1 1))) (newline)
+
+     (display 
+      (if-error (+ 4 (/ 1 0))
+		(lambda () "error")))
+
+We see "5" and "error" printed. One can say, what is the big deal? We
+generate an exception and catch it at the appropriate moment. Well,
+let's enter the following definition:
+
+     (define wv (vector 1 (/ 1 0) (car '())))
+     (display "OK\n")
+
+The computation completed without any error! We can go further, and
+add 1 to each element of the above vector:
+
+     (define wl (map (lambda (x) (+ 1 x)) (vector->list wv)))
+     (display "OK\n")
+
+And it is still OK. We can even print what we've got:
+
+     (display (if-error (car wl) (lambda () "error")))
+     (newline)
+
+which prints the expected result. It's only
+
+     (display (if-error (cadr wl) (lambda () "error")))
+     (newline)
+
+that prints an error. The examples tested on Bigloo 2.4b and Gambit 3.0.
+
+Thus we can have our exceptions, and deal with them lexically, too.
+
+

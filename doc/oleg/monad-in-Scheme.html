@@ -1,0 +1,404 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN""http://www.w3.org/TR/REC-html40/loose.dtd">
+<html>
+
+<head>
+<title>Monads in Scheme</title>
+<meta name="description" content="An example of a monadic programming in Scheme that juxtaposes Haskell code for a state monad with the corresponding Scheme code.">
+<meta name="AuthorAddress" content="oleg@okmij.org">
+<meta name="keywords" content="Monad, State Monad, Serially-Numbering monad, Haskell, Scheme">
+<meta name="Date-Revision-yyyymmdd" content="20040301">
+<meta name="Date-Creation-yyyymmdd" content="20011209">
+<link rel="start" href="index.html" title="Scheme Hash">
+<link rel="contents" href="../README.html">
+<link rel="prev" href="misc.html">
+<link rel="next" href="../Computation/index.html"></head><body bgcolor="#FFFFFF">
+
+<div align="center" class="navbar">  
+<a href="misc.html">previous</a> &nbsp; 
+<a href="../Computation/index.html">next</a> &nbsp; 
+<a href="../README.html">contents</a> &nbsp; 
+<a href="index.html">top</a>
+<hr></div><h1 align=center>Monadic Programming in Scheme</h1>
+<div>
+<ol><li><a href="#Introduction">Introduction</a>
+<li><a href="#Serially-numbering monad in Scheme">Serially-numbering monad in Scheme</a>
+<li><a href="#Example">Example</a>
+<li><a href="#Generalizations to several monads">Generalizations to several monads</a>
+<li><a href="#References and pointers to further discussion">References and pointers to further discussion</a>
+</ol>
+</div>
+
+<p>An example of a monadic programming in Scheme that juxtaposes Haskell code for a particular state monad with the corresponding Scheme code.</p><br>&nbsp;<a name="Introduction">&nbsp;</a>
+<h2>Introduction</h2>
+
+<p>This article sprang from a question posted on
+comp.lang.functional about building of trees whose nodes are
+tagged with unique integers. &quot;Ideally every term/node has to have
+its id associated with it at construction time,&quot; the poster
+said. &quot;An obvious way to implement it in this [referentially-transparent]
+way is to have a collection of state which
+is passed along all the time to every function.  But this seems rather
+tedious.&quot;</p>
+<p>An imperative solution is obvious: introduce a global variable -- 
+<code>current_id</code> -- and use its value to tag every allocated tree node,
+incrementing the variable afterwards. A functional solution is
+relatively straightforward too: every function that creates or
+operates on trees must take an extra argument -- the current value of the
+tagging counter. The function should return multiple values: the
+result of its computation and (perhaps incremented) value of the
+counter. The latter solution does seem to be tedious, requiring
+multiple values, and ugly. Is there a way to solve the problem purely
+functionally 
+<em>and</em> elegantly?</p>
+<p>A proposed Haskell solution [<a href="#SN-monad">SN-monad</a>] relied on monads to hide the counter
+holding the tag for a new node. The solution did seem to reach the
+goal. Building a tagged tree looked just as simple as building an
+untagged one. The counter variable was well-hidden. And yet it was
+there, 
+<em>invisibly</em> threading through all
+computations. Rendering this solution in Scheme can be fun.</p><br>&nbsp;<a name="Serially-numbering monad in Scheme">&nbsp;</a>
+<h2>Serially-numbering monad in Scheme</h2>
+
+<p>We will cite the Haskell code in our Scheme code, for comparison
+and documentation. We will identify Haskell code by 
+<code>;--</code>
+comments.</p>
+<p>We start by defining a datatype for integer-tagged values. We could use
+records or associative lists; However, a simple pair will suffice:</p><pre>             ;-- type Numbered a = (Int,a)
+     (define (make-numbered-value tag val) (cons tag val))
+             ; accessors of the components of the value
+     (define (nvalue-tag tv) (car tv))
+     (define (nvalue-val tv) (cdr tv))
+</pre>We need to define a counting monad and its two fundamental operations:
+
+<code>bind</code> (aka 
+<code>&gt;&gt;=</code>) and 
+<code>return</code>. In Haskell, we write<pre>     ;-- newtype NumberedM a = NumberedM (Int -&gt; Numbered a)
+     ;-- instance Monad NumberedM where
+     ;--    NumberedM m &gt;&gt;= f = NumberedM $ \n -&gt; let (n1,v) = (m n)
+     ;--                                        NumberedM m' = f v
+     ;--                                        (n1',v') = (m' n1)
+     ;--                                        in (n1',v')
+     ;--    return x = NumberedM $ \n -&gt; (n,x)
+</pre>
+<p>There are two ways of rendering that in Scheme. In this section, we will be discussing an easy way, which suffices as long we are working with a
+single monad, or do not mix objects of different monads. In that case,
+all the type tagging apparent in the Haskell solution is
+unnecessary. Our monad is simply a function 
+<code>Int -&gt; Numbered a</code>. A
+monad is a delayed computation: a lambda-expression in our case. It
+takes the value of the counter, performs whatever computation it is
+meant to do, and returns the result tagged with the (perhaps
+incremented) counter.</p>
+<p>The two fundamental operations are introduced as:</p><pre>             ;-- return:: a -&gt; NumberedM a
+     (define (return val)
+       (lambda (curr_counter)
+         (make-numbered-value curr_counter val)))
+</pre>and<pre>     	;-- (&gt;&gt;=):: NumberedM a -&gt; (a -&gt; NumberedM b) -&gt; NumberedM b
+     (define (&gt;&gt;= m f)
+       (lambda (curr_counter)
+         (let* ((m_result (m curr_counter))
+                (n1 (nvalue-tag m_result))   ; result of the delayed computation
+                (v  (nvalue-val m_result))   ; represented by m
+     
+                (m1 (f v))                   ; feed the result to f, get another m1
+                )
+           (m1 n1))))                        ; The result of the bigger monad
+</pre>
+<p>The bind operator, 
+<code>&gt;&gt;=</code>, makes a &quot;bigger&quot; monad out
+of a monad 
+<code>m</code> and a function 
+<code>f</code> (which yields
+a monad when applied to a value). That bigger monad is a delayed
+computation that incorporates both computations: those represented by
+
+<code>m</code> and by 
+<code>f</code>.  The job of the bind operator is to
+merge these computations and to take care of passing the state -- the
+counter in our case -- from one computation to the other. The code of the bind operator first applies the monad 
+<code>m</code> to the 
+<code>curr_counter</code>. This executes the delayed
+computation and gives us its result and the new counter. We apply 
+<code>f</code> to the result of the delayed computation 
+<code>m</code>
+and get another monad, 
+<code>m1</code>. The latter is a function,
+which we apply to the counter returned by 
+<code>m</code> and get a
+tagged value -- the result of the combined monad.</p>
+<p>It is easy to verify that monad axioms are satisfied. Indeed, 
+<code>return</code> is the left and the right unit of 
+<code>bind</code>,
+that is,</p><pre>     (&gt;&gt;= (return v) f) ==is-the-same-as==&gt; (f v)
+     
+     (&gt;&gt;= m (lambda (v) (return v))) ==is-the-same-as==&gt; m
+</pre>
+<p>Indeed, the direct inspection shows that 
+<code>(&gt;&gt;= m (lambda (v) (return
+v)))</code> takes the result of 
+<code>(m counter)</code> into two parts and puts them back together again.</p>
+<p>The bind operation is clearly associative,</p><pre>     (&gt;&gt;= m (lambda (v) (&gt;&gt;= (f v) g)))
+       &lt;==is-the-same-as==&gt;
+     (&gt;&gt;= (&gt;&gt;= m f) g)  ; v is not free in g nor in f
+</pre>
+<p>Thus we have indeed built a monad. Besides the canonical 
+<code>return</code> and 
+<code>bind</code> operations, we need one more
+operation (so-called morphism):</p><pre>     ;-- get the current id and increment it
+     ;-- incr:: NumberedM Int
+     ;-- incr = NumberedM $ \n -&gt; (n+1,n)
+     
+     (define incr 
+       (lambda (n)
+         (make-numbered-value (+ 1 n) n)))
+</pre>
+<p>We also need an operation to run the monad, that is, to take the delayed
+computation represented by the monad and execute it. In our case, a
+delayed computation needs a value -- the initial value of the tagging
+counter.</p><pre>     ;-- run_numberedM:: NumberedM a -&gt; Int -&gt; Numbered a
+     ;-- run_numberedM (NumberedM m) init_count = m init_count
+     
+     (define (runM m init-counter)
+       (m init-counter))
+</pre>The result of 
+<code>runM</code> is a numbered value, a pair of
+the final counter and the final value.<br>&nbsp;<a name="Example">&nbsp;</a>
+<h2>Example</h2>
+
+<p>Let us now see what this painstakingly defined monad can do for
+us. Let us consider trees</p><pre>     ;-- data Tree a = Nd a (Forest a) deriving Show
+     ;-- type Forest a = [Tree a]
+</pre>In Scheme terms, a node is 
+<code>(value . forest)</code> where
+forest is 
+<code>(node ...)</code>. A node is a list whose head is the
+node's value and the tail is the list of its children. A forest is a
+list of zero or more nodes.
+<p>Let's define a function to make a node -- a node that is tagged with a unique integer:</p><pre>     (define (make-node val kids)
+       (&gt;&gt;=
+        incr
+        (lambda (counter)
+          (return (cons (make-numbered-value counter val) kids)))))
+</pre>
+<p>That's what the original posted wanted: associate with each node a
+unique integer at node-construction time.</p>
+<p>The code is hardly surprising: we obtain the value of the &quot;global&quot;
+counter, increment the counter and build a node out of the tagged
+value and the list of kids. Only there is no global counter and no
+mutation.</p>
+<p>Now let's try to build a full binary tree, where the value of each node is that node's height:</p><pre>     ;-- make_btree 0 = make_node 0 []
+     ;-- make_btree depth = do { 
+     ;--                        left &lt;- make_btree (depth -1);
+     ;--                        right &lt;- make_btree (depth -1);
+     ;--                        make_node depth [left, right]           
+     ;--                        }
+</pre>
+<p>This function that takes the desired depth and returns a monad, which
+-- when run -- produces a tagged binary tree.</p>The first attempt In Scheme is:<pre>     (define (build-btree-r depth)
+       (if (zero? depth) (make-node depth '())
+           (&gt;&gt;=
+            (build-btree-r (- depth 1))
+            (lambda (left-branch)
+              (&gt;&gt;=
+               (build-btree-r (- depth 1))
+               (lambda (right-branch)
+                 (make-node depth (list left-branch right-branch))))))))
+</pre>
+<p>A syntactic sugar is direly needed. First, we introduce 
+<code>letM</code>:</p><pre>     (letM ((name initializer)) expression) ==&gt; 
+        (&gt;&gt;= initializer (lambda (name) expression))
+</pre>Compare with a regular 
+<code>let</code>:<pre>     (let ((name initializer)) body) ==&gt;
+         (apply (lambda (name) body) (list initializer))
+</pre>
+<p>There are some differences, however: for one thing, 
+<code>letM</code> takes only one binding, while the regular 
+<code>let</code>
+may take several. The body of 
+<code>letM</code> is a single expression
+that has to evaluate to a monad. The 
+<code>let</code>'s body can have several
+expressions. There is a deep reason for these differences. If a
+let-form has several bindings, their initializing expressions are
+evaluated in an undefined order. Such non-determinism does not exits
+in the monadic world: since the evaluation of our monad involves 
+<em>threading</em> of a state through all computations, the computations
+must execute in the precisely defined order, one after another. Monads
+introduce sequencing (single-threading) into the functional world. In
+that sense, monadic computation emulates imperative
+computation. However, in the imperative world, statements execute in
+the order they are written because such is the semantics of an
+imperative language. We trust the system honoring our statement order,
+because the order of executing mutations is crucial to knowing the
+global state of the system at any point in time. In contrast, in
+monadic world there is no really global state. A state is explicitly
+passed from one computation to another. Two computations are executed
+in order because the second needs the result of the first.</p><pre>     (define-macro letM
+       (lambda (binding expr)
+         (apply
+          (lambda (name-val)
+            (apply (lambda (name initializer)
+                     `(&gt;&gt;= ,initializer (lambda (,name) ,expr)))
+                   name-val))
+          binding)))
+</pre>We can also introduce an even sweeter form 
+<code>letM*</code>:<pre>     (letM* (binding binding ...) expr) ==&gt; 
+     (letM (binding) (letM* (binding ...) expr))
+</pre>which relates to 
+<code>letM</code> exactly as 
+<code>let*</code>
+relates to 
+<code>let</code>.<pre>     (define-macro letM*
+       (lambda (bindings expr)
+         (if (and (pair? bindings) (pair? (cdr bindings)))
+             `(letM ,(list (car bindings))
+                    (letM* ,(cdr bindings) ,expr))
+             `(letM ,bindings ,expr))))
+</pre>With these sweets, we can re-write our build-btree as<pre>     (define (build-btree depth)
+       (if (zero? depth) (make-node depth '())
+           (letM* ((left-branch (build-btree (- depth 1)))
+                   (right-branch (build-btree (- depth 1))))
+                  (make-node depth (list left-branch right-branch)))))
+</pre>Note the code does not explicitly mention any counter at all!
+Let's see how it runs:<pre>     &gt; (pp (runM (build-btree 3) 100))
+     (115
+      (114 . 3)
+      ((106 . 2)
+       ((102 . 1) ((100 . 0)) ((101 . 0)))
+       ((105 . 1) ((103 . 0)) ((104 . 0))))
+      ((113 . 2)
+       ((109 . 1) ((107 . 0)) ((108 . 0)))
+       ((112 . 1) ((110 . 0)) ((111 . 0)))))
+</pre>
+<p>Each node of the tree is uniquely tagged indeed. The counter starts at
+100 and counts forward. The value of the node (the second component of
+a pair) is that node's height. The node tagged with 114 is the root
+node; its value is 3. Number 115 is the final value of the counter.</p>
+<p>It is interesting to compare the build-btree code with a code that
+constructs a regular, non-tagged full binary tree:</p><pre>     (define (build-btree-c depth)
+       (if (zero? depth) (cons depth '())
+           (let ((left-branch (build-btree-c (- depth 1)))
+                 (right-branch (build-btree-c (- depth 1))))
+                  (cons depth (list left-branch right-branch)))))
+     
+     &gt; (pp (build-btree-c 3))
+     (3 (2 (1 (0) (0)) (1 (0) (0))) (2 (1 (0) (0)) (1 (0) (0))))
+</pre>
+<p>The similarity is staggering. It seems we have achieved our goal:
+building of a tagged tree looks almost identical to that of an
+un-tagged tree. The tagging counter is well-hidden from view. The
+counter does not get in the way and does not clutter the look and feel
+of the computation. The 
+<code>letM*</code> form reminds us however
+that the counter does exist. The form emphasizes the important
+difference between the two functions. The function 
+<code>build-btree-c</code> constructs left and right branches in an
+indeterminate order. The branches could even be built in parallel,
+hardware permitting. The order does not matter -- the result is the
+same regardless of the sequence. The form 
+<code>letM*</code> however
+makes the computation in the function 
+<code>build-btree</code>
+strictly sequential: there, the right branch is constructed strictly
+after the left branch, with their parent node following.</p><br>&nbsp;<a name="Generalizations to several monads">&nbsp;</a>
+<h2>Generalizations to several monads</h2>
+
+<p>Thanks to type classes, Haskell monads are more general than
+the previous sections showed. We can mix several monads in the same
+expression:</p><pre>     f = do {
+             putStrLn &quot;Enter a number: &quot;;
+             n &lt;- readLn;
+             all_n &lt;- return [1..n];
+             evens &lt;- return $
+                             all_n &gt;&gt;= (\i -&gt; if (i `rem` 2) == 0 then return i
+                                                                  else fail &quot;odd&quot;);
+             return evens
+             }
+     main = f
+</pre>This silly code &quot;prints&quot; all even numbers up to the one
+entered by the user. There are two monads in this fragment: 
+<code>IO&nbsp;a</code> monad and 
+<code>[a]</code> monad: a list is also a monad.
+Expression 
+<code>return [1..n]</code> returns an object of a type 
+<code>IO [Int]</code> whereas 
+<code>return i</code> yields a monad 
+<code>[Int]</code>. The outer 
+<code>return</code> in the same expression
+returns 
+<code>IO [Int]</code>. It is remarkable that a Haskell
+compiler is able to figure out which monad each 
+<code>return</code>
+function yields. The compiler bases its decision on the type of the 
+<em>result</em> expected in each case.  To render the above code in
+Scheme, we have to explicitly identify monad operations of
+different monads: <pre>     (define f
+       (IO::&gt;&gt; (put-line &quot;Enter a number: &quot;)
+        (IO::&gt;&gt;= (read-int)
+          (lambda (n)
+            (IO::&gt;&gt;= (IO::return (iota 1 n))
+              (lambda (all-n)
+                (IO::&gt;&gt;=
+                  (IO::return
+                     (List:&gt;&gt;= all-n
+                       (lambda (i)
+                         (if (even? i) (List::return i) (List::fail &quot;odd&quot;)))))
+                  (lambda (evens) (IO::return evens)))))))))
+</pre>However, even in this pathologically mixed case we note that
+some sub-expressions use only the IO monad, and one subexpression 
+uses only the List monad. Therefore, we can write:<pre>     (define f
+      (let ((&gt;&gt;= IO::&gt;&gt;=) (return IO::return)) ; define the &quot;current&quot; monad
+       (beginM
+          (put-line &quot;Enter a number: &quot;)
+          (letM*
+             ((n (read-int))
+              (all-n (return (iota 1 n)))
+              (evens (return
+                     ; re-define the current monad
+                     (let ((&gt;&gt;= List::&gt;&gt;=) (return List::return)
+                           (fail List::fail))
+                       (letM ((i all-n))
+                         (if (even? i) (return i) (fail &quot;odd&quot;))))))
+             )
+             (return evens)))))
+</pre>
+<p>This is not as elegant as in Haskell, yet is readable. With
+a bit of syntactic sugar and a module system similar to that of
+DrScheme, we could even replace</p><pre>     (let ((&gt;&gt;= IO::&gt;&gt;=) (return IO::return))
+</pre>with 
+<code>(using IO)</code>.<br>&nbsp;<a name="References and pointers to further discussion">&nbsp;</a>
+<h2>References and pointers to further discussion</h2>
+
+<p>
+<a name="SN-monad">[SN-monad]</a> A serially-numbering monad.
+<br>&lt;
+<a href="../Haskell/misc.html#serially-numbering-monad">../Haskell/misc.html#serially-numbering-monad</a>&gt;</p>
+<p>
+<a name="MShell">[MShell]</a> UNIX pipes as IO monads. Monadic i/o and UNIX shell programming.
+<br>&lt;
+<a href="../Computation/monadic-shell.html">../Computation/monadic-shell.html</a>&gt;</p>
+<p>
+<a name="MScheme-IO">[MScheme-IO]</a> Monadic scheme of I/O
+<br>&lt;
+<a href="misc.html#monadic-io">misc.html#monadic-io</a>&gt;</p>
+<p>
+<a name="MP-Scheme">[MP-Scheme]</a> 
+<Cite>Monadic programming in Scheme: an example.</Cite>
+<br>An article posted on a newsgroup comp.lang.scheme on Wed, 10 Oct 2001 20:27:21 -0700.</p>
+<p>
+<a name="MV-Reif">[MV-Reif]</a> Multiple values as an effect. Monadic reflection and reification.
+<br>&lt;
+<a href="misc.html#multiple-value-effect">misc.html#multiple-value-effect</a>&gt;</p>
+<br>
+<p>
+<hr></p>
+<h3>Last updated March 1, 2004</h3>
+<p>This site's top page is 
+<a href="http://pobox.com/~oleg/ftp/">
+<strong>http://pobox.com/~oleg/ftp/</strong></a></p>
+<p>
+<address>oleg-at-pobox.com or oleg-at-acm.org or oleg-at-computer.org
+<br>Your comments, problem reports, questions are very welcome!</address></p>
+<p>
+<font size="-2">Converted from SXML by SXML-&gt;HTML</font></p></body></html>
