@@ -1,0 +1,285 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme palatino
+\graphics default
+\paperfontsize default
+\spacing single 
+\papersize a4paper
+\paperpackage widemarginsa4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 2
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+A Reflective, Eager, Distributed Blue Calculus
+\layout Author
+
+Tony Garnock-Jones <tonyg@kcbbs.gen.nz>
+\newline 
+Michael Bridgen <mikeb@squaremobius.net>
+\layout Date
+
+17 October, 2004
+\layout Abstract
+
+Boudol's blue calculus (the 
+\begin_inset Formula $\pi^{*}$
+\end_inset 
+
+-calculus) allows a natural embedding of both the call-by-name 
+\begin_inset Formula $\lambda$
+\end_inset 
+
+-calculus and Milner's 
+\begin_inset Formula $\pi$
+\end_inset 
+
+-calculus.
+ We extend the blue calculus with eager (call-by-value) parallel evaluation,
+ a notion of evaluation location similar to that of the distributed join
+ calculus, and basic lexical reflection facilities to arrive at an implementable
+ distributed process language rich enough to act as the virtual machine
+ for a Self-like object-oriented environment.
+\layout Section
+
+Introduction
+\layout Standard
+
+Our goal is an implementable, reflective, dynamic, efficient concurrent
+ process language that can readily support object-oriented features in the
+ style of Self 
+\begin_inset LatexCommand \cite{ungar91self}
+
+\end_inset 
+
+ or SmallTalk 
+\begin_inset LatexCommand \cite{goldberg83smalltalk}
+
+\end_inset 
+
+ while not precluding the use of ML-like functional features.
+ The language should be rich enough to support its own development and runtime
+ environment, like SmallTalk, but should be as concurrent as the 
+\begin_inset Formula $\pi$
+\end_inset 
+
+-calculus 
+\begin_inset LatexCommand \cite{milner91polyadicpi}
+
+\end_inset 
+
+.
+ 
+\begin_inset Marginal
+collapsed false
+
+\layout Standard
+
+Mention Obliq?
+\end_inset 
+
+Like the distributed join calculus 
+\begin_inset LatexCommand \cite{join-tutorial}
+
+\end_inset 
+
+, our language should provide a notion of the location in which a computation
+ is proceeding, and an idea of the location to which messages sent along
+ a name should be directed.
+\layout Standard
+
+SmallTalk and Self both, to a point, provide a completely uniform universe
+ of objects to the programmer.
+ The illusion breaks down once the programmer starts to examine the details
+ of the virtual-machine such as call frames, processes, methods, blocks
+ and bytecodes.
+ The innermost parts of a Self or SmallTalk system cease being data (objects),
+ and start being programs (processes).
+ The line between the two levels is quite sharply defined.
+ SmallTalk-like virtual machines are very similar to traditional sequential
+ stack-based computers, in that they have a stack and a small set of registers,
+ and in that any multiprocessing is a construction layered atop the basic
+ sequential machine.
+ Our language is intended to provide a replacement for the low-level virtual
+ machine part of a SmallTalk-like system that does well what SmallTalk virtual
+ machines do poorly - that is, integrate concurrent and distributed features
+ with traditional object-oriented and functional programming - and provides
+ a definition
+\begin_inset Marginal
+collapsed false
+
+\layout Standard
+
+a description?
+\end_inset 
+
+ of the lowest-level behaviour of the language that is amenable to various
+ kinds of formal analysis.
+\layout Standard
+
+While SmallTalk provides an almost uniform object-oriented universe at levels
+ above the virtual machine, our language is to provide a uniform process-oriente
+d universe at the virtual machine level.
+ An object-oriented description of the system can then be built atop the
+ virtual machine in exactly the way current SmallTalk and Self systems build
+ on their virtual machines.
+\layout Standard
+
+We begin in section 
+\begin_inset LatexCommand \ref{sec:The-Blue-Calculus}
+
+\end_inset 
+
+ by briefly reviewing Boudol's blue calculus.
+ Section !!! alters the basic calculus to perform call-by-value evaluation.
+ Section !!! further extends the calculus to evaluate subexpressions of
+ a combination in parallel.
+ Section !!! adds a notion of location to the calculus.
+ Section !!! introduces a few small features essential to reflection, which
+ is finally introduced in section !!!.
+ Section 
+\begin_inset LatexCommand \ref{sec:Related-Work}
+
+\end_inset 
+
+ touches on related work, and section 
+\begin_inset LatexCommand \ref{sec:Conclusion}
+
+\end_inset 
+
+ concludes the paper.
+\layout Section
+
+The Blue Calculus
+\layout Standard
+
+
+\begin_inset LatexCommand \label{sec:The-Blue-Calculus}
+
+\end_inset 
+
+Boudol's blue calculus (the 
+\begin_inset Formula $\pi^{*}$
+\end_inset 
+
+-calculus) 
+\begin_inset LatexCommand \cite{boudol97picalculus}
+
+\end_inset 
+
+ allows a natural embedding of both the call-by-name 
+\begin_inset Formula $\lambda$
+\end_inset 
+
+-calculus and Milner's 
+\begin_inset Formula $\pi$
+\end_inset 
+
+-calculus.
+ It makes a good foundation for our language - it supports both functional
+ and process-oriented styles of computation, provides a syntactic distinction
+ avoiding the problem of full distributed input capability, and can be readily
+ extended with lexical reflection and with locations in the style of the
+ distributed join calculus.
+\layout Section
+
+Related Work
+\layout Standard
+
+
+\begin_inset LatexCommand \label{sec:Related-Work}
+
+\end_inset 
+
+Several candidate systems besides the blue calculus were examined as potential
+ starting points for this work.
+ Cardelli's mobile ambients 
+\begin_inset LatexCommand \cite{CardelliGordon98:ambients}
+
+\end_inset 
+
+ provide a suitable notion of location that could be extended with reflective
+ capabilities, but the language leaves the routing of messages in the hands
+ of the programmer, which seems too low-level for simple efficient implementatio
+n.
+ Cardelli's Obliq system 
+\begin_inset LatexCommand \cite{cardelli95language}
+
+\end_inset 
+
+ provides a high-level account of distributed object-oriented computation,
+ but does not map well to a simple implementation - it is too high-level.
+ Fournet's distributed join calculus 
+\begin_inset LatexCommand \cite{FournetGonthier96,join-tutorial,Fournet98:PhD}
+
+\end_inset 
+
+ provides a good treatment of message routing and process location while
+ also providing an Actor-like 
+\begin_inset LatexCommand \cite{agha86actors}
+
+\end_inset 
+
+ semantics, but ties together the notion of name definition and message
+ reception in a way that makes reflection difficult.
+\layout Standard
+
+[[Current work in the SmallTalk community 
+\begin_inset LatexCommand \cite{salzman04pmd,ingalls97squeak}
+
+\end_inset 
+
+ is based on traditional virtual machines.]] Even Slate, a 
+\begin_inset Quotes eld
+\end_inset 
+
+clean-slate SmallTalk
+\begin_inset Quotes erd
+\end_inset 
+
+, is based around an ad-hoc byte-coded virtual machine, despite its stated
+ goals of integrated concurrent and distributed programming.
+\begin_inset Marginal
+collapsed false
+
+\layout Standard
+
+check the goals!
+\end_inset 
+
+
+\layout Section
+
+Conclusion
+\layout Standard
+
+
+\begin_inset LatexCommand \label{sec:Conclusion}
+
+\end_inset 
+
+
+\layout Standard
+
+
+\begin_inset LatexCommand \BibTeX[acm]{/Users/tonyg/Documents/tonyg}
+
+\end_inset 
+
+
+\the_end

@@ -1,0 +1,35 @@
+-*- outline -*-
+
+*By version:
+
+**Version 0
+
+***Calculus
+
+***Virtual machine
+
+Probably hacked together in Scheme or some such.
+
+**Version 1
+
+***Virtual machine
+
+****Bytecode
+
+****Bytecode compiler
+
+***Object-oriented language
+
+***I/O
+
+***REPL
+
+***Debugger
+
+***Inspector
+
+**Beyond
+
+***Graphics toolkit
+
+***User interface toolkit

@@ -1,0 +1,501 @@
+%%
+%% INSTRUCTIONS FOR COMPILING THIS DOCUMENT
+%%
+%% Choose one of the two ``documentclass'' declarations below.
+%% Use the ``ps'' one for printing; and the ``pdf'' one for an
+%% online slideshow PDF format.
+%%
+%% You will need a tarball of the ``prosper'' software untarred
+%% into a directory called ``prosper'' in this directory. You
+%% can download prosper from prosper.sourceforge.net.
+%%
+%%
+\documentclass[ps,azure]{prosper}
+%%\documentclass[pdf,slideColor,azure]{prosper}
+
+\hypersetup{pdfpagemode=FullScreen}
+
+\title{The Next Big ThiNG}
+\subtitle{A Reflective, Transactional, Concurrent, Functional, Object-Oriented, Distributed Programming Language}
+\author{Tony Garnock-Jones (tonyg@kcbbs.gen.nz)\\
+Michael Bridgen (mikeb@squaremobius.net)}
+
+\date{30 November 2004}
+
+\begin{document}
+\maketitle
+
+\begin{slide}{Introduction}
+  This talk will cover
+  \begin{itemize}
+  \item An introduction to process languages
+  \item Applications
+  \end{itemize}
+\end{slide}
+
+\part{Introduction to Process Languages}
+
+\overlays{5}{
+\begin{slide}{What is a process language?}
+  A {\bf process language} describes a group of simultaneously
+  executing programs and how they communicate.
+
+  \begin{itemstep}
+  \item Parallel -- not sequential
+  \item Allows solid reasoning about concurrency
+  \item Strong mathematical foundations can allow you to {\bf prove}
+    that your program behaves in certain ways
+  \item This is something traditional languages are poor at -- using
+    threads is a nightmare; no math in sight!
+  \item Not a panacea -- deadlock still possible, etc.
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{Why use a process language?}
+  Process languages are a natural fit for event-based systems:
+  \begin{itemstep}
+  \item server-side web applications
+  \item telecommunications
+  \item operating system kernels
+  \item GUIs
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{5}{
+\begin{slide}{Why use a process language?}
+  They work well in more general settings, too:
+  \begin{itemstep}
+  \item coordination of general distributed computing
+    \begin{itemize}
+    \item SOAP, XML-RPC
+    \item CORBA
+    \end{itemize}
+  \item general modeling of processes
+  \item coordination of general business processes (BizTalk)
+  \end{itemstep}
+\end{slide}
+}
+
+\begin{slide}{The $\pi$-calculus}
+  There are many kinds of process language. I am most familiar with
+  the $\pi$-calculus, so that will be the foundation for this talk.
+
+  \begin{itemize}
+  \item {\bf Milner, Parrow and Walker} developed the $\pi$-calculus,
+    working from the foundation of {\it CCS}
+  \item See the papers ``A Calculus of Mobile Processes'', parts I and
+    II (available online)
+  \item Also interesting: ``Functions as Processes'' by Milner
+  \end{itemize}
+\end{slide}
+
+\overlays{7}{
+\begin{slide}{The $\pi$-calculus}
+  \begin{itemstep}
+  \item Same level as the $\lambda$-calculus
+    \begin{itemize}
+    \item Both Turing-equivalent
+    \item $\lambda$ datatype: the {\it function}
+    \item $\pi$ datatype: the {\it name} (or {\it port})
+    \end{itemize}
+  \item Where $\lambda$ {\it applies} functions (to functions), $\pi$
+    {\it sends} names (down names).
+  \item Neither language needs other types to be complete
+  \item However: practical implementations include strings, ints,
+    floats, structures, lists, vectors etc.
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{6}{
+\begin{slide}{$\lambda$-calculus combinators}
+  The $\lambda$-calculus has two combinators:
+  \begin{itemstep}
+  \item abstraction:
+    \begin{itemize}
+    \item $\lambda x . M$
+    \item {\tt (lambda (x) M)}
+    \end{itemize}
+  \item application (curried):
+    \begin{itemize}
+    \item $M N$
+    \item {\tt (M N)}
+    \end{itemize}
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{6}{
+\begin{slide}{$\pi$-calculus combinators}
+  The $\pi$-calculus has six combinators:
+  \begin{itemstep}
+  \item new port: $(\nu p) . P$
+  \item read: $p(x) . P$
+  \item write: $\bar p\left<x\right> . P$
+  \item repeat: $\mathbf{!}P$
+  \item parallel: $P~|~Q~|~...$
+  \item choice (``sum''): $P~+~Q~+~...$
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{10}{
+\begin{slide}{Hidden Machinery}
+  \begin{itemstep}
+  \item All those combinators!
+  \item $\pi$ {\it seems} more complicated, but...
+  \item $\lambda$ is hiding a {\bf lot} of machinery
+    \begin{itemize}
+    \item CPS conversion
+    \item replication of process bodies
+    \item order of application -- $\lambda _v$ vs $\lambda _n$
+    \end{itemize}
+  \item compare $\pi$, where it's all in the open
+    \begin{itemize}
+    \item no analogue to direct-style $\leftrightarrow$ CPS
+    \item replication explicit (with `$\mathbf{!}$')
+    \item no direct-style $\rightarrow$ no assumptions
+    \end{itemize}
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{Getting $\lambda$ from $\pi$}
+  Sequential languages ($\lambda$) are a {\it restriction} of parallel
+  languages ($\pi$) -- easy to get to $\lambda$ from $\pi$!
+
+  \begin{itemstep}
+  \item {\it closures} map to {\it names} -- the body of the closure
+    is translated into a repeated-read from the name
+  \item many slightly different ways of embedding $\lambda$ in $\pi$
+    \begin{itemize}
+    \item the precise calculus makes a difference: $\lambda _ v$ vs $\lambda _ n$ etc.
+    \item specific details have a large effect on efficiency
+    \end{itemize}
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{3}{
+\begin{slide}{$\pi$ is fine-grained}
+  \begin{itemstep}
+  \item $\lambda$ reifies {\it some} aspects of control -- after
+    conversion to continuation-passing-style!
+  \item $\pi$ reifies {\it all} aspects of control -- no rewriting
+    required or possible!
+  \item $\pi$ also copes naturally with parallelism -- not a layer on
+    top
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{7}{
+\begin{slide}{Getting $\pi$ from $\lambda$}
+  \begin{itemstep}
+  \item Scheme is essentially $\lambda _v$ made real
+  \item Scheme + small framework + macros $\longrightarrow \pi$
+  \item Required:
+    \begin{itemize}
+    \item A port data structure
+    \item A scheduler
+    \item Macros that expand into calls on the above
+    \item Unification (optional, for complex data)
+    \end{itemize}
+  \end{itemstep}
+\end{slide}
+}
+
+\part{Applications}
+
+\overlays{5}{
+\begin{slide}{Web programming}
+  \begin{itemstep}
+  \item Concurrency -- each request is a separate thread
+  \item Using threads complex; inverted flow-of-control
+  \item Two potential solutions:
+    \begin{itemize}
+    \item Scheme-defined {\tt call/cc} microthreads
+    \item Use a $\pi$-calculus-based language!
+    \end{itemize}
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{$\pi$ on the web}
+  Using a $\pi$-calculus based language for web programming:
+
+  \begin{itemstep}
+  \item Each {\it session} is a process on the server
+  \item Each web {\it client} is just another port
+  \item Any {\it databases} are just ports
+  \item A {\it well-known-port} is used to start sessions
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{3}{
+\begin{slide}{Telco -- Switching}
+  Important requirements:
+  \begin{itemstep}
+  \item Massively parallel -- $\geq 10000$ active calls
+  \item Highly available -- ``five-nines''
+  \item Realtime
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{6}{
+\begin{slide}{Telco -- Switching}
+  $\pi$ addresses these requirements:
+  \begin{itemstep}
+  \item Massively parallel -- $\pi$ processes lightweight
+  \item Highly available -- $\pi$ can be strongly typed
+    \begin{itemize}
+    \item behavioural types capture a protocol definition
+    \item programs can be proven to conform to a protocol (cf. threads)
+    \end{itemize}
+  \item Realtime -- that depends!
+    \begin{itemize}
+    \item usually waiting for outside databases anyway...
+    \end{itemize}
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{Telco -- IN}
+  \begin{itemstep}
+  \item Specific telephony application: ``Intelligent Networking'' (IN)
+  \item Advanced network functionality -- voicemail, menus, recharge,
+    roaming, call gapping, 3-way calls ...
+  \item Many interlocking, massively-parallel pieces
+  \item Protocol-driven design (perfect for $\pi$!)
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{8}{
+\begin{slide}{Telco -- IN}
+  \begin{itemstep}
+  \item Many components in an IN network:
+    \begin{itemize}
+    \item SSP -- the switch
+    \item SCP -- application host
+    \item SMP -- management
+    \item IP -- peripheral (announcements etc.)
+    \item BE -- billing engines
+    \end{itemize}
+  \item Each one with many open calls
+  \item Each one (usually) with a state-machine per call
+  \end{itemstep}
+\end{slide}
+}
+
+\begin{slide}{Example Call}
+  Complicated protocols -- I don't remember full detail!
+  \begin{itemize}
+  \item IDP from SSP $\longrightarrow$ SCP
+  \item call gapping may count the IDP
+  \item may connect to IP for voice prompts, collect digits
+  \item complex applications may be built
+  \item may connect to databases, external BEs for credit checks
+  \item may either connect, disconnect or reroute the call
+  \end{itemize}
+\end{slide}
+
+\begin{slide}{Telco -- IN}
+  Programming models:
+  \begin{itemize}
+  \item State machines using C, C++ etc
+    \begin{itemize}
+    \item traditional
+    \item error-prone
+    \item unintuitive
+    \item not compositional
+    \item does not distribute
+    \end{itemize}
+  \end{itemize}
+\end{slide}
+
+\begin{slide}{Telco -- IN}
+  Programming models:
+  \begin{itemize}
+  \item Threading
+    \begin{itemize}
+    \item doesn't scale
+    \item error-prone (preemptive threads)
+    \item intuitive (modulo locking)
+    \item coarse-grained, heavyweight
+    \item does not distribute
+    \end{itemize}
+  \end{itemize}
+\end{slide}
+
+\begin{slide}{Telco -- IN}
+  Programming models:
+  \begin{itemize}
+  \item Scheme {\small (or Python!)} microthreads
+    \begin{itemize}
+    \item scalable
+    \item intuitive
+    \item medium-fine-grained, lightweight
+    \item slightly awkward -- layer on top
+    \item does not distribute trivially
+    \end{itemize}
+  \end{itemize}
+\end{slide}
+
+\begin{slide}{Telco -- IN}
+  Programming models:
+  \begin{itemize}
+  \item $\pi$
+    \begin{itemize}
+    \item scalable
+    \item intuitive
+    \item fine-grained, lightweight
+    \item naturally concurrent
+    \item distributes for free!
+    \end{itemize}
+  \end{itemize}
+\end{slide}
+
+\overlays{5}{
+\begin{slide}{$\pi$ as a kernel}
+  \begin{itemstep}
+  \item Very close to the hardware
+  \item Safe -- behavioural types
+  \item Massively multithreaded -- SMP
+  \item Message passing -- distribution -- plug and play supercomputer!
+  \item IRQ handling sketch
+  \end{itemstep}
+\end{slide}
+}
+
+\begin{slide}{Using $\pi$ for GUIs}
+  \begin{itemize}
+  \item Similar to web programming
+  \item A little more fine grained, slightly different focus
+  \item M-V-C coordination
+  \end{itemize}
+\end{slide}
+
+\overlays{2}{
+\begin{slide}{Coordination}
+  $\pi$ scales from micro- to macro-programming. It has a place in:
+  \begin{itemize}
+  \item protocols at the IRQ level
+  \item protocols at the OS level
+  \item protocols at the network level
+  \item protocols at the application level
+  \end{itemize}
+
+  \FromSlide{2}
+  ... so why not protocols between applications, too?
+  \begin{itemize}
+  \item glue between local apps
+  \item glue across the internet
+  \end{itemize}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{Local $\pi$ glue}
+  The ultimate scripting language -- sequential when required,
+  parallel when you like!
+
+  \begin{itemstep}
+  \item {\tt expect}
+  \item Local CORBA or COM
+  \item Calling out to .NET
+  \item Interoperating with local Java
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{Remote $\pi$ glue}
+  Synchronising and scheduling many distributed applications in the
+  right order -- ``unified messaging''
+  \begin{itemstep}
+  \item Encode business logic
+  \item Remote CORBA or DCOM
+  \item SOAP, XML-RPC
+  \item .NET remoting -- similar in ambition?
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{4}{
+\begin{slide}{Modeling using $\pi$}
+  The $\pi$-calculus naturally covers an impressive subset of the jobs
+  UML is used for:
+
+  \begin{itemstep}
+  \item It's fine-grained $\therefore$ everything is explicit
+  \item Normal code sequential -- highlights control flow
+  \item You can {\it reproject} code to highlight dataflow
+  \item Message sequence diagrams can be derived automatically
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{3}{
+\begin{slide}{B2B}
+  Extend the scope of the model to include ``real-world'' processes
+  \begin{itemstep}
+  \item mail-order
+  \item project management processes
+  \item paper-based records
+  \end{itemstep}
+\end{slide}
+}
+
+\overlays{3}{
+\begin{slide}{B2B}
+  B2B systems based on, or related to process-language ideas:
+  \begin{itemstep}
+  \item BizTalk (Microsoft) -- XML-based B2B glue
+  \item WSDL (W3C, IBM, Microsoft) -- another XML-based B2B glue
+  \item others? {\small (not my field...)}
+  \end{itemstep}
+\end{slide}
+}
+
+\part{The End}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\part{Backup}
+
+\begin{slide}{Getting $\lambda$ from $\pi$}
+  One way of translating abstraction:
+
+ \[
+ \left[\lambda x.M \right]_k
+ \longrightarrow
+ (\nu f)~\mathbf{!}f(k',x) . \left( \left[M\right]_{k'} | \bar k \left<f\right> \right)
+ \]
+
+ Translating application is different for $\lambda _v$ vs $\lambda _n$.
+
+ {\small (This is just to convey the flavour an embedding has -- this
+   particular definition may not be 100\% correct in all situations!)}
+\end{slide}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% \overlays{1}{
+%% \begin{slide}{}
+
+%%   \begin{itemstep}
+%%   \item foo
+%%   \end{itemstep}
+%% \end{slide}
+%% }
+
+\end{document}

@@ -1,0 +1,46 @@
+;; Splay tree partitioning, from Okasaki's book:
+(define (splay-tree-partition cmp-pivot t k)
+  (let walk ((t t)
+	     (k k))
+    (if (null? t)
+	(k '() '())
+	(let ((element (bst-node-element t))
+	      (left (bst-node-left t))
+	      (right (bst-node-right t)))
+	  (if (negative? (cmp-pivot element))
+	      (if (null? left)
+		  (k '() t)
+		  (let ((le (bst-node-element left))
+			(ll (bst-node-left left))
+			(lr (bst-node-right left)))
+		    (if (negative? (cmp-pivot le))
+			(walk ll (lambda (small big)
+				   (k small
+				      (make-bst-node le big (make-bst-node element lr right)))))
+			(walk lr (lambda (small big)
+				   (k (make-bst-node le ll small)
+				      (make-bst-node element big right)))))))
+	      (if (null? right)
+		  (k t '())
+		  (let ((re (bst-node-element right))
+			(rl (bst-node-left right))
+			(rr (bst-node-right right)))
+		    (if (negative? (cmp-pivot re))
+			(walk rl (lambda (small big)
+				   (k (make-bst-node element left small)
+				      (make-bst-node re big rr))))
+			(walk rr (lambda (small big)
+				   (k (make-bst-node re (make-bst-node element left rl) small)
+				      big)))))))))))
+
+(define (splay-tree-insert cmp t x)
+  (splay-tree-partition (binary-curry cmp x)
+			t
+			(lambda (smaller bigger)
+			  (make-bst-node x smaller bigger))))
+
+(define (splay-tree-find predcmp t)
+  (splay-tree-partition predcmp
+			t
+			(lambda (smaller bigger)
+			  (

@@ -1,0 +1,202 @@
+"-*- slate -*-"
+
+addGlobal @ (loc := Location traits name := Symbol traits value := _)
+[
+  gg := Globals.
+  read(cell := gg block := [ :g |
+    write(cell := gg
+          value := withSlot(obj := g name := name value := value))
+  ]).
+].
+
+"-*-*-*- Nope, I don't like it, I think."
+
+l@(Location traits) addGlobal: name@(Symbol traits) value: val
+[
+  gg := Globals. "look up global 'Globals' outside the block, otherwise we deadlock"
+  gg --> [ :g | gg <-- (g withSlot: name value: val) ].
+  val
+].
+
+"Make globals delegate to Oddball."
+( gg := Globals. ob := Oddball traits.
+  gg --> [ :g | gg <-- (g traits:* ob) ] ).
+
+g@(Globals peek) as: _@(String traits) [ 'Globals' ].
+
+val@(Root traits) ref
+[
+  c := Cell new.
+  c <-- val.
+  c
+].
+
+c@(Cell traits) read
+[
+  p --> [ :v | v ]
+].
+
+c@(Cell traits) update: block
+[
+  c --> [ :v | c <-- (block applyWith: v) ]
+].
+
+c@(Cell traits) push: value
+[
+  c update: [ :cdr | value -> cdr ]
+].
+
+block@(Block traits) fork
+[
+  here ( here fork: block. )
+].
+
+block@(Block traits) loop
+[
+  loop := [ block do. loop do. ].
+  loop do.
+].
+
+p@Nil reverse [ Nil ].
+p@(Pair traits) reverse [
+  loop := [ :p :acc | p  ifNil: [ acc ] ifNotNil: [ loop applyWith: p value with: p key -> acc ] ].
+  loop applyWith: p with: Nil
+].
+
+n1@(Number traits) to: n2@(Number traits) do: block@(Block traits) [
+  loop := [ :n | (n <= n2) ifTrue: [ block applyWith: n. loop applyWith: n + 1 ] ].
+  loop applyWith: n1
+].
+
+_@True ifTrue: b@(Block traits) [ b do ].
+_@False ifTrue: b@(Block traits) [].
+
+_@True ifFalse: b@(Block traits) [].
+_@False ifFalse: b@(Block traits) [ b do ].
+
+_@True ifTrue: b1@(Block traits) ifFalse: b2@(Block traits) [ b1 do ].
+_@False ifTrue: b1@(Block traits) ifFalse: b2@(Block traits) [ b2 do ].
+
+_@Nil ifNil: b1@(Block traits) ifNotNil: b2@(Block traits) [ b1 do ].
+_@(Root traits) ifNil: b1@(Block traits) ifNotNil: b2@(Block traits) [ b2 do ].
+
+_@Nil ifNil: b@(Block traits) [ b do ].
+_@(Root traits) ifNil: b@(Block traits) [].
+
+_@Nil ifNotNil: b@(Block traits) [].
+_@(Root traits) ifNotNil: b@(Block traits) [ b do ].
+
+p@Nil concatenate [ Nil ].
+p@(Pair traits) concatenate [
+  p value
+    ifNil: [ p key ]
+    ifNotNil: [ p key, p value concatenate ]
+].
+
+s1@(String traits) , s2@(String traits)
+[
+  s1 primStringAppend: s2
+].
+
+t@(Tuple traits) printString
+[
+  p := Nil ref.
+  p push: '{'.
+  0 to: (t size - 1) do: [ :index |
+    (index = 0) ifFalse: [ p push: '. ' ].
+    p push: (t at: index) printString.
+  ].
+  p push: '}'.
+  p read reverse concatenate
+].
+
+"I am a parallel map."
+p@Nil map: block [ Nil ].
+p@(Pair traits) map: block [ (block applyWith: p key) -> (p value map: block) ].
+
+"I am a sequential map."
+p@Nil mapInOrder: block [].
+p@(Pair traits) mapInOrder: block [
+  h := (block applyWith: p key).
+  h -> (p value mapInOrder: block)
+].
+
+"I am a sequential for-each."
+p@Nil do: block [].
+p@(Pair traits) do: block [ block applyWith: p key. p value do: block ].
+
+"I am a parallel for-each."
+p@Nil doInParallel: block [].
+p@(Pair traits) doInParallel: block [ [block applyWith: p key] fork. p value doInParallel: block ].
+
+p@(Pair traits) printString
+[
+  '(', p key printString, ' -> ', p value printString, ')'
+].
+
+s@(Symbol traits) printString [ '#', resend ].
+
+_@(Globals peek) shutDownImage
+[
+  ShutdownHooks peek do: [ :hook | hook shutDown do. ].
+  'BOOTSTRAP.image' saveImage.
+  primQuit.
+].
+
+"---------------------------------------------------------------------------"
+
+"
+[
+  ({1. 2. 3. #four} -> ('Hello, world, from ThiNG!' -> (True -> (123 -> ((#a -> #b) -> Nil)))))
+  do: [ :each |
+    each printOn: Console.
+    Console crlf.
+  ].
+] fork.
+"
+
+here (
+  here addGlobal: #TraitsTraits value: (Root traits traits). "!!"
+
+  t := (name := 'ReplServer' traits :* TraitsTraits).
+  here addGlobal: #ReplServer value: (traits :* t serverSocket := Nil).
+).
+
+rs0@(ReplServer traits) newOnPort: port@(Number traits)
+[
+  rs := (rs0 serverSocket := port primListen).
+  [ rs acceptLoop ] fork.
+].
+
+rs@(ReplServer traits) acceptLoop
+[
+  [
+    sock := rs serverSocket accept.
+    sock ifNotNil: [ [ rs replOn: sock ] fork. ].
+  ] loop.
+].
+
+rs@(ReplServer traits) replOn: sock
+[ session (
+  'Welcome to ThiNG!\n' printOn: sock.
+  [
+    'ThiNG> ' printOn: sock.
+    compilationResult := sock compileOneStatement.
+    compilationResult key
+      ifTrue: [ compilationResult value do printOn: sock. ]
+      ifFalse: [
+        'PARSE ERROR\n' printOn: sock.
+        compilationResult value printOn: sock.
+        sock close.
+        session return: Nil.
+      ].
+    '\n' printOn: sock.
+  ] loop.
+)].
+
+here (
+  here addGlobal: #ShutdownHooks value: Nil ref.
+  ShutdownHooks push: (shutDown:=[] startUp:=[ ReplServer newOnPort: 4444 ]).
+  here addGlobal: #BootBlock value: [ ShutdownHooks peek do: [ :hook | hook startUp do. ] ].
+  shutDownImage.
+).

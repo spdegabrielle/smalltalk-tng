@@ -1,0 +1,49 @@
+<class> methods at: #subClass:instanceVariables:classVariables: put:
+  [ self aName ivars cvars ->
+    n = self class new.
+    n super: self.
+    n printName: aName.
+    n instanceVariables: ivars.
+    n classVariables: cvars.
+    n ].
+
+<class> methods at: #inheritanceChain put:
+  [ self ->
+    cond super isNil => nil
+       | super :: super inheritanceChain ]
+
+<class> methods at: #writeOn: put:
+  [ self port -> {'#<class ', self printName, '>'} sequence: [ x -> port display: x ] ].
+
+<class> methods at: #displayOn: put:
+  [ self port -> self writeOn: port ].
+
+!<object> methodsFor: 'printing'
+!dissectOn: port
+
+    print = [ x -> port display: x ].
+
+    {'An instance of class ', self class printName, '.\n', 'Instance variables:\n'}
+      sequence: print.
+
+    loop = [ class ->
+    	     cond class isNil => nil
+	        | class == <object> => nil
+	        | ({'--------', class printName, '\n'} sequence: print.
+	     	   class instanceVariables sequence:
+	       	     [ ivar ->
+	       	       {'\t', ivar, '\t\t', self instanceVariableAt: ivar, '\n'} sequence: print ].
+	     	   loop (class super)) ].
+    loop (self class)
+].
+
+<object> methods at: #dissect put:
+  [ self -> self dissectOn: System stdout ].
+
+<object> methods at: #isInstanceOf: put:
+  [ self aClass ->
+    loop = [ c ->
+    	     cond c isNil => False
+	        | c == aClass => True
+		| loop (c super) ].
+    loop (self class) ].

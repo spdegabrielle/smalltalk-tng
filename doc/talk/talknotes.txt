@@ -1,0 +1,46 @@
+-*- outline -*-
+
+The Next Big ThiNG
+
+
+* Overview of the language
+
+** Reflective
+*** Behavioural
+*** Structural
+*** Lexical
+
+** Transactions + Exceptions
+** Concurrent
+** Functional
+** Object-Oriented (PMD)
+** Distributed
+
+* Influences
+
+** Languages
+
+*** Self
+*** Scheme
+*** SmallTalk
+*** Slate
+*** Mobile Ambients
+
+** Techniques
+
+*** Malenfant et al. Reflection in Prototype Languages
+
+* Parser
+
+** Packrat
+
+Ford's thesis, other papers
+
+** Extensibility
+
+let-syntax and define-syntax can be layered atop, with a small
+interpreter
+
+(Not currently extensible for ThiNG)
+
+* Efficiency

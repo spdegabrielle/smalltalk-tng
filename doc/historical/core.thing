@@ -1,0 +1,80 @@
+"-*- slate -*-"
+
+! [ :expr :tblock :fblock | tblock value ]
+    primDefineMethod: #ifTrue:ifFalse at: { True. Method. Method } !
+
+! ctxt( ctxt globals: (ctxt globals 
+
+[ :self :path :value |
+  (path primDelegatesTo: Symbol)
+    ifTrue:  [ self primAt: path put: value ]
+    ifFalse: [
+      key = path key.
+      rest = path value.
+      ((self primAt: key) == Nil)
+        ifTrue: [ self primAt: key put: EmptyNamespace
+
+! ctxt( ctxt globals: (ctxt globals 
+
+"---------------------------------------------------------------------------"
+" experimental refs "
+!Namespaces addGlobal: #Counter value: (count:= Nil)!
+!Method named: #new at: { #c -> Counter }!
+  (c count:= 0 ref)
+!
+!Method named: #next at: { #c -> Counter }!
+  c count -> [ :value | c count <- value + 1 . value ]
+!
+
+"---------------------------------------------------------------------------"
+" state on methods "
+!Namespaces addGlobal: #Counter value: (generator:= Nil)!
+!Method named: #new at: { #c -> Counter }!
+  (c generator:= !!(v:=0) [ !!(v:=v + 1). v ])
+!
+!Method named: #next at: { #c -> Counter }!
+  (c generator value)
+!
+
+"---------------------------------------------------------------------------"
+!Namespaces addGlobal: #Cell value: (state:= Nil)!
+!Method named: #newWith: at: { #c -> Cell. #v -> NoRole }!
+  (c state:= !!(v:=v) [ :f | !!(v:= f value: v). v ])
+!
+!Method named: #get at: { #c -> Cell }!
+  c state value: [ :v | v ]
+!
+!Method named: #update: at: { #c -> Cell. #f -> Method }!
+  c state value: f
+!
+!Method named: #set: at: { #c -> Cell. #v -> NoRole }!
+  c state value: [ :old | v ]
+!
+
+"---------------------------------------------------------------------------"
+
+!Method named: #doSomething at: { Nil -> Something }!
+  ctxt (
+    importantCondition ifTrue: [ Exception raise: 'oh no!'. ].
+    otherCondition ifTrue: [ ctxt return: 3 ].
+    4
+  )
+!
+
+
+!Method named: #computeFibNotifying: at: { #n -> Integer. #k -> Method }!
+  [ k (n fib) ] fork
+!
+
+
+!Method named: #fork at: { #m -> Method }!
+  ctxt (
+    ctxt fork: m.
+    Nil
+  )
+!
+
+
+!Method named: #fib at: { #n -> Integer }!
+  n < 2 ifTrue: [ n ] ifFalse: [ (n - 1) fib + (n - 2) fib ]
+!

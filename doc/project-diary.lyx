@@ -1,0 +1,61 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme default
+\graphics default
+\paperfontsize default
+\papersize Default
+\paperpackage a4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+ThiNG Project Diary
+\layout Standard
+
+
+\emph on 
+tonyg, 12 Dec 2004:
+\emph default 
+ Today Matthias Radestock emailed through a link to a website about the
+ L programming language (and operating system).
+ The project is being run by a Tony Hannan, a PhD student at Georgia Tech.
+ The language is really quite similar to ThiNG.
+ We've been working faster, though 
+\family typewriter 
+;-)
+\family default 
+.
+\layout Standard
+
+He seems to have Baker's shallow-bound-transaction idea at the core of the
+ language, along with extremely restricted mutable state.
+ He's still using single-dispatch, though.
+ Also, his metaobjects are the lexical scope and the dynamic state of the
+ code, where ThiNG is based on locations and explicit reflection.
+ Actually, I have a feeling ThiNG is going to end up 
+\emph on 
+completely
+\emph default 
+ reflective, with very little hardwired behaviour.
+\layout Standard
+
+The paper he's writing about L gets into a lot of the mathematical structure
+ we haven't formalised yet, which is nice, since we can look at how he's
+ done it for when we want to write down our formalisms.
+\the_end

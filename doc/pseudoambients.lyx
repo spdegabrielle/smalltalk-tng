@@ -1,0 +1,154 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme palatino
+\graphics default
+\paperfontsize default
+\spacing single 
+\papersize a4paper
+\paperpackage widemarginsa4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 2
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+Pseudo-ambients
+\layout Author
+
+Tony Garnock-Jones <tonyg@kcbbs.gen.nz>
+\layout Date
+
+1 November 2004
+\layout Standard
+
+The idea is to take a calculus much like Cardelli's Mobile Ambients, and
+ short-circuit the routing so that paths are one element long and always
+ take you directly to the given port.
+ 
+\begin_inset Formula $\nu$
+\end_inset 
+
+ is interpreted as allocation; the store holds allocated ports.
+ Ports/locations have exactly one parent, except for the top location, 
+\begin_inset Formula $\top$
+\end_inset 
+
+, which has no parent.
+ The parent of a location is the location at which the 
+\begin_inset Formula $\nu$
+\end_inset 
+
+ was executed.
+ This gives rise to a tree of locations.
+ Ports do not move once they are defined, and are garbage collected when
+ no longer referenced, in the usual manner.
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+\nu x.P &  & \textrm{allocation}\\
+P\vert Q &  & \textrm{par}\\
+\left\langle \tilde{x}\right\rangle  &  & \textrm{output message}\\
+(\widetilde{x}).P &  & \textrm{input message}\\
+!(\widetilde{x}).P &  & \textrm{replicated input}\\
+x[P] &  & \textrm{relocation}\\
+\mathbf{lift}\, x(y).P &  & \textrm{reflection}\\
+\mathbf{eval}\, x &  & \textrm{evaluation}\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Standard
+
+Processes are written with an environment 
+\begin_inset Formula \[
+\mathcal{E}\subset\{ x\mapsto a\,\vert\, x,a\in\mathcal{L}\}\]
+
+\end_inset 
+
+with ports/locations 
+\begin_inset Formula $a,b,c,\top\in\mathcal{L}$
+\end_inset 
+
+, and processes 
+\begin_inset Formula $P$
+\end_inset 
+
+, 
+\begin_inset Formula $Q$
+\end_inset 
+
+, 
+\begin_inset Formula $R$
+\end_inset 
+
+:
+\layout Standard
+
+
+\begin_inset Formula \[
+\mathcal{E}\vdash a[P]\,\Vert\, b[Q]\,\Vert\, c[R]\]
+
+\end_inset 
+
+
+\layout Standard
+
+so reduction proceeds as in figure 
+\begin_inset LatexCommand \ref{cap:Reduction-rules}
+
+\end_inset 
+
+, where 
+\begin_inset Formula $\sigma$
+\end_inset 
+
+ are appropriate substitutions.
+ Note that the rule for lift is currently not very well defined.
+\layout Standard
+
+
+\begin_inset Float figure
+wide true
+collapsed false
+
+\layout Standard
+
+
+\begin_inset Formula \begin{align*}
+\mathcal{E}\vdash a[\nu x.P] & \rightarrow\mathcal{E}\cup\{ x\mapsto a\}\vdash a[P] & \textrm{R-alloc}\\
+\mathcal{E}\vdash a[P\vert Q] & \rightarrow\mathcal{E}\vdash a[P]\Vert a[Q] & \textrm{R-par}\\
+\mathcal{E}\vdash a[\langle\tilde{x}\rangle]\,\Vert\, a[(\tilde{y}).P] & \rightarrow\mathcal{E}\vdash a[P\sigma] & \textrm{R-comm}\\
+\mathcal{E}\vdash a[\langle\tilde{x}\rangle]\,\Vert\, a[!(\tilde{y}).P] & \rightarrow\mathcal{E}\vdash a[P\sigma]\,\Vert\, a[!(\tilde{y}).P] & \textrm{R-repcomm}\\
+\mathcal{E}\vdash a[x[P]] & \rightarrow\mathcal{E}\vdash x[P] & \textrm{R-reloc}\\
+\frac{\alpha=\{ a\vert a\mapsto x\in\mathcal{E}\},\,\mathbf{P}=x[P_{0}]\,\Vert\,{\displaystyle \prod_{a\in\alpha}}a[P_{a}]}{\mathcal{E}\lyxlock\vdash a[\mathbf{lift\,}x(y).P]\,\Vert\,\mathbf{P}} & \rightarrow\mathcal{E}\cup\{ y\mapsto a\}\vdash a[P\sigma]\,\Vert\,\left\lceil \mathbf{P}\right\rceil ^{y} & \textrm{R-reflect}\end{align*}
+
+\end_inset 
+
+
+\layout Caption
+
+
+\begin_inset LatexCommand \label{cap:Reduction-rules}
+
+\end_inset 
+
+Reduction rules
+\end_inset 
+
+
+\the_end

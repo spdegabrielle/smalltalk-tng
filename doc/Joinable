@@ -1,0 +1,38 @@
+---------------------------------------------------------------------------
+processes P,Q,R:
+	x<M>		asynchronous message
+	def D in P	local definition
+	P | Q		parallel composition
+	0		inert process
+
+definitions D:
+	J -> P		reaction rule
+	D ^ D'		composition
+	top		void definition
+
+join patterns J:
+	x<M>		message pattern
+	J | J'		synchronization
+
+Figure 1. Syntax for the core join calculus
+---------------------------------------------------------------------------
+
+
+And now we hack on it:
+
+
+processes P,Q,R:
+	x<M>		asynchronous message
+	def D in P	local definition
+	P | Q		parallel composition
+	0		inert process
+
+definitions D:
+	J -> P		reaction rule
+	D ^ D'		composition
+	top		void definition
+
+join patterns J:
+	x<M>		message pattern
+	J | J'		synchronization
+

@@ -1,0 +1,82 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme default
+\graphics default
+\paperfontsize default
+\papersize Default
+\paperpackage a4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+The ThiNG High-Level Language
+\layout Author
+
+Tony Garnock-Jones <tonyg@kcbbs.gen.nz>
+\layout Date
+
+18 November, 2004
+\layout Standard
+
+
+\begin_inset Float figure
+wide false
+collapsed false
+
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+\textrm{exp} & \leftarrow & \textrm{(lambda var exp)}\\
+ &  & \textrm{(exp exp)}\\
+ &  & \textrm{(if exp exp exp)}\\
+ &  & \textrm{var}\\
+ &  & \textrm{(set! var exp)}\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Caption
+
+Core Scheme
+\end_inset 
+
+
+\begin_inset Float figure
+wide false
+collapsed false
+
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+\textrm{exp} & \leftarrow & \textrm{(selector exp exp ...)}\\
+ &  & \textrm{[ :var | exp ... ]}\\
+\\\\\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Caption
+
+Core ThiNG
+\end_inset 
+
+
+\the_end

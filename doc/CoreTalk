@@ -1,0 +1,366 @@
+[comment -*- outline -*- ]
+[html <div class="essay_body">]
+
+*** A process language with locations and reflection
+
+**** The Process Calculus
+
+Locations are nested, as in the distributed join calculus
+("Join"). Locations and channels are identified (unlike in
+Join). Channels/locations are restricted with normal scope
+extrusion. Communication happens between locations transparently - any
+unguarded receive and any unguarded send on the same channel will
+occur, no matter the structure of the locations involved.
+
+The main challenge at the moment is to come up with a notion of
+definition site for a channel, so that we have a known location for
+sent messages to migrate to. This is where Join can help out: each
+Join definition both provides a location and a receiver
+definition. The Chemical Abstract Machine semantics for Join provides
+two equivalent views of a collection of processes, one in which the
+hierarchic nesting of locations is reflected in the syntax, and one in
+which each location is shown in a flat multiset of locations, with the
+[i path] to each location annotating the location:
+
+@code
+  m[n[P] | Q] | o[n[R]]		(hierarchy shown)
+
+  P@mn | Q@m | R@on		(exposed processes shown)
+,
+Locations are the unit of reflection granularity. Locations can be
+lifted to a description of the corresponding collection of processes,
+and such a description can be dropped to instantiate the described
+processes. Locations are written
+
+@code
+  m[P]
+
+where 'm' is a channel acting as a 'location tag' for this location.
+
+Processes P, Q:
+
+@code
+	0		stop
+	(x)P		new
+	P | Q		parallel composition
+	µA.P		process variable binding
+	A		process variable reference
+	x<M>		output
+	x(M).P		input
+	x[P]		location
+	lift x		lift
+	drop x		drop (aka eval)
+
+Messages M are a possibly empty sequence of names.
+
+Structural equivalence:
+
+@code
+  m[P] | m[Q]   ===   m[P | Q]
+      m[x<M>]   ===   x<M>
+    m[lift x]   ===   lift x
+         m[0]   ===   0
+
+Reduction:
+
+@code
+      m not used as a location tag in Q
+  -------------------------------------------
+    m[P] | Q | lift m   -->   Q | LIFT(m,P)
+
+where LIFT(m,P) expands into a process description of the process P,
+the channel for interfacing to which is placed on the channel m.
+
+
+@code
+       P   -->   P'
+  ----------------------
+    m[P]   -->   m[P']
+
+@code
+  --------------------------
+    drop x   -->   DROP(x)
+
+where DROP(x) expands into a process which examines the process
+description of a process P that answers to requests on channel x, and
+instantiates P.
+
+Note that lift and drop are asymmetric: lift collects the description
+for an entire location, but drop instantiates the provided description
+into the current location.
+
+Note also that output and lift are continuationless and may freely
+move between locations, where input and drop have continuations
+(implicit, in the case of drop) and may not leave the confines of
+their location. Messages (names) are thus mobile, while processes are
+immobile without explicit use of lift and drop.
+
+
+**** Uses of Lift
+
+Lift can be used to interrupt a running collection of processes for
+inspection in an interactive debugger:
+
+@code
+  m[P] | lift m | m(p).debuggerFactory<"breakpoint",p>
+
+Lift can (sort-of) be used for error handling - each location can be
+used as a 'catch' to which the error condition is 'thrown':
+
+@code
+  m[P | m<"error description">]  |  m(e).(lift m | m(p).debuggerFactory<e,p>)
+
+Nested handlers can be defined:
+
+@code java
+  try {
+    CODE
+  } catch (e, p) {
+    HANDLER
+  }
+
+becomes:
+
+@code
+  (exn)( exn[CODE] | exn(e).(lift exn | exn(p).HANDLER) )
+
+so long as
+
+@code java
+  throw e
+
+is encoded as
+
+@code
+  exn<e>
+
+for the innermost defined 'exn' name. See below for some problems with
+this approach.
+
+**** Variants and challenges
+
+***** Try/Finally clauses
+
+"try/finally" clauses are a challenge, since [code m[0] === 0] and we
+want to detect when [code m[]] has 'stopped'. One way around it might
+be to change the syntax for processes to have instead
+
+@code
+	x[P].Q
+
+for locations, with an altered structural equivalence:
+
+@code
+  m[P].Q | m[P'].Q'   ===   m[P | P'].(Q | Q')
+          m[x<M>].P   ===   m[0].P | x<M>
+        m[lift x].P   ===   m[0].P | lift x
+             m[0].P   =/=   0   (this rule is replaced by a new reduction relation)
+
+and altered reduction rules:
+
+@code
+         m not used as a location tag in Q
+  -------------------------------------------------
+    m[P].P' | Q | lift m   -->   Q | LIFT(m,P,P')
+
+where LIFT(m,P,P') expands into a process description of the processes
+P and P', the channels for interfacing to which (p and p'
+respectively) are placed on the channel m as: [code m<p,p'>]
+
+
+@code
+         P   -->   P'
+  --------------------------
+    m[P].Q   -->   m[P'].Q
+
+
+@code
+    m not used as a location tag in Q
+  -------------------------------------
+        m[0].P | Q   -->   P | Q
+
+***** Dynamic environments
+
+The current exception handler ('exn' above) is a dynamically-scoped
+entity in most languages, but in the discussion of error-handling
+above it is [i lexical] since there is no clear notion of dynamic
+scope. This is unacceptable for use as an error-reporting mechanism.
+
+Note that the current continuation is a dynamic entity as well! Since
+the current continuation is explicitly passed around in encodings of
+lambda calculi into π, there's nothing stopping us passing around
+arbitrary other dynamic entities at the same time, so long as our
+encoding is uniform. This would give rise to a [code
+call-with-current-exception-handler] by analogy with [code
+call-with-current-continuation].
+
+Traditional continuation-passing-style:
+
+@code scheme
+  (lambda (x) (+ x 1))   -->   (lambda (k x) (+ k x 1))
+
+Extended continuation-and-exception-handler-passing-style:
+
+@code scheme
+  (lambda (x) (+ x 1))   -->   (lambda (k h x) (+ k h x 1))
+
+This could be generalised to a (perhaps implicit at the implementation
+level) collection of arbitrary dynamic state.
+
+***** Error or exception reporting, revisited
+
+A dynamic-extent error-reporting channel can be combined with the use
+of [code lift] to give a more acceptable form of exception
+handling. When throwing an exception, care must be taken to select an
+appropriate channel; procedural code can use [code
+call-with-current-error-channel] of course, but raw process code needs
+to be more explicit about the target of the thrown exception.
+
+There are still a few issues: "stack traces" are still missing from
+the picture, for instance. An exception thrown by some library code in
+a different lexical scope will have to be careful to provide
+self-describing restarts as part of the error report message sent down
+the error-reporting channel at the time of the throw. This is
+straightforward in a procedural situation, but in the general case it
+is less obvious how to do this.
+
+One approach might be for each ongoing computation to be partitioned
+into a fresh location:
+
+@code
+  µLOOP .
+    service(k,h,message) .
+      LOOP |
+      (loc) loc[ BODY OF SERVICE |
+                 h<"error description", k, loc> ])
+
+When an error is signalled, the location can be passed (with some
+suitable self-describing convention) along with the error report to
+the waiting handler on the other side of the report channel. The
+location need not be lifted at the time of the throw; whether it was
+lifted at all might be a policy decision made by the error-report
+receiver at the other side. Often the location might be lifted into
+the debugger along with the location that sent the message to the
+library code that caught the error.
+
+***** Capabilities
+
+Channels, so long as they are unforgeable, can be used as capabilities
+in a few different ways. One relies on an equivalence relation between
+names and a comparison process
+
+@code
+  [x=y]{P,Q}
+
+which reduces to [code P] if [code x] and [code y] are the same name,
+and [code Q] otherwise. Names (without processes attached to them
+necessarily) can then be used as permissions.
+
+The dynamic environment idea detailed above can then be used to carry
+around a collection of permissions. A function [code
+call-with-current-permission-map] can be provided, allowing a dynamic
+permissions check in server code. Some means of replacing the current
+permission map within a piece of code can also be provided, allowing
+code to enlarge or reduce its permission map within some scope.
+
+***** A variation on comm
+
+The current comm rules (implied above) are not well pinned down since
+there's a structural equivalence rule equating [code m[x<M>]] with
+[code x<M>]. This means that [code lift m] may or may not capture the
+output on [code x].
+
+We need some way of forcing unguarded sends out of a location at the
+time of lifting that location. One way to approach that might be to
+redefine the lift operation to partition the location's contents:
+
+@code
+         m not used as a location tag in Q
+       no sends on any channel unguarded in P
+  -------------------------------------------------
+    m[P].P' | Q | lift m   -->   Q | LIFT(m,P,P')
+
+[b Alternative:] there are still problems, since now outputs are
+opaque to the reflection primitive, lift. A better way might be to try
+to attach the output messages to the restriction itself, thus
+modelling the message queue directly. The problem then is making any
+unguarded inputs find the messages from the relevant restriction!
+
+***** Dynamic Environments of a different kind
+
+To get lookup on "local services" (eg. java.lang.String etc) perhaps
+lift and drop should be augmented with a second argument: ports equal
+(via name equality) to this argument would be replaced with a special
+piece of syntax in the lift, and in the drop, the special piece of
+syntax would be replaced with the value of the argument. This lets you
+provide eg. a sandbox environment or whatever.
+
+
+**** Integrating lambda with π
+
+See also the "blue calculus" by G. Boudol.
+
+Thinking about evaluating Scheme using an operational semantics:
+evaluate each position in a combination until the positions are values
+rather than expressions. Then apply the combination.
+
+@code scheme
+  (let ((x (lambda (y) (+ y 1))))
+    (x (x 2)))
+  ;==> macroexpands to
+  ((lambda (x) (x (x 2)))
+   (lambda (y) (+ y 1)))
+  ;-->
+  ((lambda (y) (+ y 1)) ((lambda (y) (+ y 1)) 2))
+  ;-->
+  ((lambda (y) (+ y 1)) (+ 2 1))
+  ;-->
+  ((lambda (y) (+ y 1)) (#<primitive+> 2 1))
+  ;-->
+  ((lambda (y) (+ y 1)) 3)
+  ;-->
+  (+ 3 1)
+  ;-->
+  (#<primitive+> 3 1)
+  ;-->
+  4
+
+***** Syntax
+
+Recommend an A-normal form - [code let x = M N in x] (??) - to provide
+linear form. Note that's a let, not a letrec. I guess this is pretty
+similar to Boudol's Blue Calculus?
+
+Also, how about Matthias' well-formedness constraint to ensure
+appropriate use of input capability? How does the input capability
+move with lift and drop? Does the location for the port move with the
+process??
+
+Processes P, Q:
+
+@code
+	0		stop
+	(x)P		new
+	P | Q		parallel composition
+	µA.P		process variable binding
+	A		process variable reference
+	x<M>		output
+	x(M).P		input
+	x[P].Q		location
+	lift x		lift
+	drop x		drop (aka eval)
+
+Messages <M>:
+
+Bindings (M):
+
+Expressions E, F:
+
+Values V, W are 
+
+The rules, then, are
+
+@code
+  \x . 
+
+[html </div>]

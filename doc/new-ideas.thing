@@ -1,0 +1,91 @@
+Use monads to structure the passing of state??
+ do { var <- expr
+    ; some action in the monad of choice
+    ; return value }
+
+-- ????
+expr >>= \var . some_action >>= \dummy . return value
+
+ [ ch1 <- next. ch2 <- next. return: foo ] `with: s.
+
+ [ {socket:. state:. len:. index:} <- read.
+   ???
+
+in s { ch1 <- next
+     ; ch2 <- next
+     ; return foo }
+
+
+
+
+
+SocketCharProvider <- {socket: Nil. state: ''. len: 0. index: 0}.
+
+self@SocketCharProvider newOn: socket [
+  self \ { socket: socket }.
+].
+
+self@SocketCharProvider next [
+  {socket:. state:. len:. index:} <- self.
+  state == EOF ifTrue: [ ^ {state. self} ].
+  index >= len ifFalse: [ ^ {state at: index. self \ {index: index + 1}} ].
+
+  newState <- socket read.
+  newState
+    ifNil: [ (self \ {state: EOF. len: 0. index: 0}) next ]
+    ifNotNil: [ (self \ {state: newState. len: newState size. index: 0}) next ].
+]
+
+{ch1. s} <- s next.
+{ch2. s} <- s next.
+
+
+
+
+
+SocketCharProvider <- {socket: Nil. state: Nil}.
+
+self@SocketCharProvider newOn: socket [
+  self \ { socket: socket. state: {buf: ''. len: 0. index: 0} ref }.
+].
+
+self@SocketCharProvider next [
+  {socket:. state:.} <- self.
+  [
+    [
+      {buf:. len:. index:.} <- state read.
+      buf == EOF ifTrue: [ ^ buf ].
+      index >= len ifFalse: [ state write: state peek \ { index: index + 1 }. ^ buf at: index ].
+
+      newState <- socket read.
+      newState
+        ifNil: [ state write: {buf: EOF. len: 0. index: 0} ]
+        ifNotNil: [ state write: {buf: newState. len: newState size. index: 0} ].
+    ] loop.
+  ] transaction.
+]
+
+ch1 <- s next.
+ch2 <- s next.
+
+
+
+Globals at: #ThingSDL put: {super*: SDL.}.
+
+self@ThingSDL delay: ms
+[
+  nextEventTime <- Time now + (ms / 1000.0).
+  result <- SDLNet checkSockets (self socketSet) 0.
+  (result isNotNil and: [result isPositive])
+    ifTrue: [
+      {ready. unready} <- self activeSockets partition: [ record | record key isReady ].
+      self activeSockets: unready.
+      ready do: [ record |
+        sock <- record key.
+        suspension <- record value.
+        self socketSet delSocket: sock.
+        metalevel resume: suspension with: sock
+      ]
+    ].
+  metalevel runRunnableSuspensionsUntil: nextEventTime.
+]

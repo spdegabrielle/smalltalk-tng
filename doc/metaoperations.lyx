@@ -1,0 +1,238 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme default
+\graphics default
+\paperfontsize default
+\spacing single 
+\papersize a4paper
+\paperpackage widemarginsa4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+Metaoperations in ThiNG
+\layout Author
+
+Tony Garnock-Jones <tonyg@kcbbs.gen.nz>
+\layout Section
+
+Metaprotocol
+\layout Standard
+
+
+\emph on 
+Q: 
+\emph default 
+What is bytecode?
+\emph on 
+ A: 
+\emph default 
+A coding for a list of messages sent to the current location.
+\layout Standard
+
+Viewing bytecode this way leads to a definition of a 3-LISP style tower-of-inter
+preters.
+ The location is the interpreter running at phase1, interpreting code at
+ phase0.
+ The location's location is at phase2, and so on.
+ Each location runs bytecode - a sequence of messages sent to the phase
+ above.
+\layout Standard
+
+Here are the bytecode operations in use in the dummy ThiNG prototype:
+\layout Itemize
+
+local - load a value from a lexically-scoped variable
+\layout Itemize
+
+global - load a value from a per-location variable.
+ This translates to a slot access on the contents of the locations' global
+ cell, ie.
+ a unary method invocation on the globals object.
+ Adjusting the contents of the cell and updating the location with new cells
+ gives quite fine-grained thread-group-local control over global variables,
+ a.k.a.
+ ambient capabilities.
+\layout Itemize
+
+send - computes a number of values (in parallel), tuples them up with a
+ selector, and sends them through the dispatch+apply mechanism in the metaobject.
+\layout Itemize
+
+closure - takes a literal block object, cloning it with the current environment,
+ thus making a closure.
+\layout Itemize
+
+begin - performs a sequence of instructions.
+\layout Itemize
+
+scope - introduces a fresh named location, essentially starting a new sub-thread
+-group.
+ Eventually this will be modified to allow object-code-level control over
+ the shape of the new location - within limits.
+\layout Itemize
+
+literal - loads a literal object from the code object's literal vector
+\layout Itemize
+
+update - clones an existing object, adding or updating slots according to
+ the recipe attached to the instruction.
+\layout Itemize
+
+tuple - computes a number of values in parallel, and entuples them before
+ handing the tuple back to its continuation
+\layout Itemize
+
+resend - reinvokes the dispatch mechanism, starting from the current method.
+\layout Itemize
+
+method - should be syntactic sugar for a number of reflective operations,
+ although currently is hardcoded since the necessary location-manipulation
+ isn't even implemented, let alone exposed as reflective primitives to the
+ object level.
+\layout Standard
+
+Now, with luck once the compiler gets clever enough to inline away some
+ temporary object construction, we will be able to remove tuples - the replaceme
+nt will simply be the construction of a results object via normal update:
+ 
+\family typewriter 
+(r1 := val1 r2 := val2 ...)
+\family default 
+.
+ This introduces an asymmetry: function 
+\emph on 
+arguments
+\emph default 
+ will be passed using anonymous (ie.
+ indexed) tuples, but function 
+\emph on 
+results
+\emph default 
+ will be passed using named tuples.
+\begin_inset Foot
+collapsed false
+
+\layout Standard
+
+Perhaps it's worth thinking about how we might get named tuples for function
+ calls, too? One way might be to use selector fragments for positional arguments
+, although that leaves the question of naming the leftmost argument (eg.
+ in a unary message-send).
+ It's interesting, though, because one might be able to make the argument-record
+ a step in the delegation-chain for the running frame.
+\end_inset 
+
+
+\layout Standard
+
+Execution can be viewed as a kind of fold over a sequence of operations,
+ accumulating a changed interpreter (location) state.
+ The operations folded over, then, are stack manipulations (for computing
+ arguments), delay, promise and cell operations, and:
+\layout Itemize
+
+
+\family typewriter 
+loc\SpecialChar ~
+loadLocal:\SpecialChar ~
+#
+\emph on 
+name
+\layout Itemize
+
+
+\family typewriter 
+loc globals peek 
+\emph on 
+name
+\layout Itemize
+
+
+\family typewriter 
+loc send:\SpecialChar ~
+#
+\emph on 
+selector
+\emph default 
+ to:\SpecialChar ~
+{
+\emph on 
+arg
+\emph default 
+.
+\emph on 
+\SpecialChar ~
+arg
+\emph default 
+.\SpecialChar ~
+...}
+\layout Itemize
+
+
+\family typewriter 
+loc close: 
+\emph on 
+blocktemplate
+\layout Itemize
+
+
+\family typewriter 
+loc evaluate: 
+\emph on 
+bytecode
+\emph default 
+ in: 
+\emph on 
+freshlocationtemplate
+\layout Itemize
+
+
+\family typewriter 
+loc loadLiteral: 
+\emph on 
+literalvalue
+\layout Itemize
+
+
+\family typewriter 
+loc update: 
+\emph on 
+expr
+\emph default 
+ by: 
+\emph on 
+updatetemplate
+\layout Itemize
+
+
+\family typewriter 
+loc resend1 
+\begin_inset Quotes eld
+\end_inset 
+
+avoid keyword
+\begin_inset Quotes erd
+\end_inset 
+
+
+\layout Section
+
+Maps and Traits in functional prototype objects
+\the_end

@@ -1,0 +1,74 @@
+-*- slate -*-
+
+(to (handle-event (e (mouse-button-down (events sdl))))
+    (let ((s2 (render-text-blended (system-font sdl)
+				   "(click)"
+				   (make (color sdl) 255 255 255))))
+      (blit s2
+	    (nil (rect sdl))
+	    (video-surface sdl)
+	    (make (rect sdl) (x e) (y e) 0 0))
+      (free s2)
+      (flip (video-surface sdl))
+      (resend)))
+
+[ counter:= 0 | ->. ^ counter. counter:= counter + 1 ]
+
+
+[ -> a b. c = a + b. ^ c. ]
+
+[ -> a b. ^ (a + b). ]
+
+
+! e@(SDL EventTraits MouseButtonDown) handle !
+
+  s2 = SDL SystemFont renderText: "(click)" color: (SDL Color White).
+  s2 blitOn: SDL VideoSurface location: (SDL Rectangle x:= e x y:= e y).
+  s2 free.
+  SDL VideoSurface flip.
+  ^ resend.
+!!
+
+addGlobal: #Counter value: (generator:= Nil).
+
+! c@Counter new !
+  generator = [ loop(count:= 0) { ->. ^ count. loop(count:= count + 1) } ].
+  ^ (c generator:= generator).
+!!
+
+! c@Counter next !
+  ^ (c generator <- ).
+!!
+
+
+! _@0 isEven ! ^ True.  !!
+! _@0 isOdd  ! ^ False. !!
+
+! i@(Integer traits) isEven ! ^ (i - 1) isOdd.  !!
+! i@(Integer traits) isOdd  ! ^ (i - 1) isEven. !!
+
+
+{
+  x = y ifTrue: [
+}
+
+
+"---------------------------------------------------------------------------"
+
+loop(count:= 0) [ ^ count. loop(count:= count + 1). ].
+
+[ :a :b | c = a + b. ^ c. ]
+
+[ :a :b | ^ (a + b). ]
+
+addGlobal: #Counter value: (generator:= Nil).
+
+! c@Counter new !
+  generator = loop(count:= 0) [ ^ count. loop(count:= count + 1) ].
+  ^ (c generator:= generator).
+!!
+
+! c@Counter next !
+  ^ (c generator value).
+!!
+

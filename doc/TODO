@@ -1,0 +1,16 @@
+*** Challenges
+
+ - a definition location for messages to travel to (SOLVED by use of
+   blue calculus with DCHAM-style joinish formulation)
+
+   - model the STORE - this gives nice properties for forwarders,
+     garbage-collection-modelling, forces thought about exception
+     handling and runtime-failure etc etc.
+
+ - a way of lifting all locations with a particular channel in their
+   path (unknown)
+
+ - a means of dynamically scoping certain names, eg. class definitions
+   ("String") and helpers ("MEMOIZE", "ST80DISPATCH")
+
+   - investigate KLAIM - they may have some possible solutions.

@@ -1,0 +1,96 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme default
+\graphics default
+\paperfontsize default
+\papersize Default
+\paperpackage a4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+Layering Functionality in ThiNG
+\layout Standard
+
+To begin with, we're going to have a simple interpreter of ThiNG code.
+ All the advanced features will come in later revisions - we may even bootstrap
+ before we've implemented some of them!
+\layout Standard
+
+The features we're particularly interested in include:
+\layout Itemize
+
+Reflection
+\layout Itemize
+
+Locations
+\layout Itemize
+
+Transactions + Exceptions
+\layout Itemize
+
+Concurrency
+\layout Itemize
+
+Object Orientation
+\layout Itemize
+
+Distribution
+\layout Standard
+
+Reflection comes in three flavours, for ThiNG: behavioural, structural,
+ and lexical.
+ Behavioural reflection will be planned for but not actually implemented
+ in the first few iterations.
+ Structural reflection is a must - generic treatment of objects is required
+ for definition of useful tools such as object explorers etc.
+ Lexical reflection can wait until we need it for transactions and distribution.
+\layout Standard
+
+Locations are important - they are what, in ThiNG, allows access to meta-level
+ facilities.
+ A computation may stop an entire location and (non-locally) return to its
+ creator either a successful result or an exception.
+ The first iterations will have support for locations.
+\layout Standard
+
+Transactions and exceptions are closely related.
+ To begin with, we'll be implementing just exceptions - transactions can
+ wait for proper persistence.
+ Exceptions will be implemented using the rudimentary meta-level location
+ structures we'll require for normal non-local returns.
+\layout Standard
+
+Concurrency will be implemented in the first iterations.
+ A variant on the continuation-passing transform will be used to compute
+ arguments to a message send concurrently.
+\layout Standard
+
+Object-orientation will be implemented in the first iterations, although
+ not in the way we'll ultimately have it.
+ The goal is to have the lookup phase of OO dispatch go via the location
+ (= the meta-object), but for the first few iterations we'll hardcode the
+ lookup.
+ Allowing customisable lookup comes under the category of behavioural reflection.
+\layout Standard
+
+Distributed programming will be supported only once we have the rest sufficientl
+y pinned down.
+ It depends on lexical reflection.
+\the_end

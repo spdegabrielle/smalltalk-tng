@@ -1,0 +1,50 @@
+"-*- slate -*-"
+
+Namespaces addGlobal: #Counter value: (count:= Nil).
+
+[ :a :b | c = a + b. c ].
+
+[ :a :b | a + b ].
+
+_@(Integer traits) ++ _@(Integer traits)
+[
+  'ho ho ho'
+].
+
+a@(Integer traits) plus: b@(Integer traits)
+[
+  a + b
+].
+
+c@Counter new
+[
+  "a comment"
+  'a string'.
+  (c count:= 0 ref)
+].
+
+c@Counter next
+[
+  c count -> [ :value | c count <- value + 1 . value ]
+].
+
+_@True ifTrue: block@(Block traits) [ block value ].
+_@False ifTrue: block@(Block traits) [ False ].
+_@True ifFalse: block@(Block traits) [ True ].
+_@False ifFalse: block@(Block traits) [ block value ].
+
+_@True ifTrue: b1@(Block traits) ifFalse: b2@(Block traits) [ b1 value ].
+_@False ifTrue: b1@(Block traits) ifFalse: b2@(Block traits) [ b2 value ].
+
+_@Integer trySomethingWith: other
+[ results = Array with: 29 fib with: 30 fib with: 31 fib.
+  Console printLn: (results at: 0).
+  Console printLn: (results at: 1).
+  resend
+].
+
+[ ctxt (
+    True ifTrue: [ ctxt return: 3 ].
+    (123 . 234 . 345)
+  )
+].
