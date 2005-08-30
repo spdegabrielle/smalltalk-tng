@@ -1,4 +1,4 @@
-(*
+"
 
 So, let's assume data constructors for
 
@@ -26,7 +26,7 @@ Syntax for lazy lambda:
 
  - application: adjacency?
 
-     writeLine "Hello, World!"
+     writeLine ""Hello, World!""
 
  - abstraction: some kind of block syntax
 
@@ -40,7 +40,7 @@ Syntax for lazy lambda:
 	  next-value)
 	next)))
 
-*)
+"
 
 module packrat
 
@@ -290,3 +290,22 @@ bind (-> next results @ ParseResults{next: tvar} .
       else: next.
   ).
 ).
+
+(
+  "This is to parse as 'meta (-> m. ...)'."
+  meta -> m.
+  dict at: key ifAbsent: [m `return` false] -> val.
+  val
+)
+
+bind (-> over: list @ Pair{car: a cdr: d}
+         map: block @ (-> _ . _).
+      Pair{car: ($block a) cdr: (over: d map: block)}.
+
+bind (-> over: list @ Nil{}
+         map: block @ (-> _ . _).
+      list).
+
+bind (-> succ (i @ Integer{}). i + 1).
+
+"The pattern (-> p1 . p2) is sugar for Function{pattern: p1 body: p2}"
