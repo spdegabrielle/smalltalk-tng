@@ -1,0 +1,280 @@
+(*
+
+So, let's assume data constructors for
+
+ - labelled product types
+ - unlabelled product types
+
+What about sum types? What about lists?
+
+ label: value label: value label: value
+ a, b, c
+
+Core lazy lambda:
+
+ - application
+ - abstraction
+
+Reinterpreting these in a reflective lambda:
+
+ - split application up:
+   - substitution
+   - evaluation
+ - abstraction stays.
+
+Syntax for lazy lambda:
+
+ - application: adjacency?
+
+     writeLine "Hello, World!"
+
+ - abstraction: some kind of block syntax
+
+     (pattern -> expr)
+
+(define (parse-results-next results)
+  (let ((next (parse-results-next* results)))
+    (if (procedure? next)
+	(let ((next-value (next)))
+	  (set-parse-results-next! results next-value)
+	  next-value)
+	next)))
+
+*)
+
+module packrat
+
+(
+  let: next be: (atomic: get: next*: results),
+  if: (procedure?: next)
+    then: (let: next-value be: (apply: next),
+           atomic: set: (next*: results) to: next-value,
+           next-value)
+    else: next
+)
+
+[
+  tvar <- results next*.
+  [
+    next <- tvar value.
+    next procedure?
+     ifTrue: [next-value <- next apply.
+              tvar value: next-value.
+              next-value]
+     ifFalse: [next]
+  ] atomic
+]
+
+[
+  results next* -> tvar.
+  [
+    tvar value -> next.
+    next procedure?
+      ifTrue: [next apply -> next-value.
+               tvar value: next-value.
+               next-value]
+      ifFalse: [next]
+  ] atomic
+]
+
+Collection do: Block
+(-> (c, b).
+1 to: (c size) do: (-> i. b apply: (c at: i)).)
+
+
+-> results.
+results next* -> tvar.
+[
+  tvar value -> next.
+  next procedure?
+    ifTrue: [$next -> next-value.
+             tvar value: next-value.
+             next-value]
+    ifFalse: [next].
+] atomic.
+
+
+
+-> (list @ Pair car: a cdr: d, block @ -> _ . _).
+Pair car: ($block a) cdr: (d map: block).
+
+-> (Nil, block @ -> _ . _).
+Nil.
+
+
+myList map: (-> e. e + 3) -> result.
+
+
+
+
+-> results.
+next* results -> tvar.
+atomic [
+  value tvar -> next.
+  if: procedure? next
+    then: [$next -> next-value.
+           tvar value: next-value.
+           next-value]
+    else: [next].
+].
+
+
+
+bind (-> over: (list @ Pair car: a cdr: d) map: (block @ -> _ . _).
+      Pair car: ($block a) cdr: (over: d map: block)).
+
+bind (-> over: Nil map: (block @ -> _ . _).
+      Nil).
+
+bind (-> succ (i @ Integer). i + 1).
+
+
+bind (-> merge: (e1 @ ParseErrors _) with: e2                   . e1).
+bind (-> merge: e1                   with: (e2 @ ParseErrors _) . e2).
+bind (-> merge: (e1 @ ParseErrors pos: p1 \ _)
+         with:  (e2 @ ParseErrors pos: p2 \ _).
+  cond: (
+    [[p1 > p2] || [empty? e2]] => [e1],
+    [[p2 > p1] || [empty? e1]] => [e2]
+  ) else: [ParseErrors pos: p1
+                       expected: (union (expected e1, expected e2))
+                       messages: (append (messages e1, messages e2))]).
+
+
+
+
+
+
+
+
+
+
+bind (-> over: list @ Pair^(car: a cdr: d)
+         map: block @ (-> _ . _).
+      Pair^ car: ($block a) cdr: (over: d map: block)).
+
+bind (-> over: list @ Nil^_
+         map: block @ (-> _ . _).
+      list).
+
+bind (-> succ (i @ Integer^_). i + 1).
+
+
+bind (-> merge: (e1 @ ParseErrors^_) with: e2                   . e1).
+bind (-> merge: e1                   with: (e2 @ ParseErrors^_) . e2).
+bind (-> merge: (e1 @ ParseErrors^ pos: p1 \ _)
+         with:  (e2 @ ParseErrors^ pos: p2 \ _).
+  cond: (
+    [[p1 > p2] || [empty? e2]] => [e1],
+    [[p2 > p1] || [empty? e1]] => [e2]
+  ) else: [ParseErrors^ pos: p1
+                        expected: expected e1 `union` expected e2
+                        messages: messages e1 `append` messages e2]).
+
+
+
+
+
+
+
+
+
+
+bind (-> over: list @ Pair{car: a cdr: d}
+         map: block @ (-> _ . _).
+      Pair{car: ($block a) cdr: (over: d map: block)}.
+
+bind (-> over: list @ Nil{}
+         map: block @ (-> _ . _).
+      list).
+
+bind (-> succ (i @ Integer{}). i + 1).
+
+
+bind (-> merge: e1 @ ParseErrors{} with: e2                 . e1).
+bind (-> merge: e1                 with: e2 @ ParseErrors{} . e2).
+bind (-> merge: e1 @ ParseErrors{pos: p1 expected: x1 messages: m1}
+         with:  e2 @ ParseErrors{pos: p2 expected: x2 messages: m2}
+.
+  Cond {
+    [[p1 > p2] || [empty? e2]] => [e1],
+    [[p2 > p1] || [empty? e1]] => [e2]
+  } else: [ParseErrors{pos: p1
+                       expected: x1 `union` x2
+                       messages: m1 `append` m2}]
+).
+
+bind (-> next results @ ParseResults{next: tvar} .
+  atomic [
+    !tvar -> next.
+    if: procedure? next
+      then: [$next -> next-value.
+             tvar := next-value.
+             next-value]
+      else: [next].
+  ].
+).
+
+
+[
+  "This is to parse as 'meta (-> m. ...)'."
+  meta -> m.
+  dict at: key ifAbsent: [m `return` false] -> val.
+  val
+]
+
+
+
+
+
+
+
+
+"Now, experiment without the [] syntax for nullary functions"
+
+bind (-> merge: e1 @ ParseErrors{} with: e2                 . e1).
+bind (-> merge: e1                 with: e2 @ ParseErrors{} . e2).
+bind (-> merge: e1 @ ParseErrors{pos: p1 expected: x1 messages: m1}
+         with:  e2 @ ParseErrors{pos: p2 expected: x2 messages: m2}
+.
+  Cond {
+    (. (. p1 > p2) || (. empty? e2)) => (. e1),
+    (. (. p2 > p1) || (. empty? e1)) => (. e2)
+  } else: (. ParseErrors{pos: p1
+                       expected: x1 `union` x2
+                       messages: m1 `append` m2})
+).
+
+bind (-> next results @ ParseResults{next: tvar} .
+  atomic (. 
+    !tvar -> next.
+    if: procedure? next
+      then: (. $next -> next-value.
+             tvar := next-value.
+             next-value)
+      else: (. next).
+  ).
+).
+
+
+
+
+
+
+"Now, reimagine everything as lazy - so each expression is effectively a nullary thunk."
+"Note that pattern-matching is what forces promises!"
+"Spineless, tagless G-machine?..."
+"Monad? Is the interpreter the monad? How does polymorphic return work?"
+
+bind (-> merge: e1 @ ParseErrors{} with: e2                 . e1).
+bind (-> merge: e1                 with: e2 @ ParseErrors{} . e2).
+bind (-> merge: e1 @ ParseErrors{pos: p1 expected: x1 messages: m1}
+         with:  e2 @ ParseErrors{pos: p2 expected: x2 messages: m2}
+.
+  Cond {
+    ((p1 > p2) || (empty? e2)) => e1,
+    ((p2 > p1) || (empty? e1)) => e2
+  } else: ParseErrors{pos: p1
+                      expected: x1 `union` x2
+                      messages: m1 `append` m2}
+).
