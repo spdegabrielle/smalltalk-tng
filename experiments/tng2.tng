@@ -263,6 +263,7 @@ bind (-> next results @ ParseResults{next: tvar} .
 
 "Now, reimagine everything as lazy - so each expression is effectively a nullary thunk."
 "Note that pattern-matching is what forces promises!"
+"We add syntactic sugar for lists here."
 "Spineless, tagless G-machine?..."
 "Monad? Is the interpreter the monad? How does polymorphic return work?"
 
@@ -271,10 +272,21 @@ bind (-> merge: e1                 with: e2 @ ParseErrors{} . e2).
 bind (-> merge: e1 @ ParseErrors{pos: p1 expected: x1 messages: m1}
          with:  e2 @ ParseErrors{pos: p2 expected: x2 messages: m2}
 .
-  Cond {
+  Cond [
     ((p1 > p2) || (empty? e2)) => e1,
     ((p2 > p1) || (empty? e1)) => e2
-  } else: ParseErrors{pos: p1
+  ] else: ParseErrors{pos: p1
                       expected: x1 `union` x2
                       messages: m1 `append` m2}
+).
+
+bind (-> next results @ ParseResults{next: tvar} .
+  atomic (
+    !tvar -> next.
+    if: procedure? next
+      then: ($next () -> next-value.
+             tvar := next-value.
+             next-value)
+      else: next.
+  ).
 ).
