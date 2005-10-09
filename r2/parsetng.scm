@@ -1,5 +1,6 @@
 (require 'srfi-1)
 (load "json-scheme/portable-packrat.scm")
+(load "../lib/pregexp-20050502/pregexp.scm")
 
 (define (port-results filename p)
   (base-generator->results
@@ -41,28 +42,37 @@
 		     (parse-error-expected e)
 		     (parse-error-messages e))))))
 
-(define (packrat-regex exp)
-  (cond
-   ((string? exp) (lambda (starting-results)
-		    (let loop ((pos 0) (results starting-results))
-		      (if (= pos (string-length exp))
-			  (make-result exp results)
-			  (if (char=? (parse-results-token-value results)
-				      (string-ref exp pos))
-			      (loop (+ pos 1) (parse-results-next results))
-			      (make-expected-result (parse-results-position starting-results)
-						    exp))))))
-   ((and (pair? exp)
-	 (null? (cdr exp))
-	 (string? (car exp))) (let ((chars (string->list (car exp))))
-				(lambda (results)
-				  (if (memv (parse-results-token-value results) chars)
-				      (make-result #t (parse-results-next results))
-				      (make-expected-result (parse-results-position results)
-							    exp)))))
-   ((and (pair? exp)
-	 (
+(define (packrat-token str)
+  (lambda (starting-results)
+    (let loop ((pos 0) (results starting-results))
+      (if (= pos (string-length str))
+	  (make-result str results)
+	  (if (and results (char=? (parse-results-token-value results) (string-ref str pos)))
+	      (loop (+ pos 1) (parse-results-next results))
+	      (make-expected-result (parse-results-position starting-results) str))))))
 
-(define lex-tng
-  (packrat-parser token
-		  (token ((white 
+(define (parse-results-take results n)
+  (let loop ((acc '())
+	     (results results)
+	     (n n))
+    (if (zero? n)
+	(values (list->string (reverse acc))
+		results)
+	(loop (cons (parse-results-token-value results) acc)
+	      (parse-results-next results)
+	      (- n 1)))))
+
+(define (packrat-regex exp)
+  (let ((re (if (string? exp) (pregexp exp) exp)))
+    (lambda (results)
+      (let* ((stream (pregexp-make-stream
+		      (lambda (r)
+			(if r
+			    (cons (parse-results-token-value r)
+				  (parse-results-next r))
+			    (cons #f #f)))))
+	     (match (pregexp-match-head re stream)))
+	(if match
+	    (let-values (((str next) (parse-results-take results (cdr match))))
+	      (make-result str next))
+	    (make-expected-result (parse-results-position results) exp))))))
