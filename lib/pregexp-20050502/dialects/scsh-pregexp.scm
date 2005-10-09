@@ -2,6 +2,7 @@
  "(define-structure pregexp
                   (export pregexp
                           pregexp-match-positions
+                          pregexp-match-head
                           pregexp-match
                           pregexp-split
                           pregexp-replace

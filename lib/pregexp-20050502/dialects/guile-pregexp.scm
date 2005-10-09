@@ -14,6 +14,7 @@
 (export *pregexp-comment-char*
         pregexp
         pregexp-match
+        pregexp-match-head
         pregexp-match-positions
         pregexp-quote
         pregexp-replace

@@ -14,6 +14,7 @@
  "(module pregexp mzscheme
         (provide pregexp
                  pregexp-match-positions
+                 pregexp-match-head
                  pregexp-match
                  pregexp-split
                  pregexp-replace

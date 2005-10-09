@@ -390,4 +390,62 @@
    
   )
 
+(define (make-simple-stream)
+  (pregexp-make-stream (lambda (seed)
+			 (cond
+			  ((char>? seed #\z) (cons #f seed))
+			  (else (let ((next-seed (integer->char (+ (char->integer seed) 1))))
+				  (cons seed next-seed)))))
+		       #\a))
+
+(define (make-stupid-string-stream str)
+  (pregexp-make-stream (lambda (i)
+			 (cond
+			  ((>= i (string-length str)) (cons #f i))
+			  (else (cons (string-ref str i) (+ i 1)))))
+		       0))
+
+(test
+ ;; Streams.
+
+ (pregexp-stream-length (make-simple-stream))
+ #f
+
+ (pregexp-stream-ref (make-simple-stream) 0)
+ #\a
+
+ (pregexp-stream-ref (make-simple-stream) 25)
+ #\z
+
+ (let ((s (make-simple-stream)))
+   (pregexp-stream-ref s 25)
+   (pregexp-stream-length s))
+ 26
+
+ (pregexp-match "def" (make-simple-stream))
+ ("def")
+
+ (pregexp-match "d(e){2}f" (make-simple-stream))
+ #f
+
+ (pregexp-match "zzz" (make-simple-stream))
+ #f
+
+ (pregexp-match "A" (make-simple-stream))
+ #f
+
+ (pregexp-match-positions "A" (make-stupid-string-stream "hiAthere"))
+ ((2 . 3))
+
+ (pregexp-match "de(.*)qr(.)" (make-simple-stream))
+ ("defghijklmnopqrs" "fghijklmnop" "s")
+
+ (pregexp-match-head "abc" (make-stupid-string-stream "hoabc"))
+ #f
+
+ (pregexp-match-head "abc" (make-stupid-string-stream "abc"))
+ ((0 . 3))
+
+ )
+
 (bottomline)
