@@ -446,6 +446,9 @@
  (pregexp-match-head "abc" (make-stupid-string-stream "abc"))
  ((0 . 3))
 
+ (pregexp-match-head "[a-z]" (make-stupid-string-stream ""))
+ #f
+
  )
 
 (bottomline)

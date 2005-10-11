@@ -373,11 +373,13 @@
   (lambda (s i n)
     (if n
 	(>= i n)
-	(let ((len (pregexp-stream-length s)))
-	  (and len
-	       (>= i len))))))
+	(begin (pregexp-stream-fill! s (+ i 1))
+	       (let ((len (pregexp-stream-length s)))
+		 (and len
+		      (>= i len)))))))
 
 (define (pregexp-stream-ref s i)
+  ;;(write `(pregexp-stream-ref ,s ,i))(newline)
   (cond
    ((string? s) (string-ref s i))
    ((vector? s)
@@ -386,42 +388,43 @@
 	  (pregexp-error 'pregexp-stream-ref 'index-out-of-range i len s)
 	  (begin
 	    (if (>= i (vector-ref s 1))
-		;; We say (+ i 3) here to force lookahead. This lets
+		;; We say (+ i 2) here to force lookahead. This lets
 		;; us safely detect end-of-file without being too
 		;; eager about it.
-		(pregexp-stream-fill! s (+ i 3)))
+		(pregexp-stream-fill! s (+ i 2)))
 	    (vector-ref (vector-ref s 4) i)))))
    (else (pregexp-error 'pregexp-stream-ref 'non-stream-argument s))))
 
 (define (pregexp-stream-fill! s n)
-  (let* ((v (vector-ref s 4))
-	 (vl (vector-length v)))
-    (if (> n vl)
-	(let ((v1 (make-vector (+ n 128) #f)))
-	  (do ((x 0 (+ x 1)))
-	      ((= x vl))
-	    (vector-set! v1 x (vector-ref v x)))
-	  (vector-set! s 4 v1)
-	  (set! v v1)))
-    (let ((char-generator (vector-ref s 2))
-	  (finish (lambda (i seed answer)
-		    (vector-set! s 1 i)
-		    (vector-set! s 3 seed)
-		    answer)))
-      (let loop ((i (vector-ref s 1))
-		 (seed (vector-ref s 3)))
-	(if (= i n)
-	    (finish i seed 'done)
-	    (let* ((result (char-generator seed))
-		   (ch (car result))
-		   (next-seed (cdr result)))
-	      (if (not ch)
-		  (begin
-		    (vector-set! s 0 i)
-		    (finish i next-seed 'reached-eof))
-		  (begin
-		    (vector-set! v i ch)
-		    (loop (+ i 1) next-seed)))))))))
+  (if (vector? s)
+      (let* ((v (vector-ref s 4))
+	     (vl (vector-length v)))
+	(if (> n vl)
+	    (let ((v1 (make-vector (+ n 128) #f)))
+	      (do ((x 0 (+ x 1)))
+		  ((= x vl))
+		(vector-set! v1 x (vector-ref v x)))
+	      (vector-set! s 4 v1)
+	      (set! v v1)))
+	(let ((char-generator (vector-ref s 2))
+	      (finish (lambda (i seed answer)
+			(vector-set! s 1 i)
+			(vector-set! s 3 seed)
+			answer)))
+	  (let loop ((i (vector-ref s 1))
+		     (seed (vector-ref s 3)))
+	    (if (= i n)
+		(finish i seed 'done)
+		(let* ((result (char-generator seed))
+		       (ch (car result))
+		       (next-seed (cdr result)))
+		  (if (not ch)
+		      (begin
+			(vector-set! s 0 i)
+			(finish i next-seed 'reached-eof))
+		      (begin
+			(vector-set! v i ch)
+			(loop (+ i 1) next-seed))))))))))
 
 (define (pregexp-substream s i1 i2)
   (cond
