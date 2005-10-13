@@ -116,10 +116,22 @@
 			(if (eq? (parse-results-token-value results) #\")
 			    (white (parse-results-next results))
 			    (skip-comment-body (parse-results-next results))))
+		      (define (string-body results)
+			(string-body* results '()))
+		      (define (string-body* results acc)
+			(let ((ch (parse-results-token-value results))
+			      (next (parse-results-next results)))
+			  (if (eq? ch #\')
+			      (string-body-quote next acc)
+			      (string-body* next (cons ch acc)))))
+		      (define (string-body-quote results acc)
+			(if (eq? (parse-results-token-value results) #\')
+			    (string-body* (parse-results-next results) (cons #\' acc))
+			    (make-result (list->string (reverse acc)) results)))
 		      (define-packrat-cached atom (packrat-regex 'atom "[A-Z]"midsym"*"))
 		      (define-packrat-cached var (packrat-regex 'var "[a-z]"midsym"*"))
 		      (define-packrat-cached infixop-raw (packrat-regex 'infixop p midsym"*"))
-		      (define-packrat-cached integer (packrat-regex 'integer "[0-9]+"))
+		      (define-packrat-cached integer (packrat-regex 'integer "-?[0-9]+"))
 		      (define (rewrite-infix parts)
 			(let loop ((left (second parts))
 				   (parts parts))
@@ -137,11 +149,11 @@
 		    (tuple0 ((s <- tuple1) s)
 			    (() '(tuple)))
 		    (tuple1 ((s <- tuple1*) (if (= (length s) 2) (cadr s) s)))
-		    (tuple1* ((d <- dict white '#\, s <- tuple1*) `(tuple ,d ,@(cdr s)))
-			     ((d <- dict) `(tuple ,d)))
-		    (dict ((e <- entry white d <- dict) `(dict ,e ,@(cdr d)))
-			  ((e <- entry) `(dict ,e))
-			  ((v <- funcall) v))
+		    (tuple1* ((d <- fun white '#\, s <- tuple1*) `(tuple ,d ,@(cdr s)))
+			     ((d <- fun) `(tuple ,d)))
+		    (fun ((e <- entry white d <- fun) `(fun ,e ,@(cdr d)))
+			 ((e <- entry) `(fun ,e))
+			 ((v <- funcall) v))
 		    (entry ((k <- simple colon v <- funcall) (list k v)))
 		    (semi ((white '#\; (! '#\;)) 'semi))
 		    (colon ((white '#\:) 'colon))
@@ -163,7 +175,9 @@
 			     ((a <- atom) `(atom ,(string->symbol a)))
 			     ((a <- var) `(var ,(string->symbol a)))
 			     (('#\_) `(discard)))
-		    (literal ((i <- integer) (string->number i))))))
+		    (str (('#\' s <- string-body) s))
+		    (literal ((i <- integer) (string->number i))
+			     ((s <- str) s)))))
 
 (define read-ThiNG
   (lambda ()
@@ -192,7 +206,8 @@
 
 (define (repl-ThiNG)
   (display ">>>ThiNG>>> ")
-  (let ((x (read-ThiNG)))
+  (let ((x (fluid-let ((error (lambda x `(ERROR ,@x))))
+	     (read-ThiNG))))
     (newline)
     ;;(pretty-print (cst->v x))
     (pretty-print x)
@@ -214,4 +229,8 @@ define fold-left {
 map {x: x + 1} [1, 2, 3];;
 
 map {x: x + 1} (list 1 2 3);;
+
+
+ {x: (Update: {} Set: x To: 123)} 'hi';;
+
 "
