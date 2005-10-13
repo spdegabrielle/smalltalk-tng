@@ -118,9 +118,7 @@
 			    (skip-comment-body (parse-results-next results))))
 		      (define-packrat-cached atom (packrat-regex 'atom "[A-Z]"midsym"*"))
 		      (define-packrat-cached var (packrat-regex 'var "[a-z]"midsym"*"))
-		      (define-packrat-cached infixop-raw
-			(packrat-or (packrat-regex 'infixop p midsym"*?" p)
-				    (packrat-regex 'infixop p)))
+		      (define-packrat-cached infixop-raw (packrat-regex 'infixop p midsym"*"))
 		      (define-packrat-cached integer (packrat-regex 'integer "[0-9]+"))
 		      (define (rewrite-infix parts)
 			(let loop ((left (second parts))
