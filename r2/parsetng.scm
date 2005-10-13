@@ -71,7 +71,7 @@
 			     (cons #f #f)))
 		       results))
 
-(define (packrat-regex . string-fragments)
+(define (packrat-regex name . string-fragments)
   (let* ((exp (string-concatenate string-fragments))
 	 (re (pregexp exp)))
     (lambda (results)
@@ -80,7 +80,7 @@
 	(if match
 	    (let-values (((str next) (parse-results-take results (cdar match))))
 	      (make-result str next))
-	    (make-expected-result (parse-results-position results) exp))))))
+	    (make-expected-result (parse-results-position results) name))))))
 
 (define (packrat-cache key parser)
   (lambda (results)
@@ -116,12 +116,12 @@
 			(if (eq? (parse-results-token-value results) #\")
 			    (white (parse-results-next results))
 			    (skip-comment-body (parse-results-next results))))
-		      (define-packrat-cached atom (packrat-regex "[a-z]"midsym"*"))
+		      (define-packrat-cached atom (packrat-regex 'atom "[A-Z]"midsym"*"))
+		      (define-packrat-cached var (packrat-regex 'var "[a-z]"midsym"*"))
 		      (define-packrat-cached infixop-raw
-			(packrat-or (packrat-regex p midsym"*" p)
-				    (packrat-regex p)))
-		      (define-packrat-cached var (packrat-regex "[A-Z]"midsym"*"))
-		      (define-packrat-cached integer (packrat-regex "[0-9]+"))
+			(packrat-or (packrat-regex 'infixop p midsym"*?" p)
+				    (packrat-regex 'infixop p)))
+		      (define-packrat-cached integer (packrat-regex 'integer "[0-9]+"))
 		      (define (rewrite-infix parts)
 			(let loop ((left (second parts))
 				   (parts parts))
@@ -130,11 +130,11 @@
 				 (op (car parts))     (parts (cdr parts))
 				 (rest (car parts)))
 			  (if at-end
-			      `(app ,op (tuple ,left ,rest))
-			      (loop `(app ,op (tuple ,left ,(second rest)))
+			      `(adj ,op (adj (tuple ,left ,rest) (tuple)))
+			      (loop `(adj ,op (adj (tuple ,left ,(second rest)) (tuple)))
 				    rest)))))
 		      (values tuple1 toplevel))
-		    (toplevel ((d <- tuple0 white '#\;) d))
+		    (toplevel ((d <- tuple0 white '#\; '#\;) d))
 		    (datum ((s <- tuple0) s))
 		    (tuple0 ((s <- tuple1) s)
 			    (() '(tuple)))
@@ -145,24 +145,26 @@
 			  ((e <- entry) `(dict ,e))
 			  ((v <- funcall) v))
 		    (entry ((k <- simple colon v <- funcall) (list k v)))
+		    (semi ((white '#\; (! '#\;)) 'semi))
 		    (colon ((white '#\:) 'colon))
 		    (funcall ((parts <- funcall*) (rewrite-infix parts))
-			     ((a <- app) a))
-		    (funcall* ((a <- app o <- infixop b <- funcall*) (list #f a o b))
-			      ((a <- app o <- infixop b <- app) (list #t a o b)))
+			     ((a <- adj) a))
+		    (funcall* ((a <- adj o <- infixop b <- funcall*) (list #f a o b))
+			      ((a <- adj o <- infixop b <- adj) (list #t a o b)))
 		    (infixop ((white r <- infixop-raw) `(atom ,(string->symbol r))))
-		    (app ((parts <- app*) (fold (lambda (arg op) `(app ,op ,arg))
-						(car parts)
-						(cdr parts))))
-		    (app* ((v <- simple white vs <- app*) (cons v vs))
-			  ((v <- simple (! colon)) (list v)))
+		    (adj ((a <- adj*) (if (equal? (caddr a) '(tuple)) (cadr a) a)))
+		    (adj* ((v <- simple white vs <- adj*) `(adj ,v ,vs))
+			  ((v <- simple semi vs <- simple) `(adj ,v ,vs))
+			  ((v <- simple (! colon)) `(adj ,v (tuple))))
 		    (simple ((white d1 <- simple1) d1))
-		    (simple1 (('#\( d <- datum white '#\)) d)
+		    (simple1 (('#\( o <- infixop white '#\)) o)
+			     (('#\( d <- datum white '#\)) d)
 			     (('#\{ d <- datum white '#\}) `(quote ,d))
 			     (('#\[ d <- datum white '#\]) `(meta ,d))
 			     ((l <- literal) `(lit ,l))
 			     ((a <- atom) `(atom ,(string->symbol a)))
-			     ((a <- var) `(var ,(string->symbol a))))
+			     ((a <- var) `(var ,(string->symbol a)))
+			     (('#\_) `(discard)))
 		    (literal ((i <- integer) (string->number i))))))
 
 (define read-ThiNG
@@ -175,11 +177,43 @@
     (parse-result->value "While parsing ThiNG"
 			 (parse-ThiNG (string-results "<string>" s)))))
 
+; (define (cst->v cst)
+;   (if (pair? cst)
+;       (cond
+;        ((eq? (car cst) 'adj)
+; 	(cons (cst->v (cadr cst))
+; 	      (cst->v (caddr cst))))
+;        ((and (eq? (car cst) 'tuple)
+; 	     (null? (cdr cst)))
+; 	'())
+;        ((eq? (car cst) 'quote)
+; 	(list 'quote (cst->v (cadr cst))))
+;        (else
+; 	(list->vector (map cst->v cst))))
+;       cst))
+
 (define (repl-ThiNG)
   (display ">>>ThiNG>>> ")
   (let ((x (read-ThiNG)))
-    (write x)
     (newline)
-    (repl-ThiNG)))
+    ;;(pretty-print (cst->v x))
+    (pretty-print x)
+    (newline)
+    (if (not (equal? x '(atom Quit)))
+	(repl-ThiNG))))
 
-;; Current problem: inputs like "1 <<;" or "a <- b" in read-ThiNG. Oddly, string->ThiNG seems OK.
+"
+define map {
+  (_ f Nil)           : Nil
+  (_ f (Hd: h Tl: t)) : (Hd: f h Tl: map f t)
+};;
+
+define fold-left {
+  (_ kons knil Nil)           : knil
+  (_ kons knil (Hd: h Tl: t)) : fold-left kons (kons h knil) t
+};;
+
+map {x: x + 1} [1, 2, 3];;
+
+map {x: x + 1} (list 1 2 3);;
+"
