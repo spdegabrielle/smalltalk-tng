@@ -1,0 +1,53 @@
+define map [
+  (f Nil)           : Nil
+  (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]
+];;
+
+(arg Hd)
+(arg Tl)
+
+"a pattern:" [(a b): _]
+"-->" (arg a b)
+
+define fold-left [
+  (kons knil Nil)           : knil
+  (kons knil [Hd: h Tl: t]) : fold-left kons (kons h knil) t
+];;
+
+map [x: x + 1] ([1, 2, 3] AsList);;
+
+letrec (map = [(f Nil) : Nil
+	       (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]],
+	toList = [[]     : Nil
+		  [h ; t]: [Hd: h Tl: (toList t)]]);
+(map [x: x] (toList [1 2 3]))
+
+define map [
+  (f Nil)           : Nil
+  (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]
+];;
+
+map [x: x + 1] (toList [1 2 3]);;
+
+[x: (Update: [] Set: x To: 123)] 'hi';;
+
+define-behaviour Cst;;
+define-method ({Cst cst} Convert) (
+  Case: {cst} Of: (
+    [[Adj: [l, r]]: [(l Convert) (r Convert)]],
+    [[Tuple: cs]: (let cs* = map [x: x Convert] cs in {Tuple cs*})],
+    [[Quote: v]: v],
+    [_: cst]
+  )
+);;
+
+"To lift something:" {lifted} <- val
+"To drop something:" val <- {lifted}
+
+define-method ({Tuple x} Length) (
+  x Length;;
+);;
+
+define-method ({Tuple x} AsList) (
+  (0 .. x Length) Map: [i: x ? i]
+);;
