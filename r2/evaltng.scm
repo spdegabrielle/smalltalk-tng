@@ -110,7 +110,7 @@
 					 env
 					 (lambda (code new-env)
 					   (let ((result (eval-ThiNG code new-env)))
-					     (and-let* ((b1 (match-quoted pp result b)))
+					     (and-let* ((b1 (match-one pp result b)))
 					       (match-each (cdr clauses) b1))))
 					 (lambda ()
 					   #f))))))))
