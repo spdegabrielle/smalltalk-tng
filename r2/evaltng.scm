@@ -60,9 +60,9 @@
 		 ,(tng quote-layer (caddr forced-term) env)))
     ((fun) (make-tng-closure (cdr forced-term) env))
     ((var quote meta-quote discard)
-     (eval-error "quote-layer: pointless quoting" forced-term forced-term env))
+     (eval-error "quote-layer: pointless quoting" forced-term env))
     (else
-     (eval-error "quote-layer: unknown term" forced-term forced-term env))))
+     (eval-error "quote-layer: unknown term" forced-term env))))
 
 (define (match-quoted p v b)
   (case (car p)
@@ -106,7 +106,6 @@
 				   (pp (cadar clauses)))
 			       (eval-app vv
 					 (fixup-outer-pattern-value pv)
-					 p
 					 env
 					 (lambda (code new-env)
 					   (let ((result (eval-ThiNG code new-env)))
@@ -159,7 +158,7 @@
 		 ,(eval-args (caddr args) env)))
     (else (eval-ThiNG args env))))
 
-(define (eval-app fn args outer-exp env sk fk)
+(define (eval-app fn args env sk fk)
   (let ((fn (force-tng fn)))
     (if (tng-closure? fn)
 	(let* ((args (eval-args args env))
@@ -169,36 +168,36 @@
 			(tng-closure-outer-env fn)
 			sk
 			fk))
-	(eval-error "eval-app: attempt to apply non-function" fn outer-exp env))))
+	(eval-error "eval-app: attempt to apply non-function" fn env))))
 
-(define (eval-ThiNG outer-exp env)
-  (let-tng ev ((term outer-exp)
-	       (env env))
-	   (case (car term)
-	     ((tuple) ;; Parallel evaluation? sigh
-	      `(tuple ,@(map (cut ev <> env) (cdr term))))
-	     ((atom) term)
-	     ((var) (cond
-		     ((assq (cadr term) env) => cdr)
-		     (else (eval-error "Unbound variable" term outer-exp env))))
-	     ((lit) term)
-	     ((adj) (eval-app (eval-ThiNG (cadr term) env)
-			      (caddr term)
-			      outer-exp
-			      env
-			      eval-ThiNG
-			      (lambda ()
-				(eval-error "no match found" term outer-exp env))))
-	     ((fun) (eval-error "Situations unimplemented" term outer-exp env))
-	     ((quote) (if #f ;; disable quoting through one layer of tupling
-			  (let ((v (force-tng (cadr term))))
-			    (if (eq? (car v) 'tuple)
-				`(tuple ,@(map (lambda (x) (tng quote-layer x env)) (cdr v)))
-				(quote-layer v env)))
-			  (quote-layer (force-tng (cadr term)) env)))
-	     ((meta-quote) (eval-error "meta-quote unimplemented" term outer-exp env))
-	     ((discard) (eval-error "Discard appeared on the right" term outer-exp env))
-	     (else (eval-error "Unknown term" term outer-exp env)))))
+(define (eval-ThiNG-inner term env)
+  (case (car term)
+    ((tuple) ;; Parallel evaluation? sigh
+     `(tuple ,@(map (cut eval-ThiNG <> env) (cdr term))))
+    ((atom) term)
+    ((var) (cond
+	    ((assq (cadr term) env) => cdr)
+	    (else (eval-error "Unbound variable" term env))))
+    ((lit) term)
+    ((adj) (eval-app (eval-ThiNG (cadr term) env)
+		     (caddr term)
+		     env
+		     eval-ThiNG
+		     (lambda ()
+		       (eval-error "no match found" term env))))
+    ((fun) (eval-error "Situations unimplemented" term env))
+    ((quote) (if #f ;; disable quoting through one layer of tupling
+		 (let ((v (force-tng (cadr term))))
+		   (if (eq? (car v) 'tuple)
+		       `(tuple ,@(map (lambda (x) (tng quote-layer x env)) (cdr v)))
+		       (quote-layer v env)))
+		 (quote-layer (force-tng (cadr term)) env)))
+    ((meta-quote) (eval-error "meta-quote unimplemented" term env))
+    ((discard) (eval-error "Discard appeared on the right" term env))
+    (else (eval-error "Unknown term" term env))))
+
+(define (eval-ThiNG term env)
+  (tng eval-ThiNG-inner term env))
 
 (define (call-with-stupid-error-handler f)
   (call-with-current-continuation
@@ -236,4 +235,5 @@
 ;(trace match-one)
 ;(trace match-quoted)
 ;(trace match-clause)
-;(trace eval-app)
+(trace eval-app)
+(trace eval-ThiNG-inner)

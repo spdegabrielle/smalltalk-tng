@@ -20,7 +20,8 @@ letrec (map = [(f Nil) : Nil
 	       (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]],
 	toList = [[]     : Nil
 		  [h ; t]: [Hd: h Tl: (toList t)]]);
-(map [x: x] (toList [1 2 3]))
+map [x: x] (toList [1 2 3])
+;;
 
 define map [
   (f Nil)           : Nil
