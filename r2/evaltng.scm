@@ -45,7 +45,9 @@
       (if (tng-promise-defined? t)
 	  (tng-promise-value t)
 	  (let ((closure (tng-promise-value t)))
-	    (let ((v (apply (car closure) (map force-tng (cdr closure)))))
+	    ;; I am unsure about this recursive force call! Can't things be arranged
+	    ;; so that we never promise a promise? %%%
+	    (let ((v (force-tng (apply (car closure) (map force-tng (cdr closure))))))
 	      (set-tng-promise-defined?! t #t)
 	      (set-tng-promise-value! t v)
 	      v)))
