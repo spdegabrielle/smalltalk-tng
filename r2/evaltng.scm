@@ -32,12 +32,6 @@
     ((_ interp arg ...)
      (make-tng-promise* #f (list interp arg ...)))))
 
-(define-syntax let-tng
-  (syntax-rules ()
-    ((_ name ((var val) ...) body ...)
-     (let name ((var val) ...)
-       (tng (lambda (var ...) body ...) var ...)))))
-
 (define (force-tng t)
   (if (tng-promise? t)
       (if (tng-promise-defined? t)
