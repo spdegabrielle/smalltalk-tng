@@ -109,7 +109,7 @@
 			     (let ((pv (caar clauses))
 				   (pp (cadar clauses)))
 			       (eval-app vv
-					 (fixup-outer-pattern-value pv)
+					 pv
 					 env
 					 (lambda (code new-env)
 					   (let ((result (eval-ThiNG code new-env)))
@@ -137,42 +137,25 @@
 		     b))
 	 (else (eval-error "match-one: unknown term" p vv b)))))))
 
-(define (fixup-outer-pattern p)
-  (if (eq? (car p) 'adj)
-      `(quote (adj (discard) ,p))
-      `(quote (adj (discard) (adj ,p (tuple))))))
-
-(define (fixup-outer-pattern-value pv)
-  (if (eq? (car pv) 'adj)
-      pv
-      `(adj ,pv (tuple))))
-
-(define (match-clause clauses args outer-env sk fk)
+(define (match-clause clauses arg outer-env sk fk)
   (let search ((clauses clauses))
     (if (null? clauses)
 	(fk)
-	(let ((new-env (match-one (fixup-outer-pattern (caar clauses)) args outer-env)))
+	(let ((new-env (match-one (caar clauses) arg outer-env)))
 	  (if new-env
 	      (sk (cadar clauses) new-env)
 	      (search (cdr clauses)))))))
 
-(define (eval-args args env)
-  (case (car args)
-    ((adj) `(adj ,(eval-ThiNG (cadr args) env)
-		 ,(eval-args (caddr args) env)))
-    (else (eval-ThiNG args env))))
-
-(define (eval-app fn args env sk fk)
+(define (eval-app fn arg env sk fk)
   (let ((fn (force-tng fn)))
     (if (tng-closure? fn)
-	(let* ((args (eval-args args env))
-	       (combination `(adj ,fn ,args)))
+	(let* ((arg (eval-ThiNG arg env)))
 	  (match-clause (tng-closure-clauses fn)
-			combination
+			arg
 			(tng-closure-outer-env fn)
 			sk
 			fk))
-	(eval-error "eval-app: attempt to apply non-function" fn env))))
+	(eval-error "eval-app: attempt to apply non-function" fn arg env))))
 
 (define (eval-ThiNG-inner term env)
   (case (car term)
@@ -239,5 +222,6 @@
 ;(trace match-one)
 ;(trace match-quoted)
 ;(trace match-clause)
-(trace eval-app)
-(trace eval-ThiNG-inner)
+;(trace force-tng)
+;(trace eval-app)
+;(trace eval-ThiNG-inner)
