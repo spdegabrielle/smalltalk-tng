@@ -53,11 +53,30 @@ define-method ({Tuple x} AsList) (
   (0 .. x Length) Map: [i: x ? i]
 );;
 
+"A semi- or pseudo-monadic version:"
 define-method ((results = {ParseResults _}) Next) (
-  let ([has-value, next] = (atomic Read: (results Next*))) in
+  [has-value, next] <- (atomic Read: (results Next*)),
   (If: has-value
    Then: next
-   Else: (let next-value = next [] in
-	  let _ = (atomic Into: (results Next*) Write: (True, next-value)) in
+   Else: (next-value <- (next []),
+	  atomic Into: (results Next*) Write: (True, next-value),
 	  next-value))
+);;
+
+"A monadic version:"
+"(This is stupid code anyway because it's a lazy language,
+it already delays and evaluates once!)"
+"We don't put the 'atomic' in here to stay compositional as long as possible"
+define-method ((results = {ParseResults _}) Next) (
+  [has-value, next] <- (Read: (results Next*)),
+  (If: has-value
+   Then: return next
+   Else: (next-value <- return (next []),
+	  Into: (results Next*) Write: (True, next-value),
+	  return next-value))
+);;
+
+"We don't put the 'atomic' in here to stay compositional as long as possible"
+define-method (var Bump) (
+  Into: var Write: (1 + (Read: var))
 );;
