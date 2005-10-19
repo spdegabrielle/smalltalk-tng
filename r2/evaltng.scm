@@ -12,8 +12,9 @@
   (<literal> (or (<integer>))))
 
 (define-record-type tng-promise
-  (make-tng-promise* defined? value)
+  (make-tng-promise* id defined? value)
   tng-promise?
+  (id tng-promise-id)
   (defined? tng-promise-defined? set-tng-promise-defined?!)
   (value tng-promise-value set-tng-promise-value!))
 
@@ -25,12 +26,19 @@
 
 (define-record-printer (tng-promise p out)
   (for-each (cut display <> out)
-	    (list "#<tng-promise "(tng-promise-defined? p)" "(tng-promise-value p)">")))
+	    (list "#<tng-promise "(tng-promise-id p)" "(tng-promise-defined? p)" "(tng-promise-value p)">")))
+
+(define make-promise-id
+  (let ((counter 0))
+    (lambda ()
+      (let ((val counter))
+	(set! counter (+ counter 1))
+	val))))
 
 (define-syntax tng
   (syntax-rules ()
     ((_ interp arg ...)
-     (make-tng-promise* #f (list interp arg ...)))))
+     (make-tng-promise* (make-promise-id) #f (list interp arg ...)))))
 
 (define (force-tng t)
   (if (tng-promise? t)
