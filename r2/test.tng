@@ -52,3 +52,12 @@ define-method ({Tuple x} Length) (
 define-method ({Tuple x} AsList) (
   (0 .. x Length) Map: [i: x ? i]
 );;
+
+define-method ((results = {ParseResults _}) Next) (
+  let ([has-value, next] = (atomic Read: (results Next*))) in
+  (If: has-value
+   Then: next
+   Else: (let next-value = next [] in
+	  let _ = (atomic Into: (results Next*) Write: (True, next-value)) in
+	  next-value))
+);;
