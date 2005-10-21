@@ -25,6 +25,8 @@
 ;; Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 ;; Boston, MA 02111-1307, USA.
 
+(require 'cmuscheme)
+(require 'comint)
 (require 'cc-mode)
 
 (defvar tng-r3-mode-syntax-table nil
@@ -85,14 +87,7 @@
      ))
  "Default expressions to highlight in TNG-R3 mode.")
 
-;;;###autoload
-(define-derived-mode tng-r3-mode c-mode "TNG-R3"
-  "Major mode for editing TNG-R3 code.
-This is much like C mode except for the syntax of comments.  Its keymap
-inherits from C mode's and it has the same variables for customizing
-indentation.  It has its own abbrev table and its own syntax table.
-
-Turning on TNG-R3 mode runs `tng-r3-mode-hook'."
+(defun tng-mode-variables ()
   (make-local-variable 'comment-start)
   (make-local-variable 'comment-end)
   (make-local-variable 'comment-start-skip)
@@ -103,6 +98,57 @@ Turning on TNG-R3 mode runs `tng-r3-mode-hook'."
   (setq c-syntactic-indentation nil)
   (make-local-variable 'font-lock-defaults)
   (setq font-lock-defaults '(tng-r3-font-lock-keywords nil nil ((?_ . "w")))))
+
+;;;###autoload
+(define-derived-mode tng-r3-mode c-mode "TNG-R3"
+  "Major mode for editing TNG-R3 code.
+This is much like C mode except for the syntax of comments.  Its keymap
+inherits from C mode's and it has the same variables for customizing
+indentation.  It has its own abbrev table and its own syntax table.
+
+Turning on TNG-R3 mode runs `tng-r3-mode-hook'." ;; actually a lie
+  (tng-mode-variables))
+
+;---------------------------------------------------------------------------
+
+(defcustom tng-program-name "./main.scm"
+  "*Program invoked by the `run-tng' command."
+  :type 'string
+  :group 'tng)
+
+(defcustom inferior-tng-mode-hook nil
+  "*Hook for customising inferior-tng mode."
+  :type 'hook
+  :group 'tng)
+
+(defvar tng-buffer)
+
+(define-derived-mode inferior-tng-mode comint-mode "Inferior ThiNG"
+  "Major mode for interacting with an inferior ThiNG process."
+  ;; Customise in inferior-tng-mode-hook
+  (setq comint-prompt-regexp "^\"[^\"\n]*\" *")
+  (tng-mode-variables)
+  (setq mode-line-process '(":%s")))
+
+;;;###autoload
+(defun run-tng (cmd)
+  "Run an inferior ThiNG process, input and output via buffer *tng*.
+If there is a process already running in `*tng*', switch to that buffer.
+With argument, allows you to edit the command line (default is value
+of `tng-program-name').  Runs the hooks `inferior-tng-mode-hook'
+\(after the `comint-mode-hook' is run).
+\(Type \\[describe-mode] in the process buffer for a list of commands.)"
+  (interactive (list (if current-prefix-arg
+			 (read-string "Run ThiNG: " tng-program-name)
+		       tng-program-name)))
+  (if (not (comint-check-proc "*tng*"))
+      (let ((cmdlist (scheme-args-to-list cmd)))
+	(set-buffer (apply 'make-comint "tng" (car cmdlist)
+			   nil (cdr cmdlist)))
+	(inferior-tng-mode)))
+  (setq tng-program-name cmd)
+  (setq tng-buffer "*tng*")
+  (pop-to-buffer "*tng*"))
 
 (provide 'tng-r3-mode)
 

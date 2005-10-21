@@ -127,7 +127,7 @@
 		      (define-packrat-cached infixop-raw (packrat-regex 'infixop p midsym"*"))
 		      (define-packrat-cached integer (packrat-regex 'integer "[0-9]+"))
 		      (define (make-binary op left right)
-			`(adj ,op (tuple ,left ,right)))
+			`(adj (adj ,op ,left) ,right))
 		      (values tuple1 toplevel))
 		    (toplevel ((d <- tuple1 white '#\; '#\;) d)
 			      ((white '#f) `(quote (atom quit))))

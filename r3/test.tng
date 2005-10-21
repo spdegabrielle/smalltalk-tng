@@ -45,7 +45,7 @@ define-method ({Tuple x} #length) (
 );;
 
 define-method ({Tuple x} #asList) (
-  (0 .. (x #length)) #map: [i: (x ? i)]
+  (0 .. (x #length)) #map: ((?) x) "'x ? i' means 'read the ith elt of x'"
 );;
 
 "A monadic version:"
@@ -54,9 +54,9 @@ it already delays and evaluates once!)"
 "We don't put the 'atomic' in here to stay compositional as long as possible"
 define-method ((results = {ParseResults _}) #next) (
   [has-value, next] <- (#read: (results #next*)),
-  (#if: has-value
-   #then: return next
-   #else: (next-value <- (return (next [])),
-	   #into: (results #next*) #write: [#true, next-value],
-	   return next-value))
+  #if: has-value
+  #then: return next
+  #else: (next-value <- (return (next [])),
+	  #into: (results #next*) #write: [#true, next-value],
+	  return next-value)
 );;
