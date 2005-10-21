@@ -45,6 +45,8 @@
 (defconst tng-r2-font-lock-keywords
   (eval-when-compile
     (list
+     '(";;" . font-lock-warning-face)
+
      ;; Keywords.
      '("\\<define\\([-a-zA-Z0-9+=_|/?.<>*&^%$#@!`~]\\)*\\>" . font-lock-keyword-face)
      '("\\<\\(new\\)\\s \\([A-Z]\\([-a-zA-Z0-9+=_|/?.<>*&^%$#@!`~]\\|::\\)*\\)\\>"

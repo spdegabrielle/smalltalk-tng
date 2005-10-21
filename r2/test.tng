@@ -1,6 +1,6 @@
 define map [
-  (f Nil)           : Nil
-  (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]
+  f: [Nil           : Nil
+      [Hd: h Tl: t] : [Hd: f h Tl: map f t]]
 ];;
 
 (arg Hd)
@@ -10,23 +10,18 @@ define map [
 "-->" (arg a b)
 
 define fold-left [
-  (kons knil Nil)           : knil
-  (kons knil [Hd: h Tl: t]) : fold-left kons (kons h knil) t
+  kons: [knil: [Nil           : knil
+                [Hd: h Tl: t] : fold-left kons (kons h knil) t]]
 ];;
 
 map [x: x + 1] ([1, 2, 3] AsList);;
 
-letrec (map = [(f Nil) : Nil
-	       (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]],
+letrec (map = [f: [Nil            : Nil
+	           [Hd: h Tl: t]) : [Hd: f h Tl: map f t]],
 	toList = [[]     : Nil
-		  [h ; t]: [Hd: h Tl: (toList t)]]);
+		  [h ; t]: [Hd: h Tl: (toList t)]]); "yikes"
 map [x: x] (toList [1 2 3])
 ;;
-
-define map [
-  (f Nil)           : Nil
-  (f [Hd: h Tl: t]) : [Hd: f h Tl: map f t]
-];;
 
 map [x: x + 1] (toList [1 2 3]);;
 
@@ -80,3 +75,9 @@ define-method ((results = {ParseResults _}) Next) (
 define-method (var Bump) (
   Into: var Write: (1 + (Read: var))
 );;
+
+let valid-orders = map [x: [x, x]] ['sale_date', 'cost', 'address'] in
+let [_, order] = Find: [[l, r]: l == order] In: valid-orders
+                 IfAbsent: [_, 'sale_date']
+in ...
+;;

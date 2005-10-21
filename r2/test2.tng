@@ -1,0 +1,70 @@
+let valid-orders = map [x: [x, x]] ['sale_date', 'cost', 'address'] in
+let [_, order] = Find: [[l, r]: l == order] In: valid-orders
+                 IfAbsent: [_, 'sale_date']
+in ...
+
+
+
+[x: x] 1
+
+[[x: x] 1]
+
+
+[1 2 3]
+[(1 2) 3]
+
+
+[A: (1 B: 2)]
+
+
+[1 B: 2]
+
+[succ 1, succ 2]
+[(succ 1), (succ 2)]
+[[succ 1], [succ 2]]
+
+[succ 1]
+[add 1 2]
+[(add 1 2)]
+(add 1 2)
+([add 1 2])
+
+
+[[head]: 1 [tail]: 2] [head]
+[x: x + 1]
+[_: [x]]
+
+[(x)]
+
+
+`(`head: 1 `tail: 2)
+
+`(x: x + 1)
+
+`(succ 1, succ 2)
+`(;succ 1, ;succ 2)
+`(;(succ 1), ;(succ 2))
+
+define map [
+  f: [#nil            : #nil
+      [#hd: h #tl: t] : [#hd: f h #tl: map f t]]
+];;
+
+let valid-orders = [#sale_date, #cost, #address] collect: [x: [x, x]] in
+let [_, order] = find: [[l, r]: l == order] in: valid-orders ""
+                 ifAbsent: [_, #sale_date]
+in ...
+
+
+let valid-orders = [sale_date, cost, address] collect: [x: [(x), (x)]] in
+let [_, order] = find: [[l, r]: l == order] in: valid-orders ""
+                 ifAbsent: [_, #sale_date]
+in ...
+
+
+let valid-orders = {Fun (let v = [sale_date, cost, address] in zip v v)} in
+let order = ([_: [sale_date]] \ valid-orders) order in
+...
+
+
+[_: [sale_date]] \ 
