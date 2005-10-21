@@ -41,7 +41,7 @@ define-method ({Cst cst} #convert) (
 "To drop something:" val <- {lifted}
 
 define-method ({Tuple x} #length) (
-  x #length;;
+  x #length
 );;
 
 define-method ({Tuple x} #asList) (
