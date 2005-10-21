@@ -1,83 +1,62 @@
 define map [
-  f: [Nil           : Nil
-      [Hd: h Tl: t] : [Hd: f h Tl: map f t]]
+  f: [#nil            : #nil
+      [#hd: h #tl: t] : [#hd: (f h) #tl: (map f t)]]
 ];;
 
-(arg Hd)
-(arg Tl)
+(arg #hd)
+(arg #tl)
 
 "a pattern:" [(a b): _]
-"-->" (arg a b)
+"-->" (arg (a b))
 
 define fold-left [
-  kons: [knil: [Nil           : knil
-                [Hd: h Tl: t] : fold-left kons (kons h knil) t]]
+  kons: [knil: [#nil            : knil
+                [#hd: h #tl: t] : (fold-left kons (kons h knil) t)]]
 ];;
 
-map [x: x + 1] ([1, 2, 3] AsList);;
+map [x: x + 1] ([1, 2, 3] asList);;
 
-letrec (map = [f: [Nil            : Nil
-	           [Hd: h Tl: t]) : [Hd: f h Tl: map f t]],
-	toList = [[]     : Nil
-		  [h ; t]: [Hd: h Tl: (toList t)]]); "yikes"
+letrec (map = [f: [#nil            : #nil
+	           [#hd: h #tl: t] : [#hd: (f h) #tl: (map f t)]]],
+	toList = [[]      : #nil
+		  [h ; t] : [#hd: h #tl: (toList t)]]); "yikes"
 map [x: x] (toList [1 2 3])
 ;;
 
 map [x: x + 1] (toList [1 2 3]);;
 
-[x: (Update: [] Set: x To: 123)] 'hi';;
+[x: (#update: [] #set: x #to: 123)] 'hi';;
 
 define-behaviour Cst;;
-define-method ({Cst cst} Convert) (
-  Case: {cst} Of: (
-    [[Adj: [l, r]]: [(l Convert) (r Convert)]],
-    [[Tuple: cs]: (let cs* = map [x: x Convert] cs in {Tuple cs*})],
-    [[Quote: v]: v],
-    [_: cst]
+define-method ({Cst cst} #convert) (
+  case: {cst} of: (
+    [ [#adj: [l, r]] : [(l #convert) (r #convert)] ],
+    [   [#tuple: cs] : (let cs* = map [x: x #convert] cs in {Tuple cs*}) ],
+    [    [#quote: v] : v ],
+    [              _ : cst ]
   )
 );;
 
 "To lift something:" {lifted} <- val
 "To drop something:" val <- {lifted}
 
-define-method ({Tuple x} Length) (
-  x Length;;
+define-method ({Tuple x} #length) (
+  x #length;;
 );;
 
-define-method ({Tuple x} AsList) (
-  (0 .. x Length) Map: [i: x ? i]
-);;
-
-"A semi- or pseudo-monadic version:"
-define-method ((results = {ParseResults _}) Next) (
-  [has-value, next] <- (atomic Read: (results Next*)),
-  (If: has-value
-   Then: next
-   Else: (next-value <- (next []),
-	  atomic Into: (results Next*) Write: (True, next-value),
-	  next-value))
+define-method ({Tuple x} #asList) (
+  (0 .. (x #length)) #map: [i: (x ? i)]
 );;
 
 "A monadic version:"
 "(This is stupid code anyway because it's a lazy language,
 it already delays and evaluates once!)"
 "We don't put the 'atomic' in here to stay compositional as long as possible"
-define-method ((results = {ParseResults _}) Next) (
-  [has-value, next] <- (Read: (results Next*)),
-  (If: has-value
-   Then: return next
-   Else: (next-value <- return (next []),
-	  Into: (results Next*) Write: (True, next-value),
-	  return next-value))
+define-method ((results = {ParseResults _}) #next) (
+  [has-value, next] <- (#read: (results #next*)),
+  (#if: has-value
+   #then: return next
+   #else: (next-value <- (return (next [])),
+	   #into: (results #next*) #write: [#true, next-value],
+	   return next-value))
 );;
-
-"We don't put the 'atomic' in here to stay compositional as long as possible"
-define-method (var Bump) (
-  Into: var Write: (1 + (Read: var))
-);;
-
-let valid-orders = map [x: [x, x]] ['sale_date', 'cost', 'address'] in
-let [_, order] = Find: [[l, r]: l == order] In: valid-orders
-                 IfAbsent: [_, 'sale_date']
-in ...
-;;
