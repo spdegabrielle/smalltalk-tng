@@ -16,11 +16,12 @@ define fold-left [
 
 map [x: x + 1] ([1, 2, 3] asList);;
 
-letrec (map = [f: [#nil            : #nil
-	           [#hd: h #tl: t] : [#hd: (f h) #tl: (map f t)]]],
-	toList = [[]      : #nil
-		  [h ; t] : [#hd: h #tl: (toList t)]]); "yikes"
-map [x: x] (toList [1 2 3])
+"DAMN letrec is a problem piece of syntax"
+letrec: (map = [f: [#nil            : #nil
+	            [#hd: h #tl: t] : [#hd: (f h) #tl: (map f t)]]],
+	 toList = [[]      : #nil
+		   [h ; t] : [#hd: h #tl: (toList t)]]) "yikes"
+in: map [x: x] (toList [1 2 3])
 ;;
 
 map [x: x + 1] (toList [1 2 3]);;
@@ -60,3 +61,21 @@ define-method ((results = {ParseResults _}) #next) (
 	  #into: (results #next*) #write: [#true, next-value],
 	  return next-value)
 );;
+
+"iota"
+define (..) [
+  start: [#inf+: letrec: gen = [x: [#first: x #rest: (gen (x + 1))]] in: gen start
+          #inf-: letrec: gen = [x: [#first: x #rest: (gen (x - 1))]] in: gen start
+	  end: letrec: op = (#if: start > end #then: (+) #else: (-)),
+                       gen = [x: (#if: x = end
+				  #then: #end
+				  #else: [#first: x #rest: (gen (op x 1))])]
+	       in: gen start]
+];;
+
+define ($) [f: f];;
+"
+f $ a
+--> ($) f a
+--> f a
+"
