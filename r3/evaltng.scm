@@ -1,5 +1,5 @@
 '(tng-cst-grammar
-  (<datum> (or (<value>)
+  (<datum> (or <value>
 	       (tuple <value> ...)))
   (<value> (or (atom <symbol>)
 	       (lit <literal>)
@@ -9,7 +9,7 @@
 	       (quote <value>)
 	       (meta-quote <value>)
 	       (discard)))
-  (<literal> (or (<integer>))))
+  (<literal> (or <integer>)))
 
 (define-record-type tng-promise
   (make-tng-promise* id defined? value)
