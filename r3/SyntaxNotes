@@ -1,0 +1,49 @@
+-*- outline -*-
+
+* Basics
+
+	pattern: value pattern: value ...	(fun (pattern value) ...)
+	value, value, value, ...		(tuple value ...)
+	value value				(adj value value)
+
+	( value )				; grouping
+	[ value ]				(quunquote value)
+	#[ value ]				(quasiquote value)
+	#( value )				(unquote value)
+	# value					(quote value)
+
+	atom					; symbols
+	'another atom'				; symbols
+	literal					; literal object sugar (strings, ints)
+						; unit, nothing at all
+
+	"a comment"				; comments
+
+* Tuples, Records and Functions
+
+[] is both the empty quoted tuple and the empty quoted function.
+
+Tuples are sugar for functions with integer patterns! Like this:
+(x, y, z)   <==>   (#tuple: #tuple 0: x 1: y 2: z)
+
+(... or something, the "#tuple: #tuple" is supposed to be an
+"interface marker" of some kind)
+
+The empty tuple/function is "unit".
+
+* Interpretation
+
+Non-quoted tuples are sugar for monadic sequencing, that is /bind/
+operations.
+
+Non-quoted functions are messages sent to the ambient.
+
+Non-quoted adjacency is function application == message send.
+
+* Quoting
+
+** Quote
+
+** Quasiquote and unquote
+
+** Quunquote
