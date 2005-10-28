@@ -40,6 +40,10 @@ Non-quoted functions are messages sent to the ambient.
 
 Non-quoted adjacency is function application == message send.
 
+Non-quoted symbols are variable references.
+
+Non-quoted literals are self-evaluating.
+
 * Quoting
 
 ** Quote
