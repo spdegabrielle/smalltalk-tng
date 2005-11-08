@@ -19,6 +19,8 @@
 
 	"a comment"				; comments
 
+TODO: Bit syntax!
+
 * Tuples, Records and Functions
 
 [] is both the empty quoted tuple and the empty quoted function.
