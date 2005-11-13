@@ -50,11 +50,11 @@
      '(";;" . font-lock-warning-face)
 
      ;; Atoms.
-     '("#\\<\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>" . font-lock-constant-face)
+     '("\\.\\<\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-constant-face)
 
      ;; Keywords.
-     '("\\<define\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>" . font-lock-keyword-face)
-     '("\\<\\(new\\)\\s \\([a-zA-Z]\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\|::\\)*\\)\\>"
+     '("\\<define\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-keyword-face)
+     '("\\<\\(new\\)\\s \\([a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\|::\\)*\\)\\>"
        (1 font-lock-keyword-face) (2 font-lock-type-face))
      (regexp-opt
       '(
@@ -69,20 +69,20 @@
       'words)
 
      ;; Namespaces.
-     '("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>::" . font-lock-type-face)
+     '("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>::" . font-lock-type-face)
 
      ;; Types.
-     '("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>" . font-lock-type-face)
+     '("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-type-face)
 
      ;; Functions.
-     '("(\\(\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>\\)\\($\\|\\s [^-+=_|/?.<>*&^%$@!`~#]\\)"
+     '("(\\(\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>\\)\\($\\|\\s [^-+=_|/?<>*&^%$@!`~#]\\)"
        (1 font-lock-function-name-face))
 
      ;; Variables.
-     '("\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>" . font-lock-variable-name-face)
+     '("\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-variable-name-face)
 
      ;; Infixops.
-     '("\\<[-+=_|/?.<>*&^%$@!`~]\\([-a-zA-Z0-9+=_|/?.<>*&^%$@!`~]\\)*\\>"
+     '("\\<[-+=_|/?<>*&^%$@!`~]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>"
        . font-lock-function-name-face)
      ))
  "Default expressions to highlight in TNG-R3 mode.")

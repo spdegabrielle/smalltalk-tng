@@ -10,7 +10,7 @@
 	[ value ]				(quunquote value)
 	#[ value ]				(quasiquote value)
 	#( value )				(unquote value)
-	# value					(quote value)
+	. value					(quote value)
 
 	atom					; symbols
 	'another atom'				; symbols
@@ -26,9 +26,9 @@ TODO: Bit syntax!
 [] is both the empty quoted tuple and the empty quoted function.
 
 Tuples are sugar for functions with integer patterns! Like this:
-(x, y, z)   <==>   (#tuple: #tuple 0: x 1: y 2: z)
+(x, y, z)   <==>   (.tuple: .tuple 0: x 1: y 2: z)
 
-(... or something, the "#tuple: #tuple" is supposed to be an
+(... or something, the ".tuple: .tuple" is supposed to be an
 "interface marker" of some kind)
 
 The empty tuple/function is "unit".
