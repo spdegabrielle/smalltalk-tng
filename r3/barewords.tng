@@ -1,0 +1,93 @@
+define [
+  .proto: [.list: .nil]
+
+  (x=[.list: _] .initialize: aList):
+    (x \ [.list: aList])
+
+  (x=[.list: l] .with: aThing):
+    (x \ [.list: (l .with: aThing)])
+
+  (x=[.list: l] .handle):
+    (l .do: [eachItem: eachItem .print])
+];;
+
+
+define [
+  proto: [list: nil]
+
+  (.x=[list: _] initialize: .aList):
+    (.x \ [list: .aList])
+
+  (.x=[list: .l] with: .aThing):
+    (.x \ [list: (.l with: .aThing)])
+
+  (.x=[list: .l] handle):
+    (.l do: [.eachItem: .eachItem print])
+];;
+
+
+"
+The problem is really barewords. (Or applications, if you want to look at it that way.)
+What if application got syntax? f $ x
+$ looks like S, for Send
+
+We need to do something about bindings, too.
+var=pattern ?
+var@pattern ?
+"
+
+define [
+  proto: [list: nil]
+
+  (x=[list: _] initialize: aList=_):
+    (x \ [list: aList])
+
+  (x=[list: l=_] with: aThing=_):
+    (x \ [list: (l with: aThing)])
+
+  (x=[list: l=_] handle):
+    (l do: [eachItem=_: eachItem print])
+];;
+
+
+
+
+[self
+
+  .list: .nil
+
+  [.initialize: aList]:
+    (self \ [.list: aList])
+
+  [.with: aThing]:
+    (self \ [.list: (self.list .with: aThing)])
+
+  .handle:
+    (self.list [.do: [eachItem: eachItem.print]])
+];;
+
+
+[.self
+
+  list: nil
+
+  [initialize: .aList]:
+    (.self \ [list: .aList])
+
+  [with: .aThing]:
+    (.self \ [list: (.self list with: .aThing)])
+
+  handle:
+    (.self list [do: [.eachItem: .eachItem print]])
+];;
+
+
+
+initialize: aList
+     list := aList.
+
+add: aThing
+     list add: aThing.
+
+handle
+    list do: [:eachItem | eachItem print].
