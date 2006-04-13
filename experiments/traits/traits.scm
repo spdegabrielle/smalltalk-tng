@@ -1,4 +1,4 @@
-;; 13 April 2006, 0700 -
+;; 13 April 2006, 0700 - 0840
 
 (require (lib "match.ss")
 	 (lib "1.ss" "srfi")
