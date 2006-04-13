@@ -112,7 +112,7 @@
    ((string? o) <string>)
    ((symbol? o) <symbol>)
    ((boolean? o) <boolean>)
-   ((pair? o) (trait-expr (<pair> 'cons (car o) (cdr o))))
+   ((pair? o) <scheme-pair>)
    ((null? o) <nil>)
    ((procedure? o) (simple-trait '(any) (lambda (self-and-args) (lambda () (apply o (cdr self-and-args))))))))
 
@@ -169,6 +169,11 @@
 
 (define-prototype <nil> <empty-sequenceable>)
 (define-prototype <pair> #(+ <sequenceable> <consable> <extendable>))
+
+(define-prototype <scheme-pair> (<pair> 'extend-with #(((self 'first) #(= (car self)))
+						       ((self 'rest) #(= (cdr self)))
+						       ((self 'empty?) #f)
+						       ((self 'cons f r) #(= (cons f r))))))
 
 (define (kons f r)
   (trait-expr (<pair> 'cons f r)))
