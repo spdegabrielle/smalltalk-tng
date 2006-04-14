@@ -1,0 +1,71 @@
+"Basic idea: all symbols are really variables. They're bound to their
+underpinning GUID objects. Quoting isn't needed to get literals - it's
+just convention. Identifiers are not symbols."
+
+define map [
+  (_ +f): [(+lp [Hd: +h Tl: +t]) : [Hd: f h Tl: lp t]
+           (+lp x)               : x]
+];;
+
+define map [
+  \+f: [(+lp [First: +h Rest: +t] : [First: f h Tl: lp t])
+                \+x: x]]
+
+[(_ +x): x]
+[\+x: x]
+\+x: x
+[\+x: x-1]
+\Nil: Nil
+ [Hd: +h Tl: +t]:[Hd: f h Tl: map f t]
+
+let diff r1 r2 =
+  let collect [First: +fieldName Rest: +rest] diffs =
+	let v1 = r1 At: fieldName IfAbsent: Absent,
+	    v2 = r2 At: fieldName IfAbsent: Absent,
+	    collect1 +type +old +new =
+	      collect rest [First: [fieldName, type, old, new] Rest: diffs]
+	in cond ((v1 == v2) -> collect rest differences,
+		 (v1 == Absent) -> collect1 Added [] v2,
+		 (v2 == Absent) -> collect1 Removed v1 [],
+		 True -> collect1 Changed v1 v2)
+      collect [] +diffs = diffs
+  in
+    (r1 Class == r2 Class) && collect (r1 Class FieldNames) []
+;;
+
+let diff r1 r2 =
+  (r1 Class == r2 Class) &&
+  filterMap [\+fieldName:
+	      let v1 = r1 At: fieldName IfAbsent: Absent,
+		  v2 = r2 At: fieldName IfAbsent: Absent
+	      in cond [(v1 == v2) -> Nothing,
+		       (v1 == Absent) -> [Just: [fieldName, Added, [], v2]]
+		       (v2 == Absent) -> [Just: [fieldName, Removed, v1, []]],
+		       True -> [Just: [fieldName, Changed, v1, v2]]]]
+    (r1 Class FieldNames);;
+
+"
+let +a +b = c in d ...
+-->
+[\+a: d ...] [(+a +b): c]
+
+let +v = w in x ...
+-->
+[\+v: x ...] w
+"
+
+let +diff +r1 +r2 = (r1 Class == r2 Class) &&
+		    filterMap [\+fieldName:
+				let +v1 = r1 At: fieldName IfAbsent: Absent,
+				    +v2 = r2 At: fieldName IfAbsent: Absent
+				in cond [(v1 == v2) -> Nothing,
+					 (v1 == Absent) -> [Just: [fieldName, Added, [], v2]]
+					 (v2 == Absent) -> [Just: [fieldName, Removed, v1, []]],
+					 True -> [Just: [fieldName, Changed, v1, v2]]]]
+			      (r1 Class FieldNames)
+;;
+
+let filterMap +fn = [
+   (+loop [First: +f Rest: +r]): maybe (loop r) id (fn f)
+   (+loop x): x
+];;
