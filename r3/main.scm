@@ -1,4 +1,4 @@
-"true"; exec csi -no-init -batch -quiet -syntax "$0" "$@"
+"true"; exec csi -no-init -batch -quiet -R syntax-case "$0" "$@"
 
 (require 'srfi-1)
 (require 'srfi-13)

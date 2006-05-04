@@ -139,7 +139,7 @@
 			      ((white '#f) (make-node 'quote (make-node 'atom 'quit))))
 		    (datum ((s <- tuple0) s))
 		    (tuple0 ((s <- tuple1) s)
-			    (() (make-node 'tuple)))
+			    (() (make-node 'unit)))
 		    (tuple1 ((s <- tuple1*) (if (= (length s) 2) (cadr s) s)))
 		    (tuple1* ((d <- fun white '#\, s <- tuple1*) (node-push s d))
 			     ((d <- fun) (make-node 'tuple d)))

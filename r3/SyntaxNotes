@@ -1,5 +1,115 @@
 -*- outline -*-
 
+* Basics, Revised Yet Again
+
+The question is how to deal with currying, and reconciling the
+difference between send syntax and pattern-match syntax. A chain of sends might
+look like any of:
+
+	r1 Class FieldNames
+	r1 IfTrue: v1 IfFalse: v2
+	dict Lookup: key [IfPresent: .v]: v IfAbsent: 123
+	v1 == v2
+	v1, v2, v3
+
+A method clause:
+  .m@[.self Lookup: .aKey]: ((self HasKey: aKey) IfTrue: (m IfPresent: (self At: aKey)) IfFalse: (m IfAbsent))
+
+The other problem is centralised dispatch (by the interpreter and
+current context) vs. distinguished-receiver ST80-style dispatch.
+
+I guess it comes down to the shape of messages constructed by dispatch
+syntax. With a central dispatcher, we get
+
+	[0: [0: r1 1: Class] 1: FieldNames]
+	[0: r1 IfTrue: v1 IfFalse: v2]
+	[0: dict Lookup: key [IfPresent: .v]: v IfAbsent: 123]
+	[0: [0: (==) 1: v1] 1: v2]
+	[0: v1 1: v2 2: v3 Length: 3]
+
+Corresponding patterns could be
+
+	[.self Class]: ...
+	[.self FieldNames]: ...
+
+Hmm, essentially, when a pattern fails to match, it calls resend! So
+if we had a high-priority pattern [.self Class FieldNames] matching
+against [foo Class SomethingElse] we''d see the [foo Class] match the
+[.self Class], resulting in [[_ FieldNames]: ... _: resend] or
+similar. This, when sent [(itself) SomethingElse], would backtrack to
+matching against some other receiver for [.self Class], if any.
+
+	[.self IfTrue: .vt IfFalse: .vf]
+	[.self Lookup: .aKey]
+
+	"This next one is tricky:"
+	m@[.self Lookup: .aKey [IfPresent: _]: _ IfAbsent: _]
+	"Note in the above that the first _ is a value, ie. top!"
+	"(rather than a pattern ie. bottom)"
+
+	[.val == .other]
+	[.v1, .v2, .v3]
+
+Perhaps remove (,,) syntax? Maybe it could be sugar for list/stream
+construction? For instance:
+
+	(v1, v2, v3) ==> (v1 . (v2 . (v3 . Nil)))
+	[.v1, .v2, .v3] ==> [.v1 . [.v2 . [.v3 . Nil]]]
+			==> [(.) .v1 ((.) .v2 ((.) .v3 Nil))]
+			decurrying ==>
+		[0: (.) 1: ...? "difficulty."
+
+Maybe keyword syntax instead:
+
+	(v1, v2, v3) ==> (First: v1 Rest: (First: v2 Rest: (First: v3 Rest: Nil)))
+	[v1, v2, v3] ==> [First: v1 Rest: [First: v2 Rest: [First: v3 Rest: Nil]]]
+	[.v1, .v2, .v3] ==> [First: .v1 Rest: [First: .v2 Rest: [First: .v3 Rest: Nil]]]
+
+That''s better. It makes sense, too, since once (,,) is no longer
+tupling, the only n-ary syntax we have is the pattern/value
+syntax. Binary operators turn into curried application, which is
+tricky to pattern-match.
+
+Shit, there's another tricky case: the difference between [x] and x;
+or, more properly, between (x) and x.
+
+	(x) ==> (First: x Rest: Nil)
+	x   ==> x
+
+Wrong! So, we need some kind of marker in the syntax. Unless... what
+if we reinterpret (,) as a stream-cons operator rather than a
+stream-separation operator?
+
+(This, incidentally, is where python's (x,) syntax comes in.)
+
+	(1, 2, 3) --> (First: 1 Rest: (First: 2 Rest: 3))
+	(1, 2, 3, [])
+
+Yuck. What about a right-associative flipped application operator (snoc)?
+
+	1, 2, 3 <==> ((,) ((,) 3 2) 1)
+
+Read them as begin?
+
+	(begin x y z) ==
+	(begin (begin x y) z) ==
+	(begin x (begin y z)) ==
+	(begin (begin x) (begin y) (begin z)) == etc.
+
+	(x, y, z) ==
+	((x, y), z) ==
+	(x, (y, z)) ==
+	((x), (y), (z)) == etc.
+
+That's better. So, (,) becomes an n-ary tupling syntax again, in a
+way.
+
+	[x, y, z] ==
+	[[x, y], z] == ... Hmm. Not so pretty here?
+
+Actually, there's also a problem with scoping rules, if begin is used
+like a let* or a letrec: What does ((.a <- b, c), a) mean?
+
 * Basics
 
 	pattern: value pattern: value ...	(fun (pattern value) ...)
@@ -26,10 +136,10 @@ TODO: Bit syntax!
 [] is both the empty quoted tuple and the empty quoted function.
 
 Tuples are sugar for functions with integer patterns! Like this:
-(x, y, z)   <==>   (.tuple: .tuple 0: x 1: y 2: z)
+(x, y, z)   <==>   (.length: 3 0: x 1: y 2: z)
 
-(... or something, the ".tuple: .tuple" is supposed to be an
-"interface marker" of some kind)
+(... or something. The ".length: 3" could instead be ".tuple: .tuple",
+as an "interface marker" of some kind)
 
 The empty tuple/function is "unit".
 

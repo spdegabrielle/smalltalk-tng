@@ -82,7 +82,9 @@
      ;;(1 font-lock-function-name-face))
 
      ;; Variables.
-     '("+\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-variable-name-face)
+     ;'("+\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-variable-name-face)
+     '("\\.\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-variable-name-face)
+     ;'("\\<[a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>@" . font-lock-variable-name-face)
 
      ;; Infixops.
      '("\\<[-+=_|/?<>*&^%$@!`~]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>"

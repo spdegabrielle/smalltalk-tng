@@ -69,3 +69,35 @@ let filterMap +fn = [
    (+loop [First: +f Rest: +r]): maybe (loop r) id (fn f)
    (+loop x): x
 ];;
+
+define [diff .r1 .r2]:
+  ((r1 Class == r2 Class) &&
+  filterMap [[_ .fieldName]:
+	     (.v1 <- r1 At: fieldName IfAbsent: Absent,
+	      .v2 <- r2 At: fieldName IfAbsent: Absent,
+	      cond [(v1 == v2) -> Nothing,
+		    (v1 == Absent) -> Just: [fieldName, Added, [], v2],
+		    (v2 == Absent) -> Just: [fieldName, Removed, v1, []],
+		    True -> Just: [fieldName, Changed, v1, v2]])]
+	    (r1 Class FieldNames)
+;;
+
+define diff [[_ r1@_ r2@_]:
+	     ((r1 Class == r2 Class) &&
+	      filterMap [[_ fieldName@_]:
+			 v1@_ <- r1 At: fieldName IfAbsent: Absent,
+			 v2@_ <- r2 At: fieldName IfAbsent: Absent,
+			 cond [(v1 == v2) -> Nothing,
+			       (v1 == Absent) -> Just: [fieldName, Added, [], v2],
+			       (v
+
+let +diff +r1 +r2 = (r1 Class == r2 Class) &&
+		    filterMap [\+fieldName:
+				let +v1 = r1 At: fieldName IfAbsent: Absent,
+				    +v2 = r2 At: fieldName IfAbsent: Absent
+				in cond [(v1 == v2) -> Nothing,
+					 (v1 == Absent) -> [Just: [fieldName, Added, [], v2]]
+					 (v2 == Absent) -> [Just: [fieldName, Removed, v1, []]],
+					 True -> [Just: [fieldName, Changed, v1, v2]]]]
+			      (r1 Class FieldNames)
+;;
