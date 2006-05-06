@@ -169,5 +169,6 @@ applyTng bs function@(VObject patternClauses) value =
     where matches (ppat, pval) = case match ppat value of
                                    Nothing -> Nothing
                                    Just bs' -> Just $ reduce pval bs'
+applyTng bs function value = dnu function value
 
 baseEnv = [("cons", eval'' "[+car: [+cdr: [First: car Rest: cdr]]]")]
