@@ -5,11 +5,12 @@ import qualified Text.ParserCombinators.Parsec.Token as P
 import qualified List
 import Debug.Trace
 
-type Env = [(String, Value)]
+type Env = [(Bool, String, Value)]
 
 data AST = AstAtom String
          | AstBinding String
          | AstDiscard
+         | AstLet String AST
          | AstObject [(AST, AST)]
          | AstApp AST AST
            deriving (Eq, Ord)
@@ -52,7 +53,9 @@ readSimple =    do punct "("; v <- readAST; punct ")"; return v
             <|> do punct "["; m <- readMap; punct "]"; return m
             <|> do punct "+"; i <- ident; return $ AstBinding i
             <|> do punct "_"; return AstDiscard
-            <|> do i <- ident; return $ AstAtom i
+            <|> do i <- ident; readLet i
+readLet i =     do punct "="; v <- readSimple; return $ AstLet i v
+            <|> (return $ AstAtom i)
 
 sepList s [] = ""
 sepList s [x] = x
@@ -67,6 +70,7 @@ instance Show AST where
 showAST (AstAtom s) = s
 showAST (AstBinding s) = "+" ++ s
 showAST (AstDiscard) = "_"
+showAST (AstLet s v) = s ++ "=" ++ show v
 showAST (AstObject clauses) = "[" ++ showClauses clauses ++ "]"
 showAST (AstApp v1 v2) = "(" ++ show v1 ++ " " ++ show v2 ++ ")"
 
@@ -80,8 +84,10 @@ showValue (VObject clauses) = "[" ++ showClauses clauses ++ "]"
 
 instance Show Closure where
     show (Closure e v) = showEnv e ++ show v
+    -- show (Closure e v) = show v
 
-showEnvEntry (n, v) = n ++ "->" ++ show v
+showEnvEntry (False, n, v) = n ++ "->" ++ show v
+showEnvEntry (True, n, v) = n
 showEnv [] = ""
 showEnv bindings = "{" ++ sepList ", " (map showEnvEntry bindings) ++ "} "
 
@@ -98,6 +104,7 @@ freeVars env exp =
       AstAtom s -> if any (s ==) env then [] else [s]
       AstBinding _ -> []
       AstDiscard -> []
+      AstLet s v -> freeVars (s:env) v
       AstObject clauses -> foldr collect [] clauses
           where collect clause acc = List.union (clauseFree clause) acc
                 clauseFree (pat, val) = foldr List.union (valsFree val) patsFree
@@ -108,14 +115,14 @@ freeVars env exp =
 patternBound (AstAtom s) = []
 patternBound (AstBinding b) = [b]
 patternBound (AstDiscard) = []
+patternBound (AstLet s v) = patternBound v
 patternBound (AstObject clauses) = concatMap (patternBound . snd) clauses
 patternBound (AstApp _ _) = error "Unreduced pattern in patternBound"
 
 ---------------------------------------------------------------------------
 
 freeVars' env exp = freeVars env (readTng exp)
-eval' env exp = eval env (readTng exp)
-eval'' exp = eval' [] exp
+eval' exp = eval [] (readTng exp)
 
 ---------------------------------------------------------------------------
 
@@ -123,15 +130,18 @@ bindingUnion Nothing _ = Nothing
 bindingUnion _ Nothing = Nothing
 bindingUnion (Just b1) (Just b2) = Just (b1 ++ b2)
 
+eLookup s [] = Nothing
+eLookup s ((_, n, v):bs) = if n == s then Just v else eLookup s bs
+
 lookupVal s bs =
-    case lookup s bs of
+    case eLookup s bs of
       Just v -> v
-      Nothing -> case lookup s baseEnv of
+      Nothing -> case eLookup s baseEnv of
                    Just v -> v
                    Nothing -> VAtom s
 
 match (VAtom a) (VAtom b) = if a == b then Just [] else Nothing
-match (VBinding n) v = Just [(n, v)]
+match (VBinding n) v = Just [(False, n, v)]
 match (VDiscard) v = Just []
 match (VObject patternClauses) (VObject valueClauses) =
     foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
@@ -156,6 +166,9 @@ eval bs o =
       AstAtom s -> lookupVal s bs
       AstBinding s -> VBinding s
       AstDiscard -> VDiscard
+      AstLet s v -> result
+          where result = eval bs' v
+                bs' = (True, s, result) : bs
       AstObject clauses -> VObject $ map evalClause clauses
           where evalClause (pat, val) = (eval bs pat, Closure bs val)
       AstApp rator rand -> applyTng bs (eval bs rator) (eval bs rand)
@@ -172,6 +185,6 @@ applyTng bs function@(VObject patternClauses) value =
 applyTng bs function value = dnu function value
 
 baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
-          -- , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) +x:x]]"
+          , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) +x:x]]"
           ]
-    where def nm exp = (nm, eval'' exp)
+    where def nm exp = (False, nm, eval' exp)
