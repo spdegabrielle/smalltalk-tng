@@ -8,7 +8,7 @@ import Debug.Trace
 type Env = [(Bool, String, Value)]
 
 data AST = AstAtom String
-         | AstBinding String
+         | AstBinding String AST
          | AstDiscard
          | AstLet String AST
          | AstObject [(AST, AST)]
@@ -16,12 +16,19 @@ data AST = AstAtom String
            deriving (Eq, Ord)
 
 data Value = VAtom String
-           | VBinding String
+           | VBinding String Value
            | VDiscard
-           | VObject [(Value, Closure)]
+           | VObject [(Pattern, Closure)]
              deriving (Eq, Ord)
 
+data Pattern = PAtom String
+             | PBinding String Pattern
+             | PDiscard
+             | PObject [(Value, Pattern)]
+               deriving (Eq, Ord)
+
 data Closure = Closure Env AST
+             | Constant Value
                deriving (Eq, Ord)
 
 tngDef = P.LanguageDef
@@ -51,11 +58,13 @@ readMap = try (do entries <- sepBy readMapEntry whiteSpace; return $ AstObject e
 readMapEntry = do l <- readSimple; punct ":"; r <- readSimple; return (l, r)
 readSimple =    do punct "("; v <- readAST; punct ")"; return v
             <|> do punct "["; m <- readMap; punct "]"; return m
-            <|> do punct "+"; i <- ident; return $ AstBinding i
+            <|> do punct "+"; i <- ident; readBinding i
             <|> do punct "_"; return AstDiscard
             <|> do i <- ident; readLet i
 readLet i =     do punct "="; v <- readSimple; return $ AstLet i v
             <|> (return $ AstAtom i)
+readBinding i =     do punct "@"; v <- readSimple; return $ AstBinding i v
+                <|> (return $ AstBinding i AstDiscard)
 
 sepList s [] = ""
 sepList s [x] = x
@@ -68,7 +77,8 @@ instance Show AST where
     show v = showAST v
 
 showAST (AstAtom s) = s
-showAST (AstBinding s) = "+" ++ s
+showAST (AstBinding s AstDiscard) = "+" ++ s
+showAST (AstBinding s v) = "+" ++ s ++ "@" ++ show v
 showAST (AstDiscard) = "_"
 showAST (AstLet s v) = s ++ "=" ++ show v
 showAST (AstObject clauses) = "[" ++ showClauses clauses ++ "]"
@@ -78,12 +88,23 @@ instance Show Value where
     show v = showValue v
 
 showValue (VAtom s) = s
-showValue (VBinding s) = "+" ++ s
+showValue (VBinding s VDiscard) = "+" ++ s
+showValue (VBinding s v) = "+" ++ s ++ "@" ++ show v
 showValue (VDiscard) = "_"
 showValue (VObject clauses) = "[" ++ showClauses clauses ++ "]"
 
+instance Show Pattern where
+    show v = showPattern v
+
+showPattern (PAtom s) = s
+showPattern (PBinding s PDiscard) = "+" ++ s
+showPattern (PBinding s v) = "+" ++ s ++ "@" ++ show v
+showPattern (PDiscard) = "_"
+showPattern (PObject clauses) = "[" ++ showClauses clauses ++ "]"
+
 instance Show Closure where
     show (Closure e v) = showEnv e ++ show v
+    show (Constant v) = show v
     -- show (Closure e v) = show v
 
 showEnvEntry (False, n, v) = n ++ "->" ++ show v
@@ -99,10 +120,11 @@ readTng s = case parseASTFromString s of
 
 ---------------------------------------------------------------------------
 
+-- Out of date, for documentation only, may be inaccurate!
 freeVars env exp =
     case exp of
       AstAtom s -> if any (s ==) env then [] else [s]
-      AstBinding _ -> []
+      AstBinding s v -> freeVars (s:env) v
       AstDiscard -> []
       AstLet s v -> freeVars (s:env) v
       AstObject clauses -> foldr collect [] clauses
@@ -112,8 +134,9 @@ freeVars env exp =
                 patsFree = map (freeVars env . fst) clauses
       AstApp rator rand -> List.union (freeVars env rator) (freeVars env rand)
 
+-- Out of date, for documentation only, may be inaccurate!
 patternBound (AstAtom s) = []
-patternBound (AstBinding b) = [b]
+patternBound (AstBinding b v) = [b] ++ patternBound v
 patternBound (AstDiscard) = []
 patternBound (AstLet s v) = patternBound v
 patternBound (AstObject clauses) = concatMap (patternBound . snd) clauses
@@ -121,7 +144,6 @@ patternBound (AstApp _ _) = error "Unreduced pattern in patternBound"
 
 ---------------------------------------------------------------------------
 
-freeVars' env exp = freeVars env (readTng exp)
 eval' exp = eval [] (readTng exp)
 
 ---------------------------------------------------------------------------
@@ -140,10 +162,10 @@ lookupVal s bs =
                    Just v -> v
                    Nothing -> VAtom s
 
-match (VAtom a) (VAtom b) = if a == b then Just [] else Nothing
-match (VBinding n) v = Just [(False, n, v)]
-match (VDiscard) v = Just []
-match (VObject patternClauses) (VObject valueClauses) =
+match (PAtom a) (VAtom b) = if a == b then Just [] else Nothing
+match (PBinding n p) v = do bs <- match p v; return ((False, n, v) : bs)
+match (PDiscard) v = Just []
+match (PObject patternClauses) (VObject valueClauses) =
     foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
 match _ _ = Nothing
 
@@ -156,22 +178,53 @@ match1 valueClauses (pval, ppat) =
     firstThat firstMatch valueClauses
     where firstMatch (vpat, vval) =
               do bs' <- match vpat pval
-                 bs'' <- match (reduce ppat []) (reduce vval bs')
+                 bs'' <- match ppat (reduce vval bs')
                  return bs''
 
+toPattern v =
+    case v of
+      VAtom s -> PAtom s
+      VBinding s v' -> PBinding s (toPattern v')
+      VDiscard -> PDiscard
+      VObject clauses -> PObject $ map toClause clauses
+          where toClause (p, cl) = (toValue p, toPattern $ reduce cl [])
+
+toValue p =
+    case p of
+      PAtom s -> VAtom s
+      PBinding s p' -> VBinding s (toValue p')
+      PDiscard -> VDiscard
+      PObject clauses -> VObject $ map toClause clauses
+          where toClause (v, p') = (toPattern v, Constant $ toValue p)
+
 reduce (Closure env v) bs = eval (bs ++ env) v
+reduce (Constant v) bs = v
 
 eval bs o =
     case o of
       AstAtom s -> lookupVal s bs
-      AstBinding s -> VBinding s
+      AstBinding s v -> VBinding s (eval bs v)
       AstDiscard -> VDiscard
       AstLet s v -> result
           where result = eval bs' v
                 bs' = (True, s, result) : bs
       AstObject clauses -> VObject $ map evalClause clauses
-          where evalClause (pat, val) = (eval bs pat, Closure bs val)
+          where evalClause (patexp, val) = (pat, maybeClose pat bs val)
+                    where pat = toPattern $ eval bs patexp
       AstApp rator rand -> applyTng bs (eval bs rator) (eval bs rand)
+
+maybeClose pat bs o =
+    case o of
+      AstAtom s -> if elem s (patBound pat)
+                   then Closure [] o
+                   else Constant $ lookupVal s bs
+      AstDiscard -> Closure [] o
+      _ -> Closure bs o
+
+patBound (PAtom s) = []
+patBound (PBinding s p) = [s] ++ patBound p
+patBound (PDiscard) = []
+patBound (PObject clauses) = concatMap (patBound . snd) clauses
 
 dnu function value = error $ "DNU: " ++ show function ++ " " ++ show value
 
