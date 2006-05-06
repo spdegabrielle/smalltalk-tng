@@ -15,8 +15,11 @@ data AST = AstAtom String
 
 data Value = VAtom String
            | VBinding String
-           | VClosure Env [(Value, Value)]
+           | VObject [(Value, Closure)]
              deriving (Eq, Ord)
+
+data Closure = Closure Env AST
+               deriving (Eq, Ord)
 
 tngDef = P.LanguageDef
          { P.commentStart = "\""
@@ -48,11 +51,12 @@ readSimple =    do punct "("; v <- readAST; punct ")"; return v
             <|> do punct "+"; i <- ident; return $ AstBinding i
             <|> do i <- ident; return $ AstAtom i
 
+sepList s [] = ""
+sepList s [x] = x
+sepList s (x:xs) = x ++ s ++ sepList s xs
+
 showClause (l, r) = show l ++ ": " ++ show r
-showClauses [] = ""
-showClauses [clause] = showClause clause
-showClauses (clause:clauses) =
-    (showClause clause) ++ (concatMap (\c -> " " ++ showClause c) clauses)
+showClauses clauses = sepList " " (map showClause clauses)
 
 instance Show AST where
     show v = showAST v
@@ -67,9 +71,14 @@ instance Show Value where
 
 showValue (VAtom s) = s
 showValue (VBinding s) = "+" ++ s
-showValue (VClosure env clauses) = showEnv env ++ showClauses clauses
+showValue (VObject clauses) = "[" ++ showClauses clauses ++ "]"
 
-showEnv bindings = "{" ++ showClauses bindings ++ "}"
+instance Show Closure where
+    show (Closure e v) = showEnv e ++ show v
+
+showEnvEntry (n, v) = n ++ "->" ++ show v
+showEnv [] = ""
+showEnv bindings = "{" ++ sepList ", " (map showEnvEntry bindings) ++ "} "
 
 parseASTFromString = parse (do whiteSpace; v <- readAST; eof; return v) ""
 
@@ -97,9 +106,9 @@ patternBound (AstApp _ _) = error "Unreduced pattern in patternBound"
 
 ---------------------------------------------------------------------------
 
-match' ps vs = match (readTng ps) (readTng vs)
 freeVars' env exp = freeVars env (readTng exp)
 eval' env exp = eval env (readTng exp)
+eval'' exp = eval' [] exp
 
 ---------------------------------------------------------------------------
 
@@ -107,48 +116,49 @@ bindingUnion Nothing _ = Nothing
 bindingUnion _ Nothing = Nothing
 bindingUnion (Just b1) (Just b2) = Just (b1 ++ b2)
 
-match (AstAtom a) (AstAtom b) = if a == b then Just [] else Nothing
-match (AstBinding n) v = Just [(n, v)]
-match (AstObject []) v = Just []  -- maybe remove if atoms are properly disjoint?
-match (AstObject patternClauses) (AstObject valueClauses) =
-    foldr bindingUnion (Just []) $ map (flip match1 valueClauses) patternClauses
-match (AstApp _ _) _ = error "There really shouldn't be a AstApp in pattern-position in match"
+lookupVal s bs =
+    case lookup s bs of
+      Just v -> v
+      Nothing -> case lookup s baseEnv of
+                   Just v -> v
+                   Nothing -> VAtom s
+
+match (VAtom a) (VAtom b) = if a == b then Just [] else Nothing
+match (VBinding n) v = Just [(n, v)]
+match (VObject patternClauses) (VObject valueClauses) =
+    foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
 match _ _ = Nothing
 
-match1 (pval, ppat) [] = Nothing
-match1 (pval, ppat) ((vpat, vval) : valueClauses) =
-    case match vpat pval of
-      Nothing -> match1 (pval, ppat) valueClauses
-      Just bs -> case match ppat (substBindings bs vval) of
-                   Nothing -> match1 (pval, ppat) valueClauses
-                   x -> x
+firstThat p [] = Nothing
+firstThat p (x:xs) = case p x of
+                       Nothing -> firstThat p xs
+                       j -> j
+
+match1 valueClauses (pval, ppat) =
+    firstThat firstMatch valueClauses
+    where firstMatch (vpat, vval) =
+              do bs' <- match vpat pval
+                 bs'' <- match (reduce ppat []) (reduce vval bs')
+                 return bs''
+
+reduce (Closure env v) bs = eval (bs ++ env) v
 
 eval bs o =
     case o of
-      AstAtom s -> case lookup s bs of
-                     Just v -> v
-                     Nothing -> o
-      AstBinding _ -> o
-      AstObject clauses -> AstObject $ map evalClause clauses
-          where evalClause (pat, val) = (eval bs pat, substBindings rhsBindings val)
-                    where rhsBindings = filter notShadowed bs
-                          notShadowed (var, val) = not $ any (== var) patBound
-                          patBound = patternBound pat
+      AstAtom s -> lookupVal s bs
+      AstBinding s -> VBinding s
+      AstObject clauses -> VObject $ map evalClause clauses
+          where evalClause (pat, val) = (eval bs pat, Closure bs val)
       AstApp rator rand -> applyTng bs (eval bs rator) (eval bs rand)
 
-applyTng bs (AstObject patternClauses) value = apply1 bs value patternClauses
+dnu function value = error $ "DNU: " ++ show function ++ " " ++ show value
 
-apply1 bs val [] = error "applyTng match failed"
-apply1 bs val ((ppat, pval) : patternClauses) =
-    case match ppat val of
-      Nothing -> apply1 bs val patternClauses
-      Just bs' -> eval (bs' ++ bs) pval
+applyTng bs function@(VObject patternClauses) value =
+    case firstThat matches patternClauses of
+      Nothing -> dnu function value
+      Just result -> result
+    where matches (ppat, pval) = case match ppat value of
+                                   Nothing -> Nothing
+                                   Just bs' -> Just $ reduce pval bs'
 
-substBindings bs o =
-    case o of
-      AstAtom s -> case lookup s bs of
-                     Just v -> v
-                     Nothing -> o
-      AstBinding _ -> o
-      AstObject clauses -> AstObject $ map substClause clauses
-          where substClause (v, p) = (substBindings bs v, substBindings bs p)
+baseEnv = [("cons", eval'' "[+car: [+cdr: [First: car Rest: cdr]]]")]
