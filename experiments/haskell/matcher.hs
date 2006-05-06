@@ -9,12 +9,14 @@ type Env = [(String, Value)]
 
 data AST = AstAtom String
          | AstBinding String
+         | AstDiscard
          | AstObject [(AST, AST)]
          | AstApp AST AST
            deriving (Eq, Ord)
 
 data Value = VAtom String
            | VBinding String
+           | VDiscard
            | VObject [(Value, Closure)]
              deriving (Eq, Ord)
 
@@ -49,6 +51,7 @@ readMapEntry = do l <- readSimple; punct ":"; r <- readSimple; return (l, r)
 readSimple =    do punct "("; v <- readAST; punct ")"; return v
             <|> do punct "["; m <- readMap; punct "]"; return m
             <|> do punct "+"; i <- ident; return $ AstBinding i
+            <|> do punct "_"; return AstDiscard
             <|> do i <- ident; return $ AstAtom i
 
 sepList s [] = ""
@@ -63,6 +66,7 @@ instance Show AST where
 
 showAST (AstAtom s) = s
 showAST (AstBinding s) = "+" ++ s
+showAST (AstDiscard) = "_"
 showAST (AstObject clauses) = "[" ++ showClauses clauses ++ "]"
 showAST (AstApp v1 v2) = "(" ++ show v1 ++ " " ++ show v2 ++ ")"
 
@@ -71,6 +75,7 @@ instance Show Value where
 
 showValue (VAtom s) = s
 showValue (VBinding s) = "+" ++ s
+showValue (VDiscard) = "_"
 showValue (VObject clauses) = "[" ++ showClauses clauses ++ "]"
 
 instance Show Closure where
@@ -92,6 +97,7 @@ freeVars env exp =
     case exp of
       AstAtom s -> if any (s ==) env then [] else [s]
       AstBinding _ -> []
+      AstDiscard -> []
       AstObject clauses -> foldr collect [] clauses
           where collect clause acc = List.union (clauseFree clause) acc
                 clauseFree (pat, val) = foldr List.union (valsFree val) patsFree
@@ -101,6 +107,7 @@ freeVars env exp =
 
 patternBound (AstAtom s) = []
 patternBound (AstBinding b) = [b]
+patternBound (AstDiscard) = []
 patternBound (AstObject clauses) = concatMap (patternBound . snd) clauses
 patternBound (AstApp _ _) = error "Unreduced pattern in patternBound"
 
@@ -125,6 +132,7 @@ lookupVal s bs =
 
 match (VAtom a) (VAtom b) = if a == b then Just [] else Nothing
 match (VBinding n) v = Just [(n, v)]
+match (VDiscard) v = Just []
 match (VObject patternClauses) (VObject valueClauses) =
     foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
 match _ _ = Nothing
@@ -147,6 +155,7 @@ eval bs o =
     case o of
       AstAtom s -> lookupVal s bs
       AstBinding s -> VBinding s
+      AstDiscard -> VDiscard
       AstObject clauses -> VObject $ map evalClause clauses
           where evalClause (pat, val) = (eval bs pat, Closure bs val)
       AstApp rator rand -> applyTng bs (eval bs rator) (eval bs rand)
