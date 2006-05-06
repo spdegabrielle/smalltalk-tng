@@ -70,6 +70,73 @@ let filterMap +fn = [
    (+loop x): x
 ];;
 
+"
+Major changes:
+  - identifiers evaluate to the symbol with the same spelling when otherwise unbound
+  - order matters in subsequent pattern clauses. Why did I have it the other way?
+    --> for optional keyword arguments, I think.
+  - you can have expressions in patterns, too. This includes identifier references.
+    What kind of scoping should apply?
+  - since you can have naked identifiers as variable references in patterns, you need
+    some way of introducing a binding occurrence of an identifier. This is, tentatively,
+    spelled +var.
+  - Traits. +, /, @, -
+  - letrec is primitive, since this is a lazy language
+
+{} is underused. Could it be used for monad, or letrec syntax?
+
+Should we autocurry? (Probably.)
+
+_ in value-context means 'top' - ie something that doesn't match
+anything else. _ in binding-context means 'discard'/'bottom' -
+something that matches anything. Actually that's not quite right. You
+can still see _ as equivalent to [], since if it's supplied as a
+value, the only pattern that matches it is [] - and [] as a pattern
+matches any object.
+
+"
+
+
+(define (+diff +r1 +r2)
+  (let ((+collect ((First: +fieldName Rest: +rest):
+		     (+diffs:
+		      (let ((+v1 (r1 At: fieldName IfAbsent: Absent))
+			    (+v2 (r2 At: fieldName IfAbsent: Absent))
+			    (+collect1 ((+type +old +new):
+					(collect rest ([fieldName type old new] :: diffs)))))
+			(cond
+			 ((v1 == v2) collect rest differences)
+			 ((v1 == Absent) collect1 Added () v2)
+			 ((v2 == Absent) collect1 Removed v1 ())
+			 (else collect1 Changed v1 v2))))
+		   (): (+diffs: diffs))))
+    ((r1 Class == r2 Class) && collect (r1 Class FieldNames) ())))
+
+(define (+diff +r1 +r2)
+  ((r1 Class == r2 Class) &&
+   (filterMap (+fieldName:
+	       (let ((+v1 (r1 At: fieldName IfAbsent: Absent))
+		     (+v2 (r2 At: fieldName IfAbsent: Absent)))
+		 (cond
+		  ((v1 == v2) Nothing)
+		  ((v1 == Absent) Just: [fieldName Added () v2])
+		  ((v2 == Absent) Just: [fieldName Removed v1 ()])
+		  (else Just: [fieldName Changed v1 v2]))))
+	      (r1 Class FieldNames))))
+
+(define (+filterMap +fn)
+  ((First: +f Rest: +r): maybe (self r) (+v: v :: self r) id (fn f)
+   +x: x))
+
+"
+ThiNG-expressions should be constructed like S-expressions: right-associatively.
+Adjacency and dot, just like sexps, should be equivalent to the reader.
+"
+
+{} Length == 0
+{1} Length == 1
+
+
 define [diff .r1 .r2]:
   ((r1 Class == r2 Class) &&
   filterMap [[_ .fieldName]:
