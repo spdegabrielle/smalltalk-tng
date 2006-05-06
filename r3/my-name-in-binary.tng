@@ -1,0 +1,26 @@
+"
+(list->string
+ (map (lambda (x) (integer->char (+ 96 (string->number x 2))))
+      (map list->string
+	   (unfold null?
+		   (lambda (x) (take x 5))
+		   (lambda (x) (drop x 5))
+		   (map (lambda (x) (cdr (assq x '((#\/ . #\1) (#\\ . #\0)))))
+			(string->list ""/\\/\\\\\\////\\///\\//\\\\/\\\\///""))))))
+"
+
+map: [digits: ((digits as: Integer base: 2) + 96 as: Character encoding: Encoding::Ascii)]
+over: (unfold: (map: [$/: $1 $\: $0] over: '/\/\\\////\///\//\\/\\///')
+       until: [seed: seed isEmpty]
+       with: [seed: (seed take: 5, seed drop: 5)])
+
+map [digits: ((digits as: Integer base: 2) + 96 as: Character encoding: Encoding::Ascii)]
+    (unfold until: .isEmpty er
+	    with: [seed: (seed splitAt: 5)]
+	    seed: (map [$/: $1 $\: $0] '/\/\\\////\///\//\\/\\///'))
+
+map [x: ((fold: [(d,n): d + (n * 2)] seed: 0 over: x) + 96
+         as: Character encoding: Encoding::Ascii)]
+    (unfold until: .isEmpty er
+	    with: [seed: (seed splitAt: 5)]
+	    seed: (map [$/: 1 $\: 0] '/\/\\\////\///\//\\/\\///'))

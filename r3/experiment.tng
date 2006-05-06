@@ -1,0 +1,180 @@
+"How does one *undefine* a bunch of behaviour?
+One possibility: delegate to the empty object, causing a DNU"
+
+define [
+  #map -> [(map f) -> [#nil -> #nil
+                       [#hd -> x #tl -> xs] -> [#hd -> (f x) #tl -> (map f xs)]]]
+
+  map: [(map f) -> [nil: #nil
+                    [hd: x tl: xs] -> [hd: (f x) tl: (map f xs)]]]
+
+  (#map f) -> [#nil -> #nil
+               [hd: x tl: xs] -> [hd: (f x) tl: (#map f xs)]]
+
+  (map f #nil) -> #nil
+  (map f [hd: x tl: xs]) -> [hd: (f x) tl: (#map f xs)]
+
+  "The thing at the head of these messages is bound to 0 - so (msg 0) is 'self'"
+  (#nil map: f) -> #nil
+  ([hd: x tl: xs] map: f) -> [hd: f x tl: (xs map: f)]
+
+  (#nil #map -> f) -> #nil
+  ([#hd -> x #tl -> xs] #map -> f) -> [#hd -> f x #tl -> (xs #map -> f)]
+
+  (#nil #map->f) -> #nil
+  ([#hd->x #tl->xs] #map->f) -> [#hd -> f x #tl -> (xs #map->f)]
+
+  (#nil #map f) -> #nil
+  ([#hd: x #tl: xs] #map f) -> [#hd: f x #tl: (xs #map f)]
+
+  "Dot is quote"
+  (.nil.map f): .nil
+  ([.hd: x .tl: xs].map f): [.hd: f x .tl: xs.map f]
+
+  "Problem: x .map f - the .map is a generic-send, the f is a specific-send"
+  "Specific-send is going to be rare, perhaps?"
+  "Syntax for it? x .map @ f"
+
+  "Alternative is to require messages to be bound, to either a generic-function
+   or a regular lambda"
+
+  "Another alternative is to rearrange the order of arguments"
+  "(The implicit receiver is the /subject/)"
+  (.map f .nil): .nil
+  (.map f [.hd: x .tl: xs]): [.hd: f x .tl: map f xs]
+
+  "Desugared, the above reads:"
+  .map: [f: [.nil: .nil
+             [.hd: x .tl: xs]: [.hd f x .tl: map f xs]]]
+
+  "Yet another option is to make it a head-n-ary message (with the '0' argument)"
+  (.nil .map: f): .nil
+  ([.hd: x .tl: xs] .map: f): [.hd: f x .tl: (xs.map: f)]
+
+  "Desugared:"
+  (0: .nil             .map: f): .nil
+  (0: [.hd: x .tl: xs] .map: f): [.hd f x .tl: (xs.map: f)]
+
+  "So far, so good. What about, for the sugared/curried form, lifting the quote-requirement
+   on the function operator position?"
+  (map f .nil): .nil
+  (map f [.hd: x .tl: xs]): [.hd: f x .tl: map f xs]
+  "No good: if we want to be able to curry regular functions, we'll need some way
+   of matching literals in LHS pos. This drop-the-quote-requirement only works
+   for the global context object."
+];;
+
+(arg.hd)
+(arg.tl)
+
+"a pattern:" [(a b): _]
+"-->" (arg (a b))
+
+define fold-left [
+  kons: [knil: [.nil            : knil
+                [.hd: h .tl: t] : (fold-left kons (kons h knil) t)]]
+];;
+
+define fold-left [
+  kons: [lp knil: [.nil: knil
+                   [.hd: h .tl: t]: lp (kons h knil) t]]
+];;
+
+"Using the Curry sugar"
+define (fold-left kons) [lp
+  (knil .nil): knil
+  (knil [.hd: h .tl: t]): lp (kons h knil) t
+];;
+
+"Variant"
+define fold-left [
+  kons: [lp (knil .nil): knil
+            (knil [.hd: h .tl: t]): lp (kons h knil) t]
+];;
+
+map [x: x + 1] ([1, 2, 3] asList);;
+
+"Oo! You can use the named-self syntax to get hold of the context!"
+"Er, degenerate cases notwithstanding"
+let [here] in ...
+
+"DAMN letrec is a problem piece of syntax"
+letrec: [(.map f .nil): .nil
+         (.map f [.hd: h .tl: t]): [.hd: f h .tl: map f t]
+         .toList: [[]: .nil
+                   [h ; t]: [.hd: h .tl: toList t]]] "yikes"
+in: map [x: x] (toList [1 2 3])
+;;
+
+map [x: x + 1] (toList [1 2 3]);;
+
+"To lift something:" {lifted} <- val
+"To drop something:" val <- {lifted}
+
+"iota"
+define (..) [
+  start: [.inf+: [loop x: [.first: x .rest: loop (x + 1)]] start
+          .inf-: [loop x: [.first: x .rest: loop (x - 1)]] start
+          end: (let op = (.if: start > end .then: (+) .else: (-)),
+                [loop x: (.if: x = end
+                          .then: .end
+                          .else: [.first: x .rest: loop (op x 1)])] start)]
+];;
+
+"What if, for messages sent implicitly to the context, we allow quoteless
+literals, to get simpler-looking selectors?"
+define (..) [
+  start: [.inf+: [loop x: [.first: x .rest: loop (x + 1)]] start
+          .inf-: [loop x: [.first: x .rest: loop (x - 1)]] start
+          end: (let op = (if: start > end then: (+) else: (-)),
+                [loop x: (if: x = end
+                          then: .end
+                          else: [.first: x .rest: loop (op x 1)])] start)]
+];;
+
+"Now, Smalltalk-style conditionals, using head-n-ary syntax:"
+define (..) [
+  start: [.inf+: [loop x: [.first: x .rest: loop (x + 1)]] start
+          .inf-: [loop x: [.first: x .rest: loop (x - 1)]] start
+          end: (let op = (start > end ifTrue: (+) ifFalse: (-)),
+                [loop x: (x = end
+                            ifTrue: .end
+                            ifFalse: [.first: x .rest: loop (op x 1)])] start)]
+];;
+
+"Curried: doesn't quite work because of the need to quote the operator"
+define [
+  (start .. .inf+): [loop x: [.first: x .rest: loop (x + 1)]] start
+  (start .. .inf-): [loop x: [.first: x .rest: loop (x - 1)]] start
+  (start .. end): (let op = (start > end ifTrue: (+) ifFalse: (-)),
+                   [loop x: (x = end
+                               ifTrue: .end
+                               ifFalse: [.first: x .rest: loop (op x 1)])] start)
+];;
+
+define ($) [f: f];;
+"
+f $ a
+--> ($) f a
+--> f a
+"
+
+
+"
+let pat = val,
+body
+-->
+[pat: body] val
+
+... which makes the scoping clear. (It's like let in scheme.)
+
+letrec pat = val,
+body
+-->
+well nothing really. It has to be primitive?
+What about trying a named-let variant?
+
+let loop (x = start): [.first: x .rest: loop (x + 1)]
+
+Yuck.
+"
