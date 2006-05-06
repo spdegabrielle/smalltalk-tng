@@ -171,4 +171,7 @@ applyTng bs function@(VObject patternClauses) value =
                                    Just bs' -> Just $ reduce pval bs'
 applyTng bs function value = dnu function value
 
-baseEnv = [("cons", eval'' "[+car: [+cdr: [First: car Rest: cdr]]]")]
+baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
+          -- , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) +x:x]]"
+          ]
+    where def nm exp = (nm, eval'' exp)
