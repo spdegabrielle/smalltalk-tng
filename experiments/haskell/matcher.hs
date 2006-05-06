@@ -214,11 +214,8 @@ eval bs o =
       AstApp rator rand -> applyTng bs (eval bs rator) (eval bs rand)
 
 maybeClose pat bs o =
-    case o of
-      AstAtom s -> if elem s (patBound pat)
-                   then Closure [] o
-                   else Constant $ lookupVal s bs
-      AstDiscard -> Closure [] o
+    case patBound pat of
+      [] -> Constant $ eval bs o
       _ -> Closure bs o
 
 patBound (PAtom s) = []
