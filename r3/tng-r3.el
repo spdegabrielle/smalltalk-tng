@@ -61,6 +61,7 @@
 	"do"
 	"in"
 	"let"
+	"self"
 	;;"letrec"
 	"module"
 	;;"new"
