@@ -94,6 +94,9 @@ can still see _ as equivalent to [], since if it's supplied as a
 value, the only pattern that matches it is [] - and [] as a pattern
 matches any object.
 
+Since . is free now, perhaps use it for apply operator? What should
+its precedence and associativity be?
+
 "
 
 
