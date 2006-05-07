@@ -42,6 +42,9 @@
 (define (mdisplay x)
   (make-monad 'io (lambda () (display x) 'done)))
 
+(define mread
+  (make-monad 'io (lambda () (read))))
+
 (define (run-io m)
   ((io-action
     (determine 'io
@@ -71,3 +74,16 @@
 					   (lambda (s0) (cons a s0))))
 			     m))
    initial))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(require (lib "1.ss" "srfi"))
+
+(define (mixed-monad-demo)
+  (run-io (mlet* ((_ (mdisplay "Enter a number\n"))
+		  (n mread)
+		  (all-n (return (iota n)))
+		  (_ (mdisplay "Numbers: "))
+		  (_ (mdisplay all-n))
+		  (_ (mdisplay "\n")))
+		 (return 'nothing))))
