@@ -66,6 +66,8 @@
 	"module"
 	;;"new"
 	"return"
+	"case"
+	"of"
 	)
       'words)
 
@@ -75,7 +77,8 @@
      ;; Selectors.
      ;;'("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>:" . font-lock-function-name-face)
 
-     ;; Symbols.
+     ;; Symbols (by convention).
+     '("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-type-face)
      ;;'("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-constant-face)
 
      ;; Functions.

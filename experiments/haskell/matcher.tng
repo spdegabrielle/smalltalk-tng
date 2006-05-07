@@ -1,0 +1,31 @@
+define [
+  const: [+value: [_: value]]
+  case: [+val: [of: [+matcher: matcher . val]]]
+
+  bindingUnion: [Nothing: (const Nothing)]
+		 [Just: +b1]: [[Just: +b2]: (b1 ++ b2)
+			       Nothing: Nothing]
+
+  eLookup: [+s: search=[(cons (_, +n, +v) +bs): if (n == s) then [Just: v] else (search bs)
+			_: Nothing]]
+
+  lookupVal: [+s: [+bs: (case (eLookup s bs) of [
+			  [Just: +v]: v
+			  Nothing: (case (eLookup s baseEnv) of [
+				      [Just: +v]: v
+				      Nothing: [VAtom: s]])])]]
+
+  match: [([PAtom: +a], [VAtom +b]): if (a == b) then [Just: []] else Nothing
+          ([PBinding: (+n, +p)], +v): (case (match (p, v)) of [
+					[Just: +bs]: [Just: (cons (False, n, v) bs)]
+					Nothing: Nothing])
+	  (PDiscard, _): [Just: []]
+	  ([PObject: +patternClauses], [VObject: +valueClauses]):
+	    (foldr bindingUnion [Just: []] (map (match1 valueClauses) patternClauses))
+	  (_, _): Nothing]
+
+  firstThat: [+p: search=[(cons +x +xs): (case p x of [
+					    Nothing: (search xs)
+					    [Just: +v]: [Just: v]])
+			  _: Nothing]]
+]
