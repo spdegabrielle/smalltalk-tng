@@ -203,6 +203,25 @@ applyTng bs function value = dnu function value
 
 ---------------------------------------------------------------------------
 
+infix 4 <:
+
+(<:) = flip covers
+
+covers (PDiscard) _ = True
+covers (PAtom x) (PAtom y) | x == y = True
+                           | otherwise = False
+covers (PBinding s p) p' = covers p p'
+covers (PObject c1) (PObject c2) = clausesCover c1 c2
+covers _ _ = False
+
+clausesCover c1 c2 = False
+
+infix 4 <::
+(<::) = flip covers'
+covers' a b = covers (toPattern $ eval' a) (toPattern $ eval' b)
+
+---------------------------------------------------------------------------
+
 eval' exp = eval [] (readTng exp)
 
 baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
