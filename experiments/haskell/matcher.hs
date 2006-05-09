@@ -158,16 +158,14 @@ toPattern v =
       VAtom s -> PAtom s
       VBinding s v' -> PBinding s (toPattern v')
       VDiscard -> PDiscard
-      VObject clauses -> PObject $ map toClause clauses
-          where toClause (p, cl) = (toValue p, toPattern $ reduce cl [])
+      VObject clauses -> PObject $ [(toValue p, toPattern $ reduce cl []) | (p, cl) <- clauses]
 
 toValue p =
     case p of
       PAtom s -> VAtom s
       PBinding s p' -> VBinding s (toValue p')
       PDiscard -> VDiscard
-      PObject clauses -> VObject $ map toClause clauses
-          where toClause (v, p') = (toPattern v, Constant $ toValue p)
+      PObject clauses -> VObject $ [(toPattern v, Constant $ toValue p) | (v, p) <- clauses]
 
 reduce (Closure env v) bs = eval (bs ++ env) v
 reduce (Constant v) bs = v
