@@ -1,4 +1,4 @@
-module Main where
+module Matcher where
 
 import Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Token as P
@@ -120,34 +120,6 @@ readTng s = case parseASTFromString s of
 
 ---------------------------------------------------------------------------
 
--- Out of date, for documentation only, may be inaccurate!
-freeVars env exp =
-    case exp of
-      AstAtom s -> if any (s ==) env then [] else [s]
-      AstBinding s v -> freeVars (s:env) v
-      AstDiscard -> []
-      AstLet s v -> freeVars (s:env) v
-      AstObject clauses -> foldr collect [] clauses
-          where collect clause acc = List.union (clauseFree clause) acc
-                clauseFree (pat, val) = foldr List.union (valsFree val) patsFree
-                    where valsFree = freeVars ((patternBound pat) ++ env)
-                patsFree = map (freeVars env . fst) clauses
-      AstApp rator rand -> List.union (freeVars env rator) (freeVars env rand)
-
--- Out of date, for documentation only, may be inaccurate!
-patternBound (AstAtom s) = []
-patternBound (AstBinding b v) = [b] ++ patternBound v
-patternBound (AstDiscard) = []
-patternBound (AstLet s v) = patternBound v
-patternBound (AstObject clauses) = concatMap (patternBound . snd) clauses
-patternBound (AstApp _ _) = error "Unreduced pattern in patternBound"
-
----------------------------------------------------------------------------
-
-eval' exp = eval [] (readTng exp)
-
----------------------------------------------------------------------------
-
 bindingUnion Nothing _ = Nothing
 bindingUnion _ Nothing = Nothing
 bindingUnion (Just b1) (Just b2) = Just (b1 ++ b2)
@@ -233,6 +205,10 @@ applyTng bs function@(VObject patternClauses) value =
                                    Nothing -> Nothing
                                    Just bs' -> Just $ reduce pval bs'
 applyTng bs function value = dnu function value
+
+---------------------------------------------------------------------------
+
+eval' exp = eval [] (readTng exp)
 
 baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
           , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) +x:x]]"
