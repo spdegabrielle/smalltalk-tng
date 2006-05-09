@@ -120,10 +120,6 @@ readTng s = case parseASTFromString s of
 
 ---------------------------------------------------------------------------
 
-bindingUnion Nothing _ = Nothing
-bindingUnion _ Nothing = Nothing
-bindingUnion (Just b1) (Just b2) = Just (b1 ++ b2)
-
 eLookup s [] = Nothing
 eLookup s ((_, n, v):bs) = if n == s then Just v else eLookup s bs
 
@@ -139,6 +135,7 @@ match (PBinding n p) v = do bs <- match p v; return ((False, n, v) : bs)
 match (PDiscard) v = Just []
 match (PObject patternClauses) (VObject valueClauses) =
     foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
+        where bindingUnion j1 j2 = do b1 <- j1; b2 <- j2; return (b1 ++ b2)
 match _ _ = Nothing
 
 firstThat p [] = Nothing
