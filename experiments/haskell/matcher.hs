@@ -10,8 +10,8 @@ type Env = [(Bool, String, Value)]
 data AST = AstAtom String
          | AstBinding String AST
          | AstDiscard
-         | AstLet String AST
          | AstObject [(AST, AST)]
+         | AstLet String AST
          | AstApp AST AST
            deriving (Eq, Ord)
 
@@ -80,8 +80,8 @@ showAST (AstAtom s) = s
 showAST (AstBinding s AstDiscard) = "+" ++ s
 showAST (AstBinding s v) = "+" ++ s ++ "@" ++ show v
 showAST (AstDiscard) = "_"
-showAST (AstLet s v) = s ++ "=" ++ show v
 showAST (AstObject clauses) = "[" ++ showClauses clauses ++ "]"
+showAST (AstLet s v) = s ++ "=" ++ show v
 showAST (AstApp v1 v2) = "(" ++ show v1 ++ " " ++ show v2 ++ ")"
 
 instance Show Value where
@@ -172,12 +172,12 @@ eval bs o =
       AstAtom s -> lookupVal s bs
       AstBinding s v -> VBinding s (eval bs v)
       AstDiscard -> VDiscard
-      AstLet s v -> result
-          where result = eval bs' v
-                bs' = (True, s, result) : bs
       AstObject clauses -> VObject $ map evalClause clauses
           where evalClause (patexp, val) = (pat, maybeClose pat bs val)
                     where pat = toPattern $ eval bs patexp
+      AstLet s v -> result
+          where result = eval bs' v
+                bs' = (True, s, result) : bs
       AstApp rator rand -> applyTng bs (eval bs rator) (eval bs rand)
 
 maybeClose pat bs o =
