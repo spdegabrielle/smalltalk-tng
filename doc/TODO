@@ -1,16 +1,13 @@
-*** Challenges
+-*- outline -*-
 
- - a definition location for messages to travel to (SOLVED by use of
-   blue calculus with DCHAM-style joinish formulation)
+Research directions:
 
-   - model the STORE - this gives nice properties for forwarders,
-     garbage-collection-modelling, forces thought about exception
-     handling and runtime-failure etc etc.
+ - Partial-evaluation in ThiNG r3/r4
 
- - a way of lifting all locations with a particular channel in their
-   path (unknown)
+ - Hygiene. How should bindings-as-values ensure lexically-apparent scoping?
 
- - a means of dynamically scoping certain names, eg. class definitions
-   ("String") and helpers ("MEMOIZE", "ST80DISPATCH")
+ - Trait composition
 
-   - investigate KLAIM - they may have some possible solutions.
+ - Binding of self in methods. Explicit parameters mess with the
+   model... and yet they're somehow cleaner than an implicit
+   semi-dynamic parameter...
