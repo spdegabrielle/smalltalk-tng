@@ -1,6 +1,7 @@
 (require (lib "match.ss")
 	 (lib "etc.ss")
 	 (lib "errortrace.ss" "errortrace")
+	 (lib "1.ss" "srfi")
 	 (lib "9.ss" "srfi"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -147,8 +148,6 @@
   (make-monad *state* (lambda (s0) (cons 'unit a))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(require (lib "1.ss" "srfi"))
 
 (define (mixed-monad-demo)
   (run-io (mlet* ((_ (mdisplay "Enter a number\n"))
