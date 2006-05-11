@@ -263,7 +263,6 @@ stricter (PObject c1) (PObject c2) = any (surviveAfterRemoving c2) c1 &&
               not $ any (`clauseStricterOrEqv` clause) clausesToRemove
 stricter _ _ = False
 
-clauseStricterOrEqvToAnyOf clauses clause = any (clauseStricterOrEqv clause) clauses
 clauseStricterOrEqv c1 c2 = (c1 `clauseStricter` c2) || (c1 `clauseEqv` c2)
 
 clauseStricter (v1, p1) (v2, p2) = ((v1 `valEqv` v2) && (p1 `stricter` p2)) ||
