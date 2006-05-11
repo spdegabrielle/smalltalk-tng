@@ -120,15 +120,9 @@ readTng s = case parseASTFromString s of
 
 ---------------------------------------------------------------------------
 
-eLookup s [] = Nothing
-eLookup s ((_, n, v):bs) = if n == s then Just v else eLookup s bs
-
-lookupVal s bs =
-    case eLookup s bs of
-      Just v -> v
-      Nothing -> case eLookup s baseEnv of
-                   Just v -> v
-                   Nothing -> VAtom s
+eLookup s [] defval = defval
+eLookup s ((_, n, v):bs) defval = if n == s then v else eLookup s bs defval
+lookupVal s bs = eLookup s bs (eLookup s baseEnv (VAtom s))
 
 match (PAtom a) (VAtom b) = if a == b then Just [] else Nothing
 match (PBinding n p) v = do bs <- match p v; return ((False, n, v) : bs)
