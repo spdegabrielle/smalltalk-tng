@@ -58,7 +58,7 @@ readMap = try (do entries <- sepBy readMapEntry whiteSpace; return $ AstObject e
 readMapEntry = do l <- readSimple; punct ":"; r <- readSimple; return (l, r)
 readSimple =    do punct "("; v <- readAST; punct ")"; return v
             <|> do punct "["; m <- readMap; punct "]"; return m
-            <|> do punct "+"; i <- ident; readBinding i
+            <|> do string "+"; i <- ident; readBinding i
             <|> do punct "_"; return AstDiscard
             <|> do i <- ident; readLet i
 readLet i =     do punct "="; v <- readSimple; return $ AstLet i v
