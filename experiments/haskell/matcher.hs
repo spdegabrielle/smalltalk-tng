@@ -217,7 +217,7 @@ patEqv (PAtom s1) (PAtom s2) = s1 == s2
 patEqv (PDiscard) (PDiscard) = True
 patEqv (PBinding s p1) p2 = patEqv p1 p2
 patEqv p1 (PBinding s p2) = patEqv p1 p2
-patEqv (PObject c1) (PObject c2) = clausesMatchBy clauseEqv c1 c2 && clausesMatchBy clauseEqv c2 c1
+patEqv (PObject c1) (PObject c2) = clausesMatchBy c1 c2 && clausesMatchBy c2 c1
 patEqv _ _ = False
 
 clauseEqv (v1, p1) (v2, p2) = (toPattern v1 `patEqv` toPattern v2) && (p1 `patEqv` p2)
@@ -225,9 +225,9 @@ clauseEqv (v1, p1) (v2, p2) = (toPattern v1 `patEqv` toPattern v2) && (p1 `patEq
 tracev s v = trace (s ++ ": " ++ show v) v
 tracev2 s f v1 v2 = let r = f v1 v2 in trace (s ++ ": " ++ show ((v1, v2), r)) r
 
-clausesMatchBy pred c1 c2 = null $ remaining
+clausesMatchBy c1 c2 = null $ remaining
     where remaining = foldl removeClauses c2 c1
-          removeClauses cs c = filter (not . pred c) cs
+          removeClauses cs c = filter (not . clauseEqv c) cs
 
 data Failure = Failure { lhs :: Pattern, rhs :: Pattern, expected :: Bool, got :: Bool }
                deriving (Show)
