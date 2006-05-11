@@ -35,20 +35,20 @@
    ((pair? m) (make-monad *list* m))
    ((null? m) (make-monad *list* m))
    ((monad? m) (if (eq? (monad-kind m) '_delayed)
-		   (force (monad-value m))
+		   ((monad-value m))
 		   m))
    (else (error "not a monad" m))))
 
 (define-syntax delay-monad
   (syntax-rules ()
-    ((_ m) (delay-monad* (delay (undelay-monad m))))))
+    ((_ m) (delay-monad* (lambda () (undelay-monad m))))))
 
 (define (delay-monad* m)
   (make-monad '_delayed m))
 
 (define (undelay-monad m)
   (if (and (monad? m) (eq? (monad-kind m) '_delayed))
-      (force (monad-value m))
+      ((monad-value m))
       m))
 
 (define (>>= ma a->mb)
