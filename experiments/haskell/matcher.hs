@@ -286,6 +286,6 @@ a =:: b = (ePat a) =: (ePat b)
 eval' exp = eval [] (readTng exp)
 
 baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
-          , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) +x:x]]"
+          , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) Nil:Nil]]"
           ]
     where def nm exp = (False, nm, eval' exp)
