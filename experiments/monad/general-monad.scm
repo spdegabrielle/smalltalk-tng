@@ -76,26 +76,22 @@
   (let continue ((m m))
     (let* ((m (monadize m))
 	   (kind (monad-kind m)))
-      (cond
-       ((determined? m) (if (eq? kind mclass)
-			    m
-			    (wrong-mclass mclass m)))
-       ((eq? kind '_bind)
-	(continue ((monad-class-binder mclass)
-		   (continue (car (monad-value m)))
-		   (cadr (monad-value m)))))
-       ((eq? kind '_return)
-	((monad-class-returner mclass) (monad-value m)))
-       ((eq? kind '_fail)
-	((monad-class-failer mclass) (monad-value m)))
-       (else
-	(error "invalid monad-kind" m))))))
+      (if (determined? m)
+	  (if (eq? kind mclass)
+	      m
+	      (wrong-mclass mclass m))
+	  (continue
+	   (case kind
+	     ((_bind) ((monad-class-binder mclass)
+		       (continue (car (monad-value m)))
+		       (cadr (monad-value m))))
+	     ((_return) ((monad-class-returner mclass) (monad-value m)))
+	     ((_fail) ((monad-class-failer mclass) (monad-value m)))
+	     (else
+	      (error "invalid monad-kind" m))))))))
 
 (define (monad-arg mclass)
-  (lambda (m) (let ((m (monadize m)))
-		(if (eq? (monad-kind m) mclass)
-		    (monad-value m)
-		    (wrong-mclass mclass m)))))
+  (lambda (m) (monad-value (determine mclass m))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -104,8 +100,7 @@
 				 (lambda (x) (list x))
 				 (lambda (s) '())))
 
-(define (run-list L)
-  ((monad-arg *list*) (determine *list* L)))
+(define run-list (monad-arg *list*))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -117,7 +112,7 @@
 (define io-action (monad-arg *io*))
 
 (define (run-io m)
-  ((io-action (determine *io* m))))
+  ((io-action m)))
 
 (define (mdisplay x)
   (make-monad *io* (lambda () (display x) 'done)))
@@ -131,7 +126,7 @@
 				  (lambda (st1 f)
 				    (make-monad *state*
 						(lambda (s0)
-						  (let* ((inp ((state-xformer st1) s0))
+						  (let* ((inp (run-st st1 s0))
 							 (v (car inp))
 							 (s1 (cdr inp)))
 						    (run-st (f v) s1)))))
@@ -143,7 +138,7 @@
 (define state-xformer (monad-arg *state*))
 
 (define (run-st m initial)
-  ((state-xformer (determine *state* m)) initial))
+  ((state-xformer m) initial))
 
 (define sget
   (make-monad *state* (lambda (s0) (cons s0 s0))))
