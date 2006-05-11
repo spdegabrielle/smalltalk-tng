@@ -3,6 +3,7 @@ module Matcher where
 import Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Token as P
 import qualified List
+import qualified Maybe
 import Debug.Trace
 
 type Env = [(Bool, String, Value)]
@@ -105,7 +106,6 @@ showPattern (PObject clauses) = "[" ++ showClauses clauses ++ "]"
 instance Show Closure where
     show (Closure e v) = showEnv e ++ show v
     show (Constant v) = show v
-    -- show (Closure e v) = show v
 
 showEnvEntry (False, n, v) = n ++ "->" ++ show v
 showEnvEntry (True, n, v) = n
@@ -203,22 +203,83 @@ applyTng bs function value = dnu function value
 
 ---------------------------------------------------------------------------
 
-infix 4 <:
+infix 4 <:      -- accepts strictly more values
+infix 4 <=:     -- either <: or =:
+infix 4 =:      -- is essentially "the same" pattern
 
-(<:) = flip covers
+(=:) = patEqv
+(<:) = stricter
+p1 <=: p2 = (p1 <: p2) || (p1 =: p2)
 
-covers (PDiscard) _ = True
-covers (PAtom x) (PAtom y) | x == y = True
-                           | otherwise = False
-covers (PBinding s p) p' = covers p p'
-covers (PObject c1) (PObject c2) = clausesCover c1 c2
-covers _ _ = False
+p1 `overlaps` p2 = (p1 <: p2) || (p1 =: p2) || (p2 <: p1)
 
-clausesCover c1 c2 = False
+patEqv (PAtom s1) (PAtom s2) = s1 == s2
+patEqv (PDiscard) (PDiscard) = True
+patEqv (PBinding s p1) p2 = patEqv p1 p2
+patEqv p1 (PBinding s p2) = patEqv p1 p2
+patEqv (PObject c1) (PObject c2) = clausesMatchBy clauseEqv c1 c2 && clausesMatchBy clauseEqv c2 c1
+patEqv _ _ = False
+
+clauseEqv (v1, p1) (v2, p2) = (toPattern v1 `patEqv` toPattern v2) && (p1 `patEqv` p2)
+
+tracev s v = trace (s ++ ": " ++ show v) v
+tracev2 s f v1 v2 = let r = f v1 v2 in trace (s ++ ": " ++ show ((v1, v2), r)) r
+
+clausesMatchBy pred c1 c2 = null $ remaining
+    where remaining = foldl removeClauses c2 c1
+          removeClauses cs c = filter (not . pred c) cs
+
+data Failure = Failure { lhs :: Pattern, rhs :: Pattern, expected :: Bool, got :: Bool }
+               deriving (Show)
+strictFailures = Maybe.mapMaybe fails tests
+    where fails (lhs, rhs, expected) = let result = (lhs <:: rhs) in
+                                       if result == expected
+                                       then Nothing
+                                       else Just $ Failure { lhs = ePat lhs,
+                                                             rhs = ePat rhs,
+                                                             expected = expected,
+                                                             got = result }
+          tests = [("cons _ (cons _ _)", "cons (cons _ _) _", False),
+                   ("cons _ (cons _ _)", "cons _ _", True),
+                   ("cons _ _", "cons _ (cons _ _)", False),
+                   ("[]", "[]", False),
+                   ("[]", "cons _ _", False),
+                   ("cons _ _", "cons _ _", False),
+                   ("cons +a +b", "cons +c +d", False),
+                   ("[First: _]", "[First: _ Rest: _]", False),
+                   ("[A: _ B: _]", "[B: _ A: _]", False),
+                   ("[A: _ B: _]", "[A: _]", True),
+                   ("[A: _ B: _]", "[C: _]", False),
+                   ("[A: _ B: _]", "[C: _ A: _]", False),
+                   ("[First: _ Rest: _]", "[First: _]", True)]
+
+stricter (PBinding s p1) p2 = stricter p1 p2
+stricter p1 (PBinding s p2) = stricter p1 p2
+stricter a b | a == b = False
+stricter _ (PDiscard) = True
+stricter (PObject c1) (PObject c2) = any (surviveAfterRemoving c2) c1 &&
+                                     not (any (surviveAfterRemoving c1) c2)
+    where surviveAfterRemoving clausesToRemove clause =
+              not $ any (`clauseStricterOrEqv` clause) clausesToRemove
+stricter _ _ = False
+
+clauseStricterOrEqvToAnyOf clauses clause = any (clauseStricterOrEqv clause) clauses
+clauseStricterOrEqv c1 c2 = (c1 `clauseStricter` c2) || (c1 `clauseEqv` c2)
+
+clauseStricter (v1, p1) (v2, p2) = ((v1 `valEqv` v2) && (p1 `stricter` p2)) ||
+                                   ((v1 `coStricter` v2) && ((p1 `stricter` p2) ||
+                                                             (p1 `patEqv` p2)))
+    where v1 `coStricter` v2 = (toPattern v2 `stricter` toPattern v1)
+          v1 `valEqv` v2 = (toPattern v1 `patEqv` toPattern v2)
 
 infix 4 <::
-(<::) = flip covers'
-covers' a b = covers (toPattern $ eval' a) (toPattern $ eval' b)
+infix 4 <=::
+infix 4 =::
+
+ePat exp = toPattern $ eval' exp
+a <:: b = (ePat a) <: (ePat b)
+a <=:: b = (ePat a) <=: (ePat b)
+a =:: b = (ePat a) =: (ePat b)
 
 ---------------------------------------------------------------------------
 
