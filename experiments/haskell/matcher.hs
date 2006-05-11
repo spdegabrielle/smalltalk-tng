@@ -229,6 +229,35 @@ clausesMatchBy c1 c2 = null $ remaining
     where remaining = foldl removeClauses c2 c1
           removeClauses cs c = filter (not . clauseEqv c) cs
 
+stricter (PBinding s p1) p2 = stricter p1 p2
+stricter p1 (PBinding s p2) = stricter p1 p2
+stricter a b | a == b = False
+stricter _ (PDiscard) = True
+stricter (PObject c1) (PObject c2) = any (surviveAfterRemoving c2) c1 &&
+                                     not (any (surviveAfterRemoving c1) c2)
+    where surviveAfterRemoving clausesToRemove clause =
+              not $ any (`clauseStricterOrEqv` clause) clausesToRemove
+stricter _ _ = False
+
+clauseStricterOrEqv c1 c2 = (c1 `clauseStricter` c2) || (c1 `clauseEqv` c2)
+
+clauseStricter (v1, p1) (v2, p2) = ((v1 `valEqv` v2) && (p1 `stricter` p2)) ||
+                                   ((v1 `coStricter` v2) && ((p1 `stricter` p2) ||
+                                                             (p1 `patEqv` p2)))
+    where v1 `coStricter` v2 = (toPattern v2 `stricter` toPattern v1)
+          v1 `valEqv` v2 = (toPattern v1 `patEqv` toPattern v2)
+
+---------------------------------------------------------------------------
+
+infix 4 <::
+infix 4 <=::
+infix 4 =::
+
+ePat exp = toPattern $ eval' exp
+a <:: b = (ePat a) <: (ePat b)
+a <=:: b = (ePat a) <=: (ePat b)
+a =:: b = (ePat a) =: (ePat b)
+
 data Failure = Failure { lhs :: Pattern, rhs :: Pattern, expected :: Bool, got :: Bool }
                deriving (Show)
 strictFailures = Maybe.mapMaybe fails tests
@@ -252,33 +281,6 @@ strictFailures = Maybe.mapMaybe fails tests
                    ("[A: _ B: _]", "[C: _]", False),
                    ("[A: _ B: _]", "[C: _ A: _]", False),
                    ("[First: _ Rest: _]", "[First: _]", True)]
-
-stricter (PBinding s p1) p2 = stricter p1 p2
-stricter p1 (PBinding s p2) = stricter p1 p2
-stricter a b | a == b = False
-stricter _ (PDiscard) = True
-stricter (PObject c1) (PObject c2) = any (surviveAfterRemoving c2) c1 &&
-                                     not (any (surviveAfterRemoving c1) c2)
-    where surviveAfterRemoving clausesToRemove clause =
-              not $ any (`clauseStricterOrEqv` clause) clausesToRemove
-stricter _ _ = False
-
-clauseStricterOrEqv c1 c2 = (c1 `clauseStricter` c2) || (c1 `clauseEqv` c2)
-
-clauseStricter (v1, p1) (v2, p2) = ((v1 `valEqv` v2) && (p1 `stricter` p2)) ||
-                                   ((v1 `coStricter` v2) && ((p1 `stricter` p2) ||
-                                                             (p1 `patEqv` p2)))
-    where v1 `coStricter` v2 = (toPattern v2 `stricter` toPattern v1)
-          v1 `valEqv` v2 = (toPattern v1 `patEqv` toPattern v2)
-
-infix 4 <::
-infix 4 <=::
-infix 4 =::
-
-ePat exp = toPattern $ eval' exp
-a <:: b = (ePat a) <: (ePat b)
-a <=:: b = (ePat a) <=: (ePat b)
-a =:: b = (ePat a) =: (ePat b)
 
 ---------------------------------------------------------------------------
 
