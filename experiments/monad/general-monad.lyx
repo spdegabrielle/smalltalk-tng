@@ -1,0 +1,87 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme default
+\graphics default
+\paperfontsize default
+\papersize Default
+\paperpackage a4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+Overloading Monads in Scheme
+\layout Author
+
+Tony Garnock-Jones (tonyg@lshift.net)
+\layout Standard
+
+The two monad operators in Haskell:
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+ &  & (\gg=)::(Monad\, m)\Rightarrow m\, a\rightarrow(a\rightarrow m\, b)\rightarrow m\, b\\
+ &  & return::(Monad\, m)\Rightarrow a\rightarrow m\, a\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Standard
+
+Their Scheme variants look a bit different, because of tupling rather than
+ currying:
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+ &  & (\gg=)::(Monad\, m)\Rightarrow m\, a\times(a\rightarrow m\, b)\rightarrow m\, b\\
+ &  & return::(Monad\, m)\Rightarrow a\rightarrow m\, a\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Standard
+
+In Haskell, the type information can propagate in both directions at compile
+ time, ensuring that the completely assembled monad is correctly typed along
+ its entire length.
+ In Scheme, there's no ahead-of-time way for the type information to travel
+ in both directions.
+ There is, however, a 
+\emph on 
+runtime
+\emph default 
+ strategy for regaining the type checking that Haskell performs: firstly,
+ propagate type information from the first argument of 
+\begin_inset Formula $(\gg=)$
+\end_inset 
+
+ through the rest of the monad; and secondly, suspend type judgements until
+ we come to run the monad using 
+\begin_inset Formula $runIO$
+\end_inset 
+
+or 
+\begin_inset Formula $runST$
+\end_inset 
+
+.
+ The first part pushes type information forward through binds, and the second
+ pushes type information backward through binds.
+\the_end
