@@ -25,7 +25,10 @@ data Value = VAtom String
            | VBinding String Value
            | VDiscard
            | VObject [(Value, Closure)]
+           | VPrimitive Primitive
              deriving (Eq, Ord)
+
+data Primitive = Primitive String (Value -> Value)
 
 data Closure = Closure Env AST
              | Constant Value
@@ -100,6 +103,16 @@ showValue (VBinding s VDiscard) = "+" ++ s
 showValue (VBinding s v) = "+" ++ s ++ "@" ++ show v
 showValue (VDiscard) = "_"
 showValue (VObject clauses) = "[" ++ showClauses clauses ++ "]"
+showValue (VPrimitive p) = show p
+
+instance Eq Primitive where
+    (Primitive n1 _) == (Primitive n2 _) = n1 == n2
+
+instance Ord Primitive where
+    (Primitive n1 _) `compare` (Primitive n2 _) = n1 `compare` n2
+
+instance Show Primitive where
+    show (Primitive name _) = "#<" ++ name ++ ">"
 
 instance Show Closure where
     show (Closure e v) = showEnv e ++ show v
@@ -130,6 +143,7 @@ match (VDiscard) v = Just []
 match (VObject patternClauses) (VObject valueClauses) =
     foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
         where bindingUnion j1 j2 = do b1 <- j1; b2 <- j2; return (b1 ++ b2)
+match (VPrimitive (Primitive n1 _)) (VPrimitive (Primitive n2 _)) = if n1 == n2 then Just [] else Nothing
 match _ _ = Nothing
 
 firstThat p [] = Nothing
@@ -174,6 +188,7 @@ patBound (VBinding s p) = [s] ++ patBound p
 patBound (VDiscard) = []
 patBound (VObject clauses) = concatMap clauseBound clauses
     where clauseBound (_, clo) = patBound $ forcePattern clo
+patBound (VPrimitive (Primitive n _)) = []
 
 dnu function value = error $ "DNU: " ++ show function ++ " " ++ show value
 
@@ -184,6 +199,7 @@ applyTng bs function@(VObject patternClauses) value =
     where matches (ppat, pval) = case match ppat value of
                                    Nothing -> Nothing
                                    Just bs' -> Just $ reduce pval bs'
+applyTng bs function@(VPrimitive (Primitive _ f)) value = f value
 applyTng bs function value = dnu function value
 
 ---------------------------------------------------------------------------
@@ -204,6 +220,7 @@ patEqv (VDiscard) (VDiscard) = True
 patEqv (VBinding s p1) p2 = patEqv p1 p2
 patEqv p1 (VBinding s p2) = patEqv p1 p2
 patEqv (VObject c1) (VObject c2) = clausesMatchBy c1 c2 && clausesMatchBy c2 c1
+patEqv (VPrimitive (Primitive n1 _)) (VPrimitive (Primitive n2 _)) = n1 == n2
 patEqv _ _ = False
 
 clauseEqv (v1, p1) (v2, p2) = (v1 `patEqv` v2) && (forcePattern p1 `patEqv` forcePattern p2)
@@ -272,5 +289,9 @@ eval' exp = eval [] (readTng exp)
 
 baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
           , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) Nil:Nil]]"
+          , defPrim "add" $ \(VLiteral (LitInt i)) -> p $ \(VLiteral (LitInt j)) -> VLiteral (LitInt (i + j))
           ]
-    where def nm exp = (False, nm, eval' exp)
+    where def nm exp = def' nm $ eval' exp
+          def' nm val = (False, nm, val)
+          p fn = VPrimitive $ Primitive "(anon)" fn
+          defPrim nm fn = def' nm $ VPrimitive $ Primitive nm fn
