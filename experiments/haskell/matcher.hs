@@ -9,6 +9,7 @@ import Debug.Trace
 type Env = [(Bool, String, Value)]
 
 data AST = AstAtom String
+         | AstLiteral Literal
          | AstBinding String AST
          | AstDiscard
          | AstObject [(AST, AST)]
@@ -16,7 +17,11 @@ data AST = AstAtom String
          | AstApp AST AST
            deriving (Eq, Ord)
 
+data Literal = LitInt Integer
+               deriving (Eq, Ord)
+
 data Value = VAtom String
+           | VLiteral Literal
            | VBinding String Value
            | VDiscard
            | VObject [(Value, Closure)]
@@ -55,6 +60,7 @@ readSimple =    do punct "("; v <- readAST; punct ")"; return v
             <|> do punct "["; m <- readMap; punct "]"; return m
             <|> do string "+"; i <- ident; readBinding i
             <|> do punct "_"; return AstDiscard
+            <|> do i <- integer; return $ AstLiteral $ LitInt i
             <|> do i <- ident; readLet i
 readLet i =     do punct "="; v <- readSimple; return $ AstLet i v
             <|> (return $ AstAtom i)
@@ -72,6 +78,7 @@ instance Show AST where
     show v = showAST v
 
 showAST (AstAtom s) = s
+showAST (AstLiteral l) = show l
 showAST (AstBinding s AstDiscard) = "+" ++ s
 showAST (AstBinding s v) = "+" ++ s ++ "@" ++ show v
 showAST (AstDiscard) = "_"
@@ -79,10 +86,16 @@ showAST (AstObject clauses) = "[" ++ showClauses clauses ++ "]"
 showAST (AstLet s v) = s ++ "=" ++ show v
 showAST (AstApp v1 v2) = "(" ++ show v1 ++ " " ++ show v2 ++ ")"
 
+instance Show Literal where
+    show l = showLiteral l
+
+showLiteral (LitInt i) = show i
+
 instance Show Value where
     show v = showValue v
 
 showValue (VAtom s) = s
+showValue (VLiteral l) = show l
 showValue (VBinding s VDiscard) = "+" ++ s
 showValue (VBinding s v) = "+" ++ s ++ "@" ++ show v
 showValue (VDiscard) = "_"
@@ -111,6 +124,7 @@ lookupVal s bs = eLookup s bs (eLookup s baseEnv (VAtom s))
 
 -- match pattern value -> maybe bindings
 match (VAtom a) (VAtom b) = if a == b then Just [] else Nothing
+match (VLiteral a) (VLiteral b) = if a == b then Just [] else Nothing
 match (VBinding n p) v = do bs <- match p v; return ((False, n, v) : bs)
 match (VDiscard) v = Just []
 match (VObject patternClauses) (VObject valueClauses) =
@@ -138,6 +152,7 @@ reduce (Constant v) bs = v
 eval bs o =
     case o of
       AstAtom s -> lookupVal s bs
+      AstLiteral l -> VLiteral l
       AstBinding s v -> VBinding s (eval bs v)
       AstDiscard -> VDiscard
       AstObject clauses -> VObject $ map evalClause clauses
@@ -154,6 +169,7 @@ maybeClose pat bs o =
       _ -> Closure bs o
 
 patBound (VAtom s) = []
+patBound (VLiteral l) = []
 patBound (VBinding s p) = [s] ++ patBound p
 patBound (VDiscard) = []
 patBound (VObject clauses) = concatMap clauseBound clauses
@@ -183,6 +199,7 @@ p1 <=: p2 = (p1 <: p2) || (p1 =: p2)
 p1 `overlaps` p2 = (p1 <: p2) || (p1 =: p2) || (p2 <: p1)
 
 patEqv (VAtom s1) (VAtom s2) = s1 == s2
+patEqv (VLiteral l1) (VLiteral l2) = l1 == l2
 patEqv (VDiscard) (VDiscard) = True
 patEqv (VBinding s p1) p2 = patEqv p1 p2
 patEqv p1 (VBinding s p2) = patEqv p1 p2
