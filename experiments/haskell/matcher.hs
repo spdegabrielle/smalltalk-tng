@@ -19,14 +19,8 @@ data AST = AstAtom String
 data Value = VAtom String
            | VBinding String Value
            | VDiscard
-           | VObject [(Pattern, Closure)]
+           | VObject [(Value, Closure)]
              deriving (Eq, Ord)
-
-data Pattern = PAtom String
-             | PBinding String Pattern
-             | PDiscard
-             | PObject [(Value, Pattern)]
-               deriving (Eq, Ord)
 
 data Closure = Closure Env AST
              | Constant Value
@@ -94,15 +88,6 @@ showValue (VBinding s v) = "+" ++ s ++ "@" ++ show v
 showValue (VDiscard) = "_"
 showValue (VObject clauses) = "[" ++ showClauses clauses ++ "]"
 
-instance Show Pattern where
-    show v = showPattern v
-
-showPattern (PAtom s) = s
-showPattern (PBinding s PDiscard) = "+" ++ s
-showPattern (PBinding s v) = "+" ++ s ++ "@" ++ show v
-showPattern (PDiscard) = "_"
-showPattern (PObject clauses) = "[" ++ showClauses clauses ++ "]"
-
 instance Show Closure where
     show (Closure e v) = showEnv e ++ show v
     show (Constant v) = show v
@@ -124,10 +109,11 @@ eLookup s [] defval = defval
 eLookup s ((_, n, v):bs) defval = if n == s then v else eLookup s bs defval
 lookupVal s bs = eLookup s bs (eLookup s baseEnv (VAtom s))
 
-match (PAtom a) (VAtom b) = if a == b then Just [] else Nothing
-match (PBinding n p) v = do bs <- match p v; return ((False, n, v) : bs)
-match (PDiscard) v = Just []
-match (PObject patternClauses) (VObject valueClauses) =
+-- match pattern value -> maybe bindings
+match (VAtom a) (VAtom b) = if a == b then Just [] else Nothing
+match (VBinding n p) v = do bs <- match p v; return ((False, n, v) : bs)
+match (VDiscard) v = Just []
+match (VObject patternClauses) (VObject valueClauses) =
     foldr bindingUnion (Just []) $ map (match1 valueClauses) patternClauses
         where bindingUnion j1 j2 = do b1 <- j1; b2 <- j2; return (b1 ++ b2)
 match _ _ = Nothing
@@ -141,22 +127,10 @@ match1 valueClauses (pval, ppat) =
     firstThat firstMatch valueClauses
     where firstMatch (vpat, vval) =
               do bs' <- match vpat pval
-                 bs'' <- match ppat (reduce vval bs')
+                 bs'' <- match (forcePattern ppat) (reduce vval bs')
                  return bs''
 
-toPattern v =
-    case v of
-      VAtom s -> PAtom s
-      VBinding s v' -> PBinding s (toPattern v')
-      VDiscard -> PDiscard
-      VObject clauses -> PObject $ [(toValue p, toPattern $ reduce cl []) | (p, cl) <- clauses]
-
-toValue p =
-    case p of
-      PAtom s -> VAtom s
-      PBinding s p' -> VBinding s (toValue p')
-      PDiscard -> VDiscard
-      PObject clauses -> VObject $ [(toPattern v, Constant $ toValue p) | (v, p) <- clauses]
+forcePattern clo = reduce clo []
 
 reduce (Closure env v) bs = eval (bs ++ env) v
 reduce (Constant v) bs = v
@@ -168,7 +142,7 @@ eval bs o =
       AstDiscard -> VDiscard
       AstObject clauses -> VObject $ map evalClause clauses
           where evalClause (patexp, val) = (pat, maybeClose pat bs val)
-                    where pat = toPattern $ eval bs patexp
+                    where pat = eval bs patexp
       AstLet s v -> result
           where result = eval bs' v
                 bs' = (True, s, result) : bs
@@ -179,10 +153,11 @@ maybeClose pat bs o =
       [] -> Constant $ eval bs o
       _ -> Closure bs o
 
-patBound (PAtom s) = []
-patBound (PBinding s p) = [s] ++ patBound p
-patBound (PDiscard) = []
-patBound (PObject clauses) = concatMap (patBound . snd) clauses
+patBound (VAtom s) = []
+patBound (VBinding s p) = [s] ++ patBound p
+patBound (VDiscard) = []
+patBound (VObject clauses) = concatMap clauseBound clauses
+    where clauseBound (_, clo) = patBound $ forcePattern clo
 
 dnu function value = error $ "DNU: " ++ show function ++ " " ++ show value
 
@@ -207,27 +182,24 @@ p1 <=: p2 = (p1 <: p2) || (p1 =: p2)
 
 p1 `overlaps` p2 = (p1 <: p2) || (p1 =: p2) || (p2 <: p1)
 
-patEqv (PAtom s1) (PAtom s2) = s1 == s2
-patEqv (PDiscard) (PDiscard) = True
-patEqv (PBinding s p1) p2 = patEqv p1 p2
-patEqv p1 (PBinding s p2) = patEqv p1 p2
-patEqv (PObject c1) (PObject c2) = clausesMatchBy c1 c2 && clausesMatchBy c2 c1
+patEqv (VAtom s1) (VAtom s2) = s1 == s2
+patEqv (VDiscard) (VDiscard) = True
+patEqv (VBinding s p1) p2 = patEqv p1 p2
+patEqv p1 (VBinding s p2) = patEqv p1 p2
+patEqv (VObject c1) (VObject c2) = clausesMatchBy c1 c2 && clausesMatchBy c2 c1
 patEqv _ _ = False
 
-clauseEqv (v1, p1) (v2, p2) = (toPattern v1 `patEqv` toPattern v2) && (p1 `patEqv` p2)
-
-tracev s v = trace (s ++ ": " ++ show v) v
-tracev2 s f v1 v2 = let r = f v1 v2 in trace (s ++ ": " ++ show ((v1, v2), r)) r
+clauseEqv (v1, p1) (v2, p2) = (v1 `patEqv` v2) && (forcePattern p1 `patEqv` forcePattern p2)
 
 clausesMatchBy c1 c2 = null $ remaining
     where remaining = foldl removeClauses c2 c1
           removeClauses cs c = filter (not . clauseEqv c) cs
 
-stricter (PBinding s p1) p2 = stricter p1 p2
-stricter p1 (PBinding s p2) = stricter p1 p2
+stricter (VBinding s p1) p2 = stricter p1 p2
+stricter p1 (VBinding s p2) = stricter p1 p2
 stricter a b | a == b = False
-stricter _ (PDiscard) = True
-stricter (PObject c1) (PObject c2) = any (surviveAfterRemoving c2) c1 &&
+stricter _ (VDiscard) = True
+stricter (VObject c1) (VObject c2) = any (surviveAfterRemoving c2) c1 &&
                                      not (any (surviveAfterRemoving c1) c2)
     where surviveAfterRemoving clausesToRemove clause =
               not $ any (`clauseStricterOrEqv` clause) clausesToRemove
@@ -235,11 +207,13 @@ stricter _ _ = False
 
 clauseStricterOrEqv c1 c2 = (c1 `clauseStricter` c2) || (c1 `clauseEqv` c2)
 
-clauseStricter (v1, p1) (v2, p2) = ((v1 `valEqv` v2) && (p1 `stricter` p2)) ||
-                                   ((v1 `coStricter` v2) && ((p1 `stricter` p2) ||
-                                                             (p1 `patEqv` p2)))
-    where v1 `coStricter` v2 = (toPattern v2 `stricter` toPattern v1)
-          v1 `valEqv` v2 = (toPattern v1 `patEqv` toPattern v2)
+clauseStricter (v1, p1) (v2, p2) = ((v1 `valEqv` v2) && (p1' `stricter` p2')) ||
+                                   ((v1 `coStricter` v2) && ((p1' `stricter` p2') ||
+                                                             (p1' `patEqv` p2')))
+    where v1 `coStricter` v2 = (v2 `stricter` v1)
+          v1 `valEqv` v2 = (v1 `patEqv` v2)
+          p1' = forcePattern p1
+          p2' = forcePattern p2
 
 ---------------------------------------------------------------------------
 
@@ -247,19 +221,18 @@ infix 4 <::
 infix 4 <=::
 infix 4 =::
 
-ePat exp = toPattern $ eval' exp
-a <:: b = (ePat a) <: (ePat b)
-a <=:: b = (ePat a) <=: (ePat b)
-a =:: b = (ePat a) =: (ePat b)
+a <:: b = (eval' a) <: (eval' b)
+a <=:: b = (eval' a) <=: (eval' b)
+a =:: b = (eval' a) =: (eval' b)
 
-data Failure = Failure { lhs :: Pattern, rhs :: Pattern, expected :: Bool, got :: Bool }
+data Failure = Failure { lhs :: Value, rhs :: Value, expected :: Bool, got :: Bool }
                deriving (Show)
 strictFailures = Maybe.mapMaybe fails tests
     where fails (lhs, rhs, expected) = let result = (lhs <:: rhs) in
                                        if result == expected
                                        then Nothing
-                                       else Just $ Failure { lhs = ePat lhs,
-                                                             rhs = ePat rhs,
+                                       else Just $ Failure { lhs = eval' lhs,
+                                                             rhs = eval' rhs,
                                                              expected = expected,
                                                              got = result }
           tests = [("cons _ (cons _ _)", "cons (cons _ _) _", False),
