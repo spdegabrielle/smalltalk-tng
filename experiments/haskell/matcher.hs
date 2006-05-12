@@ -54,13 +54,16 @@ whiteSpace = P.whiteSpace tngTokenizer
 ident = P.identifier tngTokenizer
 integer = P.integer tngTokenizer
 punct s = do string s; whiteSpace; return ()
+operator = P.operator tngTokenizer
+comma = P.comma tngTokenizer
 
 readAST = readApp
 readApp = do (part : parts) <- sepBy1 readSimple whiteSpace; return $ foldl AstApp part parts
-readMap = try (do entries <- sepBy readMapEntry whiteSpace; return $ AstObject entries)
+readSquare =     try (do entries <- sepBy readMapEntry whiteSpace; return $ AstObject entries)
+             <|> try (do entries <- sepBy readApp comma; return $ buildList entries)
 readMapEntry = do l <- readSimple; punct ":"; r <- readSimple; return (l, r)
 readSimple =    do punct "("; v <- readAST; punct ")"; return v
-            <|> do punct "["; m <- readMap; punct "]"; return m
+            <|> do punct "["; m <- readSquare; punct "]"; return m
             <|> do string "+"; i <- ident; readBinding i
             <|> do punct "_"; return AstDiscard
             <|> do i <- integer; return $ AstLiteral $ LitInt i
@@ -69,6 +72,9 @@ readLet i =     do punct "="; v <- readSimple; return $ AstLet i v
             <|> (return $ AstAtom i)
 readBinding i =     do punct "@"; v <- readSimple; return $ AstBinding i v
                 <|> (return $ AstBinding i AstDiscard)
+
+buildList [] = AstObject []
+buildList (x:xs) = (AstAtom "cons" `AstApp` x) `AstApp` buildList xs
 
 sepList s [] = ""
 sepList s [x] = x
@@ -288,7 +294,7 @@ strictFailures = Maybe.mapMaybe fails tests
 eval' exp = eval [] (readTng exp)
 
 baseEnv = [ def "cons" "[+car: [+cdr: [First: car Rest: cdr]]]"
-          , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) Nil:Nil]]"
+          , def "map" "[+f: loop=[(cons +a +d): (cons (f a) (loop d)) +x: x]]"
           , defPrim "add" $ \(VLiteral (LitInt i)) -> p $ \(VLiteral (LitInt j)) -> VLiteral (LitInt (i + j))
           ]
     where def nm exp = def' nm $ eval' exp
