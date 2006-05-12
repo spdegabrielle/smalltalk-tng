@@ -1,0 +1,91 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass article
+\language english
+\inputencoding auto
+\fontscheme default
+\graphics default
+\paperfontsize default
+\papersize Default
+\paperpackage a4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Title
+
+Hygiene in ThiNG r3/r4
+\layout Standard
+
+(This document relates to experiments/haskell/matcher.hs)
+\layout Standard
+
+Evaluating ([+p: [p: a]] +a 123) produces 123, at the moment.
+ This is arguably wrong.
+\layout Standard
+
+However, evaluating ([([+p: p] +a): a] 123) also produces 123, which is
+ arguably right.
+\layout Standard
+
+The motivation behind allowing evaluation in pattern context is to permit
+ expressions such as [(cons +a +b): (cons b a)].
+\layout Standard
+
+Perhaps some kind of marking scheme can be adapted from the literature on
+ hygienic macros? Values could be marked on entry to an application and
+ unmarked on return.
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+ &  & [(cons\;+a\;+b):(cons\; b\; a)]\\
+\textrm{mark arguments and result:} &  & [(cons\;+a_{1}\;+b_{1})_{1}:(cons\; b\; a)]\\
+\textrm{$\beta$-reduce the pattern:} &  & [[First:\;+a_{1}\; Rest:\;+b_{1}]_{1}:(cons\; b\; a)]\\
+\textrm{drive marks inward:} &  & [[First_{1}:\;+a_{11}\; Rest_{1}:\;+b_{11}]:(cons\; b\; a)]\\
+\textrm{cancel marks:} &  & [[First_{1}:\;+a\; Rest_{1}:\;+b]:(cons\; b\; a)]\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Standard
+
+Let's try our 
+\begin_inset Quotes eld
+\end_inset 
+
+arguably wrong
+\begin_inset Quotes erd
+\end_inset 
+
+ example from above:
+\layout Standard
+
+
+\begin_inset Formula \begin{eqnarray*}
+ &  & (([+p:[p:a]]\;+a)\;123)\\
+\textrm{mark arguments and result:} &  & (([+p:[p:a]]\;+a_{1})_{1}\;123_{2})_{2}\\
+\textrm{$\beta$-reduce:} &  & ([+a_{1}:a]_{1}\;123_{2})_{2}\\
+\textrm{drive marks inward and cancel:} &  & ([+a:a_{1}]\;123_{2})_{2}\\
+\textrm{$\beta$-reduce:} &  & (a_{1})_{2}\\
+\textrm{drive marks inward and cancel:} &  & a_{12}\end{eqnarray*}
+
+\end_inset 
+
+
+\layout Standard
+
+That's better! There's a problem, though: values will tend to accumulate
+ marks according to the size of the continuation they travel through...
+\the_end
