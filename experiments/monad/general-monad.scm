@@ -35,22 +35,8 @@
   (cond
    ((pair? m) (make-monad *list* m))
    ((null? m) (make-monad *list* m))
-   ((monad? m) (if (eq? (monad-kind m) '_delayed)
-		   ((monad-value m))
-		   m))
+   ((monad? m) m)
    (else (error "not a monad" m))))
-
-(define-syntax delay-monad
-  (syntax-rules ()
-    ((_ m) (delay-monad* (lambda () (undelay-monad m))))))
-
-(define (delay-monad* m)
-  (make-monad '_delayed m))
-
-(define (undelay-monad m)
-  (if (and (monad? m) (eq? (monad-kind m) '_delayed))
-      ((monad-value m))
-      m))
 
 (define (>>= ma a->mb)
   (let ((ma (monadize ma)))
@@ -106,14 +92,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define *io* (make-monad-class 'io
-			       (lambda (io1 f) (delay-monad (f (run-io io1))))
+			       (lambda (io1 f) (make-monad *io* (cons (io-action io1) f)))
 			       (lambda (v) (make-monad *io* (lambda () v)))
 			       error))
 
 (define io-action (monad-arg *io*))
 
 (define (run-io m)
-  ((io-action m)))
+  (let run-action ((action (io-action m)))
+    (if (pair? action)
+	(let ((previous-action (car action))
+	      (continuation (cdr action)))
+	  (run-io (continuation (run-action previous-action))))
+	(action))))
 
 (define (mdisplay x)
   (make-monad *io* (lambda () (display x) 'done)))
