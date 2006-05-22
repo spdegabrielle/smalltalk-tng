@@ -28,4 +28,8 @@ define [
 					    Nothing: (search xs)
 					    [Just: +v]: [Just: v]])
 			  _: Nothing]]
+
+  sepList: [+s: loop=[(cons +x +more@(cons _ _)): (x ++ s ++ loop more)
+		      (cons +x _): x
+		      _: EmptyString]]
 ]
