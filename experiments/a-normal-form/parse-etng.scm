@@ -84,7 +84,7 @@
 	     (pat-tuple (/ (OPAREN CPAREN ,(packrat-lambda () (make-node 'pat-tuple 'elements '())))
 			   (OPAREN p <- pattern (#\, ws ps <- pattern)+ CPAREN
 				   ,(packrat-lambda (p ps)
-				      (make-node 'core-tuple 'elements (cons p ps))))))
+				      (make-node 'pat-tuple 'elements (cons p ps))))))
 
 	     ;;---------------------------------------------------------------------------
 
