@@ -179,16 +179,19 @@
 										 'name formal)
 							       'clauses method-clauses))))))))
 	((core-sequence exps)
-	 (k (fold-right (lambda (exp tail)
-			  (node-match exp
-			    ((core-let pattern value)
-			     (normalize value
-					(lambda (v)
-					  (make-anf-let pattern v tail))))
-			    (else
-			     (normalize-name exp (lambda (dont-care) tail)))))
-			(car exps)
-			(cdr exps))))
+	 (let loop ((exps exps))
+	   (cond
+	    ((null? exps) (error "Need value in sequence"))
+	    ((null? (cdr exps)) (normalize (car exps) k))
+	    (else
+	     (let ((exp (car exps)))
+	       (node-match exp
+		 ((core-let pattern value)
+		  (normalize value
+			     (lambda (v)
+			       (make-anf-let pattern v (loop (cdr exps))))))
+		 (else
+		  (normalize-name exp (lambda (dont-care) (loop (cdr exps)))))))))))
 	((core-let pattern value)
 	 (error "core-let in invalid position" (node->list exp)))
 	((core-ref name)
