@@ -1,0 +1,59 @@
+namespace log = 'http://eighty-twenty.org/ns/testcode/log' in
+namespace channel = 'http://eighty-twenty.org/ns/testcode/channel' in
+namespace framing = 'http://eighty-twenty.org/ns/testcode/framing' in
+namespace amqp = 'http://eighty-twenty.org/ns/testcode/amqp' in
+namespace = 'http://eighty-twenty.org/ns/testcode/channel#private' in
+
+define # tag val = {visitor -> visitor tag val};
+
+define channel:start(readerPid, channel, sock, connection) ->
+  do log:info('Opening channel %p%n', [channel]);
+  read_method() {
+    "We are required by the spec to ignore unsolicited close-ok messages."
+    .amqp:channelCloseOk _ -> exit.:normal;
+    .amqp:channelOpen _ -> (writer:send_simple_method(sock, channel, #.amqp:channelOpenOk{});
+			    mainloop({.readerPid = readerPid;
+				      .channel = channel;
+				      .sock = sock;
+				      .connection = connection}));
+  };
+
+define read_method() matcher ->
+  read_frame() {
+    .method(method, fields) ->
+      let handler = (matcher / [_ -> exit.:commandInvalid]) method in
+      let (decodedFields, content) = finish_reading_method(method, fields) in
+      handler (decodedFields / {.content = content});
+  };
+
+define finish_reading_method(methodName, fieldsBin) ->
+  (framing:decode_method_fields(methodName, fieldsBin),
+   collect_content(methodName));
+
+define collect_content(methodName) ->
+  if (framing:method_has_content(methodName)) {
+    catch collect_content(methodName) {
+      .EXIT(reason) -> do log:info('Syntax error collecting method content: %p%n', [reason]);
+		       exit.:syntaxError;
+      .value(v) -> v
+    }
+  } else {
+    .none
+  };
+
+"
+Assume that identifiers, .foo, send themselves to any message they receive, so
+
+.foo {x -> y}
+  evaluates to
+{x -> y} .foo
+
+This is convenient for dispatching on algebraic-datatype-like structures,
+
+myValue {
+  .foo -> ...;
+  .bar -> ...;
+  .valueBearingTag(v1, v2) -> ...;
+  .otherTag props -> ... props.field1 ... props.field2 ...;
+}
+"

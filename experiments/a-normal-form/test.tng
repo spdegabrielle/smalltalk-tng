@@ -1,0 +1,74 @@
+Instance = [
+  .new() -> [instanceSlots = Vector.new()];
+
+  .getSlot(index) -> self.instanceSlots.at index;
+];
+
+TngMatch1 = {(fk, sk, (patternValue, patternPattern), inst) ->
+  TngLookup(fk, {bs foundInst index -> TngMatch(fk, sk, patternPattern,
+						handlerValue(inst,
+							     foundInst,
+							     foundInst.getSlot(index),
+							     bs))},
+	    inst, patternValue);
+};
+
+"---------------------------------------------------------------------------"
+"Variant w/o 'rec', using 'lazy' instead."
+
+TngMatch = {(fk, sk, pat, val) ->
+  pat.visit {
+    .atom		-> (p == v) ? sk [] : fk();
+    .binding(b,p)	-> TngMatch(fk, {bs -> sk ((b,v),bs)}, p, val);
+    .discard		-> sk [];
+    .object(ps0)	-> lazy loop = {
+			     [] bs	-> sk bs;
+			     (p,ps) bs	-> TngMatch1(fk, {bs1 -> loop ps (bs1 ++ bs)}, p, val);
+			   } in loop ps0 [];
+    .tuple(ps0)		-> let len = ps.length in
+			   "Note short-circuiting '&&' operator."
+			   if ((IsVector v) && (v.length == len)) {
+			      lazy matchVector = {i bs ->
+				(i == len) ? sk bs
+					   : TngMatch(fk, {bs1 -> matchVector (i + 1) (bs1 ++ bs)},
+						      ps.at i, val.at i);
+			      } in matchVector 0 [];
+			   } else {
+			      fk();
+			   }
+  };
+};
+
+"---------------------------------------------------------------------------"
+"Variant with 'rec ... of ...'."
+
+TngMatch = {(fk, sk, pat, val) ->
+  pat.visit {
+    .atom		-> (p == v) ? sk [] : fk();
+    .binding(b,p)	-> TngMatch(fk, {bs -> sk ((b,v),bs)}, p, val);
+    .discard		-> sk [];
+    .object(ps0)	-> rec loop ps0 [] {
+			     [] bs	-> sk bs;
+			     (p,ps) bs	-> TngMatch1(fk, {bs1 -> loop ps (bs1 ++ bs)}, p, val);
+			   }
+    .tuple(ps0)		-> let len = ps.length in
+			   "Note short-circuiting '&&' operator."
+			   if ((IsVector v) && (v.length == len)) {
+			      rec matchVector 0 [] {
+				i bs -> (i == len)
+					   ? sk bs
+					   : TngMatch(fk, {bs1 -> matchVector (i + 1) (bs1 ++ bs)},
+						      ps.at i, val.at i);
+			      }
+			   } else {
+			      fk();
+			   }
+  };
+};
+
+"---------------------------------------------------------------------------"
+
+syntax rules {
+  simple-expr : 'rec' (name = id) (initarg = simple-expr)+ (body = function) ->
+	        '(lazy 'name' = 'body' in 'name initarg ...')';
+}
