@@ -1,8 +1,17 @@
 (require (lib "1.ss" "srfi") ;; lists
+	 (lib "4.ss" "srfi") ;; homogeneous-numeric-vectors, u8vector
 	 (lib "8.ss" "srfi") ;; receive
 	 (lib "9.ss" "srfi") ;; records
 	 (lib "pretty.ss")
 	 (lib "packrat.ss" "json-scheme"))
+
+;; SRFI-31, "A special form rec for recursive evaluation"
+(define-syntax rec
+  (syntax-rules ()
+    ((rec (NAME . VARIABLES) . BODY)
+     (letrec ( (NAME (lambda VARIABLES . BODY)) ) NAME))
+    ((rec NAME EXPRESSION)
+     (letrec ( (NAME EXPRESSION) ) NAME))))
 
 (print-struct #t)
 (define previous-inspector (current-inspector))
@@ -17,11 +26,12 @@
 (current-inspector previous-inspector)
 
 (load "node.scm")
+(load "expand-qname.scm")
 (load "parse-etng.scm")
 
 (define *debug-mode* '(sequence-phases))
 
-(define a-normal-form-languages
+(define etng-r1-languages
   `(
     (toplevel-command
      (%or
@@ -68,25 +78,44 @@
 (define (debug-mode=? what)
   (and (memq what *debug-mode*) #t))
 
+(define (etng-eval-node ast qname-env)
+  (let ((expanded (expand-qnames ast qname-env)))
+    (pretty-print (node->list expanded))
+    (node-match expanded
+      ((command-define-namespace prefix uri)
+       (extend-qname-env qname-env prefix uri))
+      (else
+       qname-env))))
+
 (define (etng-repl)
-  (let loop ()
+  (let loop ((qname-env '()))
     (display ">>ETNG>> ")
     (flush-output)
     (let ((results (stdin-results)))
       (parse-etng results
 		  (lambda (ast next)
-		    (if (node? ast)
-			(pretty-print (node->list ast))
-			(begin
-			  (newline)
-			  (display ";; No parse result")
-			  (newline)))
-		    (when (and next (not (eq? next results)))
-		      (loop)))
+		    (let ((new-qname-env
+			   (if (node? ast)
+			       (if (check-language ast 'toplevel-command etng-r1-languages #f)
+				   (etng-eval-node ast qname-env)
+				   (begin
+				     (newline)
+				     (display ";; Failed language check")
+				     (newline)
+				     (pretty-print (node->list ast))
+				     (error "Failed language check")))
+			       (begin
+				 (newline)
+				 (display ";; No parse result")
+				 (newline)
+				 qname-env))))
+		      (when (and next (not (eq? next results)))
+			(loop new-qname-env))))
 		  (lambda (error-description)
 		    (pretty-print error-description)
-		    (loop))))))
+		    (loop qname-env))))))
 
 ;;; Local Variables:
 ;;; eval: (put 'node-match 'scheme-indent-function 1)
+;;; eval: (put 'rec 'scheme-indent-function 1)
 ;;; End:

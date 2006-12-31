@@ -1,0 +1,82 @@
+namespace s = 'http://eighty-twenty.org/etng/r1/ns/stream';
+namespace n = 'http://eighty-twenty.org/etng/r1/ns/number';
+namespace repl = 'http://eighty-twenty.org/etng/r1/ns/repl';
+namespace socket = 'http://eighty-twenty.org/etng/r1/ns/socket';
+namespace string = 'http://eighty-twenty.org/etng/r1/ns/string';
+
+define :true = <.:true>;
+define :false = <.:false>;
+
+define :repeat block =
+  do block();
+  :repeat block;
+
+define s:reverse stream =
+  rec loop(stream, [|]) {[|], acc -> acc;
+			 [f|r], acc -> loop(r, [f|acc])};
+
+define s:foldr stream seed fn =
+  rec loop(stream) { [|] = acc;
+                     [f|r] -> fn(f, loop(r)) };
+
+define s:append(s1, s2) = s:foldr s1 s2 s:cons;
+
+define n:range = {
+  (low, high, step) -> (low < high) {
+    .:true -> [low | n:range(low + step, high, step)];
+    .:false -> [|]
+  };
+  (low, high) -> n:range(low, high, 1);
+  (high) -> n:range(0, high, 1)
+};
+
+define s:concatenate stream = s:foldr stream [|] s:append;
+
+define s:map stream fn = s:foldr stream [|] {elt, acc -> [fn(elt) | acc]};
+
+define s:foreach stream fn =
+  rec loop(stream) { [|] -> .:ok;
+		     [f|r] -> do fn(f); loop(r) };
+
+define string:stream = {
+  (str, startIndex) ->
+    let len = string:length(str);
+    rec loop(startIndex) { index ->
+      (index < len) {
+	.:true -> {.bytes = str;
+		   .offset = index;
+		   visitor -> visitor.s:next(string:charAt(str, index),
+					     loop(index + 1))};
+	.:false -> s:nil
+      }
+    };
+
+  (str) -> string:stream(str, 0)
+};
+
+define repl:newOn(port) =
+  let socket = socket:ServerSocket.new(port);
+  :spawn { repl:acceptLoop(socket) };
+
+define repl:acceptLoop(serverSocket) =
+  :repeat {
+    let sock = serverSocket.accept();
+    :spawn { repl:mainLoop(sock) }
+  };
+
+define repl:mainLoop(sock) =
+  catch { sessionReturn ->
+    let writer = sock.writer();
+    do writer.println('Welcome to ThiNG!');
+    :repeat {
+      do writer.print('ThiNG> ');
+      do sock.compileOneStatement() {
+	.ok(thunk) -> writer.println(thunk());
+	.error(detail) ->
+	  do s:foreach ['PARSE ERROR', detail] (writer.println);
+	  do sock.close();
+	  sessionReturn();
+      };
+      writer.println();
+    }
+  };

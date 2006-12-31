@@ -3,19 +3,50 @@
 	 (non-string-quote (lambda (ch) (not (eqv? ch #\'))))
 
 	 (stream-ns-uri "http://eighty-twenty.org/etng/r1/ns/stream")
+	 (string-ns-uri "http://eighty-twenty.org/etng/r1/ns/string")
+
 	 (stream-cons-name (make-qname stream-ns-uri 'cons))
 	 (stream-cons-ref (make-node 'core-ref 'name stream-cons-name))
 	 (stream-nil-name (make-qname stream-ns-uri 'nil))
 	 (stream-nil-ref (make-node 'core-ref 'name stream-nil-name))
+	 (expand-stream
+	  (lambda (prefix suffix)
+	    (fold-right (lambda (p acc)
+			  (make-node 'core-send
+				     'receiver stream-cons-ref
+				     'message (make-node 'core-tuple
+							 'elements (list p acc))))
+			(or suffix stream-nil-ref)
+			prefix)))
 
-	 (expand-stream (lambda (prefix suffix)
-			  (fold-right (lambda (p acc)
-					(make-node 'core-send
-						   'receiver stream-cons-ref
-						   'message (make-node 'core-tuple
-								       'elements (list p acc))))
-				      (or suffix stream-nil-ref)
-				      prefix)))
+	 (stream-next-name (make-qname stream-ns-uri 'next))
+	 (stream-next-lit (make-node 'pat-lit 'value stream-next-name))
+	 (stream-empty-name (make-qname stream-ns-uri 'empty))
+	 (stream-empty-message
+	  (make-node 'pat-message
+		     'parts (list (make-node 'pat-lit 'value stream-empty-name))))
+	 (expand-stream-pattern
+	  (lambda (prefix suffix)
+	    (fold-right (lambda (p acc)
+			  (make-node 'pat-message
+				     'parts (list stream-next-lit
+						  (make-node 'pat-tuple
+							     'elements (list p acc)))))
+			(or suffix stream-empty-message)
+			prefix)))
+
+	 (string->u8vector/utf-8
+	  (lambda (str)
+	    (list->u8vector (bytes->list (string->bytes/utf-8 str)))))
+
+	 (string-stream-name (make-qname string-ns-uri 'stream))
+	 (string-stream-ref (make-node 'core-ref 'name string-stream-name))
+	 (stream-over-string
+	  (lambda (str)
+	    (let ((bytes (string->u8vector/utf-8 str)))
+	      (make-node 'core-send
+			 'receiver string-stream-ref
+			 'message (make-node 'core-lit 'value bytes)))))
 
 	 (parser
 	  (packrat-parse
@@ -80,6 +111,8 @@
 			     (SELF ,(packrat-lambda () (make-node 'core-self)))
 			     (q <- qname ,(packrat-lambda (q) (make-node 'core-ref 'name q)))
 			     (l <- literal ,(packrat-lambda (l) (make-node 'core-lit 'value l)))
+			     ;; Bug: no corresponding string pattern-match syntax.
+			     (s <- string ,(packrat-lambda (s) (stream-over-string s)))
 			     (OPAREN e <- expr CPAREN ,(packrat-lambda (e) e))))
 
 	     (literal (/ (#\. ws q <- qname ,(packrat-lambda (q) q))
@@ -89,8 +122,15 @@
 	     (object (OBRACK (m <- member)* CBRACK
 			     ,(packrat-lambda (m) (make-node 'core-object 'methods m))))
 
-	     (function (#\{ ws (m <- member)* #\} ws
-			,(packrat-lambda (m) (make-node 'core-function 'methods m))))
+	     (function (/ (OBRACE (m <- member)* CBRACE
+			   ,(packrat-lambda (m) (make-node 'core-function 'methods m)))
+			  (OBRACE e <- expr semis CBRACE
+				  ,(packrat-lambda (e)
+				     (let ((pat (make-node 'pat-tuple 'elements '())))
+				       (make-node 'core-function
+						  'methods (list (make-node 'core-method
+									    'patterns (list pat)
+									    'body e))))))))
 
 	     (message (OANGLE (es <- message-component)* CANGLE
 		       ,(packrat-lambda (es) (make-node 'core-message 'parts es))))
@@ -102,7 +142,7 @@
 
 	     (stream-suffix (/ (CBRACK ,(packrat-lambda () #f))
 			       (PIPE CBRACK ,(packrat-lambda () #f))
-			       (PIPE e <- simple-expr CBRACK ,(packrat-lambda (e) e))))
+			       (PIPE e <- send CBRACK ,(packrat-lambda (e) e))))
 
 	     (member (/ constant-member
 			method-member))
@@ -153,6 +193,7 @@
 	     (pattern (/ (OPARENnows o <- operator CPAREN ,(packrat-lambda (o)
 							     (make-node 'pat-binding 'name o)))
 			 message-pattern
+			 stream-pattern
 			 (#\_ ws ,(packrat-lambda () (make-node 'pat-discard)))
 			 (l <- literal ,(packrat-lambda (l) (make-node 'pat-lit 'value l)))
 			 (q <- qname ,(packrat-lambda (q) (make-node 'pat-binding 'name q)))
@@ -169,6 +210,13 @@
 				      ,(packrat-lambda (ps) (make-node 'pat-message 'parts ps))))
 
 	     (message-pattern-component ((! #\>) pattern))
+
+	     (stream-pattern (OBRACK p <- comma-separated-patterns s <- stream-pattern-suffix
+				     ,(packrat-lambda (p s) (expand-stream-pattern p s))))
+
+	     (stream-pattern-suffix (/ (CBRACK ,(packrat-lambda () #f))
+				       (PIPE CBRACK ,(packrat-lambda () #f))
+				       (PIPE p <- pattern CBRACK ,(packrat-lambda (p) p))))
 
 	     (comma-separated-patterns (/ (p <- pattern (#\, ws ps <- pattern)*
 					     ,(packrat-lambda (p ps) (cons p ps)))
@@ -232,6 +280,8 @@
 	     (CBRACK (#\] ws))
 	     (OANGLE (#\< ws))
 	     (CANGLE (#\> ws))
+	     (OBRACE (#\{ ws))
+	     (CBRACE (#\} ws))
 	     (PIPE (#\| ws))
 
 	     (DEFINE ("define"ws))
