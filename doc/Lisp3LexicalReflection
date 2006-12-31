@@ -1,0 +1,142 @@
+see comp.lang.scheme msg id 4596c2d8$0$68976$742ec2ed@news.sonic.net
+"Re: let binding" by Ray Dillinger <bear@sonic.net>
+
+---------------------------------------------------------------------------
+
+Pascal Costanza wrote:
+> Jeffrey Mark Siskind wrote:
+
+>>> What about good old reflection, like in 3-Lisp and languages
+>>> influenced by 3-Lisp, like Brown, etc.?
+
+>> I am not sufficiently familiar with 3-Lisp to answer this.
+
+> Very roughly, 3-Lisp (and similar approaches) add an nlambda construct
+> that is like lambda, but doesn't evaluate its arguments and gets passed
+> a representation of the expression, the lexical environment in which the
+> nlambda is called and the respective continuation. So, for example, you
+> can implement an if statement with nlambda:
+
+> (define if (nlambda (exp env cnt)
+>              (eval (cadr exp) env
+>                    (lambda (res)
+>                      (cond (res (eval (caddr exp) env cnt)
+>                            (else (eval (cadddr exp) env cnt)))))))
+
+I think before you can throw the above example around,
+you have to discuss the extension of 'eval' you're
+assuming.  I see what it does, but I'm not who
+you're trying to explain 3-lisp to.
+
+(explanation for those unfamiliar: in addition to
+the nlambda construct that Mr. Constanza is trying
+to explain, the above code assumes a version of
+'eval' that takes three arguments: an expression,
+an environment, and a continuation.  The expression
+is evaluated in the environment, and then the
+continuation is called.  If the continuation doesn't
+return, then the call to eval doesn't return.
+Otherwise, it returns what the continuation returns.)
+
+There's still a problem here, in that sometimes and
+for some functions, you want to pass an argument along
+to *other* functions, still unevaluated.  When you
+do so, this model causes you to implicitly pass your
+current lexical environment rather than the one that
+argument arrived with, and the expression form arrives
+at the next function with a lexical environment that
+isn't directly useful for evaluating the expression.
+Rinse & repeat for however great a depth you want to
+pass argument expressions lazily, and you get quite
+a thorny thicket in which to code.
+
+For a more general solution to the problem that nlambda
+attempts to address, every unevaluated argument should
+be some kind of entity from which the callee may
+extract both the expression and that expression's own
+lexical environment, which  may be different from the
+lexical environment of other expressions in the same
+call.
+
+> The IMHO best overview paper is "Control-Related Meta-Level Facilities
+> in Lisp" by Jim des Rivieres (in Maes/Nardi, "Meta-Level Architectures
+> and Reflection).
+
+IMNSHO, the best overview paper is barely adequate.  This
+is memespace that's lying fallow right now because it is
+outside the design space of all four of the surviving
+major Lisp dialects, and learning this stuff from
+overview papers without hands-on experience is like
+trying to learn the geography and boulevards of Paris
+from a map when you've never been there.
+
+As long as it's lying fallow, we can't expect any advances
+in the practice, and darn few in the theory, because
+thousands of smart people just don't have their hands and
+minds in it every day.  All we can expect is the work of
+several dozen or maybe a few hundred grad students, and
+frankly less and less of that given that most Ph.D
+committees see lambda as already pretty thoroughly explored.
+
+> Since you get access to the arguments before they are evaluated, you can
+> probably also transform them to the kinds of arguments that you actually
+> need.
+> It would probably be interesting to reflect on variable lookup as such -
+> maybe slambda, similar to symbol macros in Common Lisp or R6RS Scheme -
+> and values - maybe vlambda. (This doesn't exist, I am just speculating
+> here...)
+
+slambda is a trivial reduction in power from the
+nlambda construct you mentioned before, easily
+implementable simply as a restriction on its
+argument set, and vlambda is already familiar as
+the "normal" lambda-form in a call-by-value Lisp
+such as Scheme. It is interesting to distinguish
+a vlambda form in an otherwise-lazy lisp dialect,
+but for the area of memespace people here/today
+are knowledgeable about, the ability of nlambda
+to handle lazy semantics is more interesting,
+counterintuitive, or surprising.
+
+>>> Or for that matter, what about implementing your own evaluator?
+
+>> That in of itself doesn't allow nonstandard interpretations to be
+>> first-class. Without the ability for changing the basis, you can't
+>> compose nonstandard interpretations (potentially in different orders)
+
+Here's the same point I explained above.  Composing
+nonstandard interpretations requires a lexical
+environment to be passed with each *argument*, rather
+than with each *call*. If you're passing an environment
+with each *call*, it's properly the dynamic environment
+rather than the lexical environment.  When you pass an
+"open" expression to an nlambda form, the system has to
+"close" it, attaching the current lexical environment
+When you pass an expression that's already closed, it
+already has an environment attached, and it doesn't get
+a new one.  But your nlambda analogue needs to get all
+the expressions in closed form, each with an environment
+pointer attached.  And your closed forms need to be a
+data type with accessors that can separately extract
+the expression and the lexical environment.
+
+> Very interesting. The term "nonstandard interpretation" led me to
+> believe that this is about interpreters (as in "The Art of the
+> Interpreter" ;). But this seems to be quite related nevertheless...
+
+Programming language interpreters are cases of the exact
+same kind of interpretation he's talking about above.
+In fact, programming mathematical interpretation is an
+excellent way to find bugs in your math (although you
+have to work past the bugs in your programming to be
+sure of exactly what you've found).
+
+But mostly they're much more loosely specified and have a
+universe of discourse limited to representable values in
+a particular machine's finite memory.  On typical computer
+approximations of the set of real numbers, not even
+commutativity and associativity hold for addition or
+multiplication, so it gets very hard to actually prove
+anything.
+
+                                Bear 
