@@ -12,12 +12,12 @@ define :repeat block =
   :repeat block;
 
 define s:reverse stream =
-  rec loop(stream, [|]) {[|], acc -> acc;
-			 [f|r], acc -> loop(r, [f|acc])};
+  <(stream, [|])> [ [|], acc -> acc;
+		    [f|r], acc -> self(r, [f|acc]) ];
 
 define s:foldr stream seed fn =
-  rec loop(stream) { [|] = acc;
-                     [f|r] -> fn(f, loop(r)) };
+  <stream> [ [|] = acc;
+             [f|r] -> fn(f, self(r)) ];
 
 define s:append(s1, s2) = s:foldr s1 s2 s:cons;
 
@@ -35,21 +35,21 @@ define s:concatenate stream = s:foldr stream [|] s:append;
 define s:map stream fn = s:foldr stream [|] {elt, acc -> [fn(elt) | acc]};
 
 define s:foreach stream fn =
-  rec loop(stream) { [|] -> .:ok;
-		     [f|r] -> do fn(f); loop(r) };
+  <stream> [ [|] -> .:ok;
+	     [f|r] -> do fn(f); self(r) ];
 
 define string:stream = {
   (str, startIndex) ->
     let len = string:length(str);
-    rec loop(startIndex) { index ->
+    <startIndex> [ index ->
       (index < len) {
 	.:true -> {.bytes = str;
 		   .offset = index;
 		   visitor -> visitor.s:next(string:charAt(str, index),
-					     loop(index + 1))};
+					     self(index + 1))};
 	.:false -> s:nil
       }
-    };
+    ];
 
   (str) -> string:stream(str, 0)
 };

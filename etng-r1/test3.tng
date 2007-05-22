@@ -68,12 +68,12 @@ define s:cons(f,r) = s:StreamOperations / <.s:next(f, r)>;
 define s:nil       = s:StreamOperations / <.s:empty>;
 
 define s:StreamOperations = [
-  .s:foldl acc fn -> rec loop(acc, self) {acc, <.s:empty> -> acc;
-                                          acc, <.s:next(f, r)> -> loop(fn(f, acc), r)};
-  .s:foldr acc fn -> rec loop(self) {<.s:empty> = acc;
-				     <.s:next(f, r)> -> fn(f, loop(r))};
-  .s:do fn -> rec loop(self) {<.s:empty> = .:ok;
-			      <.s:next(f, r)> -> do fn(f); loop(r)};
+  .s:foldl acc fn -> <(acc, self)> [acc, <.s:empty> -> acc;
+                                    acc, <.s:next(f, r)> -> self(fn(f, acc), r)];
+  .s:foldr acc fn -> <self> [<.s:empty> = acc;
+			     <.s:next(f, r)> -> fn(f, self(r))];
+  .s:do fn -> <self> [<.s:empty> = .:ok;
+		      <.s:next(f, r)> -> do fn(f); self(r)];
 
   .s:inject -> self.s:foldl;
 ];

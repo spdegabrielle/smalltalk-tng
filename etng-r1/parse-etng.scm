@@ -164,21 +164,6 @@
 					 'pattern p
 					 'value e
 					 'body b)))
-			  (LAZY p <- tuple-pattern EQ e <- expr semis b <- expr
-				,(packrat-lambda (p e b)
-				   (make-node 'core-lazy
-					      'pattern p
-					      'value e
-					      'body b)))
-			  (REC q <- qname m <- simple-expr b <- simple-expr
-			       ,(packrat-lambda (q m b)
-				  (make-node 'core-lazy
-					     'pattern (make-node 'pat-binding 'name q)
-					     'value b
-					     'body (make-node 'core-send
-							      'receiver (make-node 'core-ref
-										   'name q)
-							      'message m))))
 			  (DO head <- expr semis tail <- expr
 			   ,(packrat-lambda (head tail)
 			      (make-node 'core-do
@@ -289,8 +274,6 @@
 	     (NAMESPACE ("namespace"ws))
 	     (SELF ("self"ws))
 	     (LET ("let"ws))
-	     (LAZY ("lazy"ws))
-	     (REC ("rec"ws))
 	     (DO ("do"ws))
 
 	     ))))

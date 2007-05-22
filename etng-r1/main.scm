@@ -44,7 +44,6 @@
      (%or
       (core-namespace (prefix ,symbol?) (uri ,string?) (value core-exp))
       (core-send (receiver core-exp) (message core-exp))
-      (core-lazy (pattern data-pattern) (value core-exp) (body core-exp))
       (core-object (methods (%list-of core-method)))
       (core-function (methods (%list-of core-method)))
       (core-message (parts (%list-of core-exp)))
