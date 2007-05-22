@@ -8,7 +8,6 @@
 ;;  - messages (?)
 ;;  - objects
 ;;  - functions (objects that don't have a self)
-;;  - promises (?)
 
 ;; Patterns can be:
 ;;  - discard
