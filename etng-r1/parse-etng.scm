@@ -106,9 +106,6 @@
 			     function
 			     message
 			     stream
-			     (OPARENnows o <- operator CPAREN ,(packrat-lambda (o)
-								 (let ((n (make-qname #f o)))
-								   (make-node 'core-ref 'name n))))
 			     (SELF ,(packrat-lambda () (make-node 'core-self)))
 			     (q <- qname ,(packrat-lambda (q) (make-node 'core-ref 'name q)))
 			     (l <- literal ,(packrat-lambda (l) (make-node 'core-lit 'value l)))
@@ -116,7 +113,7 @@
 			     (s <- string ,(packrat-lambda (s) (stream-over-string s)))
 			     (OPAREN e <- expr CPAREN ,(packrat-lambda (e) e))))
 
-	     (literal (/ (#\. ws q <- qname ,(packrat-lambda (q) q))
+	     (literal (/ (#\. ws q <- qname-nooperator ,(packrat-lambda (q) q))
 			 (o <- operator ,(packrat-lambda (o) o))
 			 (w <- word ,(packrat-lambda (w) w))))
 
@@ -191,10 +188,7 @@
 	     (patterns (/ ((ps <- pattern)* (! #\,) ,(packrat-lambda (ps) ps))
 			  (p <- tuple-pattern ,(packrat-lambda (p) (list p)))))
 
-	     (pattern (/ (OPARENnows o <- operator CPAREN ,(packrat-lambda (o)
-							     (let ((n (make-qname #f o)))
-							       (make-node 'pat-binding 'name n))))
-			 message-pattern
+	     (pattern (/ message-pattern
 			 stream-pattern
 			 (#\_ ws ,(packrat-lambda () (make-node 'pat-discard)))
 			 (l <- literal ,(packrat-lambda (l) (make-node 'pat-lit 'value l)))
@@ -228,18 +222,23 @@
 
 	     (semis (SEMI *))
 
-	     (qname (/ (prefix <- id #\: localname <- id
-			       ,(packrat-lambda (prefix localname)
-				  (make-qname prefix localname)))
-		       (uri <- string #\: localname <- id
-			    ,(packrat-lambda (uri localname)
-			       (make-qname uri localname)))
-		       (#\: localname <- id
-			,(packrat-lambda (localname)
-			   (make-qname (string->symbol "") localname)))
-		       (localname <- id
-				  ,(packrat-lambda (localname)
-				     (make-qname #f localname)))))
+	     (qname (/ qname-nooperator
+		       (OPARENnows o <- operator CPAREN ,(packrat-lambda (o)
+							   (make-qname #f o)))))
+
+	     (qname-nooperator
+	      (/ (prefix <- id #\: localname <- id
+			 ,(packrat-lambda (prefix localname)
+			    (make-qname prefix localname)))
+		 (uri <- string #\: localname <- id
+		      ,(packrat-lambda (uri localname)
+			 (make-qname uri localname)))
+		 (#\: localname <- id
+		  ,(packrat-lambda (localname)
+		     (make-qname (string->symbol "") localname)))
+		 (localname <- id
+			    ,(packrat-lambda (localname)
+			       (make-qname #f localname)))))
 
 	     (id ((! #\_) (a <- id-alpha) (r <- (/ id-alpha digit))* ws
 		  ,(packrat-lambda (a r) (string->symbol (list->string (cons a r))))))
