@@ -233,7 +233,7 @@
 		      ,(packrat-lambda (cs) (list->string cs))))
 
 	     (operator ((! reserved-operator)
-			a <- op-punct (r <- (/ op-punct digit alpha))* ws
+			a <- op-punct-init (r <- (/ op-punct digit alpha))* ws
 			,(packrat-lambda (a r) (string->symbol (list->string (cons a r))))))
 
 	     (word (/ positive-word
@@ -242,7 +242,8 @@
 			     ,(packrat-lambda (d) (string->number (list->string d)))))
 
 	     (id-alpha (/ alpha #\_ #\$))
-	     (op-punct (/: ":!#%&*+/<=>?@\\^|-~"))
+	     (op-punct      (/: "!#%&*+/<=>?@\\^-~:|"))
+	     (op-punct-init (/: "!#%&*+/<=>?@\\^-~"))
 
 	     (ws (/ ((/: ,char-whitespace? "whitespace")+ ws)
 		    (#\" (/: ,nonquote "comment character")* #\" ws)
