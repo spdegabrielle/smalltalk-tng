@@ -1,0 +1,32 @@
+define etngEnv = [
+  .empty() = hashtable:empty;
+];
+
+define etngRepl = [
+  .repl1(qnameEnv) ->
+    do '>>ETNG>> '.print();
+    do :stdout.flush();
+    let results = packrat:stdinResults();
+    etngParser.parse results {
+      .packrat:success ast ->
+	etngLanguage.toplevelCommand.matches(ast) {
+	  .:true ->
+	    let newEnv = etngEval(ast, qnameEnv);
+	    newEnv;
+	  .:false ->
+	    do :newline();
+	    do ';; Failed language check'.println();
+	    do ast.prettyPrint();
+	    exit 'Failed language check';
+	};
+      .packrat:failure error ->
+	do error.prettyPrint();
+	self.repl1(qnameEnv);
+    };
+
+  .main() ->
+    let r = self;
+    <r.initialEnvironment()> [e -> let e2 = r.repl1(e); self e2];
+
+  .initialEnvironment() = etngEnv.empty().extend('', 'http://eighty-twenty.org/etng/r1/ns/etng');
+];
