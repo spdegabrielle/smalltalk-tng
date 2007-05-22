@@ -107,6 +107,7 @@
 			     message
 			     stream
 			     (SELF ,(packrat-lambda () (make-node 'core-self)))
+			     (NEXTMETHOD ,(packrat-lambda () (make-node 'core-next-method)))
 			     (q <- qname ,(packrat-lambda (q) (make-node 'core-ref 'name q)))
 			     (l <- literal ,(packrat-lambda (l) (make-node 'core-lit 'value l)))
 			     ;; Bug: no corresponding string pattern-match syntax.
@@ -273,6 +274,7 @@
 	     (DEFINE ("define"ws))
 	     (NAMESPACE ("namespace"ws))
 	     (SELF ("self"ws))
+	     (NEXTMETHOD ("nextMethod"ws))
 	     (LET ("let"ws))
 	     (DO ("do"ws))
 

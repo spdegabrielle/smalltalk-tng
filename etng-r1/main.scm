@@ -53,6 +53,7 @@
       (core-tuple (elements (%list-of core-exp)))
       (core-lit (value #t))
       (core-self)
+      (core-next-method)
       ))
 
     (core-method
