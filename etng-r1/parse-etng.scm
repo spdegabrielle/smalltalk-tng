@@ -192,7 +192,8 @@
 			  (p <- tuple-pattern ,(packrat-lambda (p) (list p)))))
 
 	     (pattern (/ (OPARENnows o <- operator CPAREN ,(packrat-lambda (o)
-							     (make-node 'pat-binding 'name o)))
+							     (let ((n (make-qname #f o)))
+							       (make-node 'pat-binding 'name n))))
 			 message-pattern
 			 stream-pattern
 			 (#\_ ws ,(packrat-lambda () (make-node 'pat-discard)))
