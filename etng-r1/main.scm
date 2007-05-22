@@ -88,7 +88,8 @@
        qname-env))))
 
 (define (etng-repl)
-  (let loop ((qname-env '()))
+  (let loop ((qname-env (extend-qname-env '() (string->symbol "")
+					  "http://eighty-twenty.org/etng/r1/ns/etng")))
     (display ">>ETNG>> ")
     (flush-output)
     (let ((results (stdin-results)))
