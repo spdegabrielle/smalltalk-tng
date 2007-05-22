@@ -107,7 +107,8 @@
 			     message
 			     stream
 			     (OPARENnows o <- operator CPAREN ,(packrat-lambda (o)
-								 (make-node 'core-ref 'name o)))
+								 (let ((n (make-qname #f o)))
+								   (make-node 'core-ref 'name n))))
 			     (SELF ,(packrat-lambda () (make-node 'core-self)))
 			     (q <- qname ,(packrat-lambda (q) (make-node 'core-ref 'name q)))
 			     (l <- literal ,(packrat-lambda (l) (make-node 'core-lit 'value l)))
