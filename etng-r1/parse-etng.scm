@@ -106,6 +106,7 @@
 			     function
 			     message
 			     stream
+			     meta
 			     (SELF ,(packrat-lambda () (make-node 'core-self)))
 			     (NEXTMETHOD ,(packrat-lambda () (make-node 'core-next-method)))
 			     (q <- qname ,(packrat-lambda (q) (make-node 'core-ref 'name q)))
@@ -142,6 +143,8 @@
 	     (stream-suffix (/ (CBRACK ,(packrat-lambda () #f))
 			       (PIPE CBRACK ,(packrat-lambda () #f))
 			       (PIPE e <- send CBRACK ,(packrat-lambda (e) e))))
+
+	     (meta (META s <- sexp ,(packrat-lambda (s) (make-node 'core-meta 'sexp s))))
 
 	     (member (/ constant-member
 			method-member))
@@ -203,6 +206,12 @@
 	     (comma-separated-patterns (/ (p <- pattern (#\, ws ps <- pattern)*
 					     ,(packrat-lambda (p ps) (cons p ps)))
 					  ,(packrat-lambda () '())))
+
+	     (sexp (/ (#\. ws s <- sexp ,(packrat-lambda (s) (list 'quote s)))
+		      id
+		      literal
+		      string
+		      (OPAREN (s <- sexp)* CPAREN ,(packrat-lambda (s) s))))
 
 	     ;;---------------------------------------------------------------------------
 
@@ -278,6 +287,7 @@
 	     (NEXTMETHOD ("nextMethod"ws))
 	     (LET ("let"ws))
 	     (DO ("do"ws))
+	     (META ("meta"ws))
 
 	     ))))
     (lambda (results k-ok k-fail)

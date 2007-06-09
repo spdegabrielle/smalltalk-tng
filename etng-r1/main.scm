@@ -54,6 +54,7 @@
       (core-lit (value #t))
       (core-self)
       (core-next-method)
+      (core-meta (sexp #t))
       ))
 
     (core-method
