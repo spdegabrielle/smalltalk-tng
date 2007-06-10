@@ -16,7 +16,7 @@ define s:reverse stream =
 		    [f|r], acc -> self(r, [f|acc]) ];
 
 define s:foldr stream seed fn =
-  <stream> [ [|] = acc;
+  <stream> [ [|] = seed;
              [f|r] -> fn(f, self(r)) ];
 
 define s:append(s1, s2) = s:foldr s1 s2 s:cons;
