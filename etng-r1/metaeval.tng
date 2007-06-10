@@ -109,8 +109,9 @@ define Interpreter = [
     <exp.core:kind> {
       .core:Namespace -> self.eval state exp.core:value k;
       .core:Send ->
-	self.eval state exp.core:message {m ->
-	  self.send exp.core:receiver m k};
+	self.eval state exp.core:receiver {r ->
+	  self.eval state exp.core:message {m ->
+	    self.send r m k};
       .core:Object -> reflection:makeObject state exp.core:methods;
       .core:Function -> reflection:makeFunction state exp.core:methods;
       .core:Message -> self.evlis state exp.core:parts reflection:makeMessage;
