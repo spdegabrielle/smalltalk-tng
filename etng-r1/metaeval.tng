@@ -1,0 +1,135 @@
+namespace s = 'http://eighty-twenty.org/etng/r1/ns/stream';
+namespace core = 'http://eighty-twenty.org/etng/r1/ns/abstract-syntax/core';
+namespace reflection = 'http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation';
+namespace interpreter = 'http://eighty-twenty.org/etng/r1/ns/interpreter';
+
+"---------------------------------------------------------------------------"
+
+define :TExtendable = [
+  .:with extension ->
+    reflection:reflect(self).reflection:extendWith(reflection:reflect(extension)).reflection:reify;
+];
+
+"---------------------------------------------------------------------------"
+namespace 'http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation';
+
+define makeQName uri localName = [
+  .uri = uri;
+  .localName = localName;
+];
+
+define emptyEnvironment = [|];
+
+define searchEnvironment env name ->
+  1;
+
+define extendEnvironment env1 env2 ->
+  1;
+
+define match pattern value env ->
+  1;
+
+define Object = [
+  .lookup message k ->
+    1;
+];
+
+define makeObject methods ->
+  1;
+
+define Function = [
+  .lookup message k ->
+    1;
+];
+
+define makeFunction methods ->
+  1;
+
+define makeMessage parts ->
+  1;
+
+define Tuple = [
+];
+
+define makeTuple values ->
+  1;
+
+"---------------------------------------------------------------------------"
+namespace 'http://eighty-twenty.org/etng/r1/ns/interpreter';
+
+define InterpreterState = :TExtendable.:with [
+  .env = reflection:emptyEnvironment;
+  .k = <>;
+  .self_ = [];
+  .nextMethod_ = {exit <.internalError>;} "??"
+];
+
+define Interpreter = [
+  .globals = 1;
+
+  .unboundVariable state name ->
+    exit <.unboundVariable state name>;
+
+  .doesNotUnderstand state receiver message ->
+    exit <.doesNotUnderstand state receiver message>;
+
+  .noNextMethod state ->
+    exit <.noNextMethod state>;
+
+  .lookup state name k ->
+    reflection:searchEnvironment state.env name {
+      .:ok(v) -> k v;
+      _ -> self.globals name {
+	    .:ok(v)-> k v;
+	    _ -> self.unboundVariable state name;
+	  };
+    };
+
+  .apply state (closure, bindings, newSelf, newNextMethod) k ->
+    let env = reflection:extendEnvironment closure.reflection:env bindings;
+    self.eval (state.:with [.nextMethod_ = newNextMethod; .self_ = newSelf;])
+	      closure.reflection:exp
+	      k;
+
+  .send state receiver message k ->
+    "need to handle <> messages here"
+    receiver.reflection:lookup message {
+      .:ok result -> self.apply state result k;
+      _ -> self.doesNotUnderstand receiver message;
+    };
+
+  .evlis state elements k ->
+    let e = self.eval state;
+    <elements [|]> [
+      [|]		acc -> k (s:reverse acc);
+      [first | rest]	acc -> e first {firstValue -> self rest [firstValue | acc]};
+    ];
+
+  .eval state exp k ->
+    <exp.core:kind> {
+      .core:Namespace -> self.eval state exp.core:value k;
+      .core:Send ->
+	self.eval state exp.core:message {m ->
+	  self.send exp.core:receiver m k};
+      .core:Object -> reflection:makeObject state exp.core:methods;
+      .core:Function -> reflection:makeFunction state exp.core:methods;
+      .core:Message -> self.evlis state exp.core:parts reflection:makeMessage;
+      .core:Do ->
+	self.eval state exp.core:head {v ->
+	  self.eval state exp.core:tail k};
+      .core:Let ->
+	self.eval state exp.core:value {v ->
+	  let newEnv = reflection:match exp.core:pattern v state.env;
+	  self.eval (state.:with [.env = newEnv]) exp.core:body k};
+      .core:Ref -> self.lookup state exp.core:name k;
+      .core:Tuple -> self.evlis state exp.core:elements {vals -> k (reflection:makeTuple vals)};
+      .core:Lit -> exp.core:value;
+      .core:Self -> state.self_;
+      .core:NextMethod ->
+	state.nextMethod_ {
+	  .:ok result -> self.apply state result k;
+	  _ -> self.noNextMethod state;
+	};
+      .core:Meta -> 1;
+    };
+];
