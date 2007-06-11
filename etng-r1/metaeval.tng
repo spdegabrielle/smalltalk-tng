@@ -99,11 +99,8 @@ define Interpreter = [
     };
 
   .evlis state elements k ->
-    let e = self.eval state;
-    <elements [|]> [
-      [|]		acc -> k (s:reverse acc);
-      [first | rest]	acc -> e first {firstValue -> self rest [firstValue | acc]};
-    ];
+    let e = {(element, acc) continue -> self.eval state element {v -> continue [v | acc]}};
+    s:foldlK elements [|] e {acc -> k (s:reverse acc)};
 
   .eval state exp k ->
     <exp.core:kind> {
