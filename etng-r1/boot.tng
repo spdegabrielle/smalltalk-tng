@@ -22,6 +22,14 @@ define s:foldr stream seed fn =
 define s:reverse stream = s:foldl stream [|] s:cons;
 define s:append(s1, s2) = s:foldr s1 s2 s:cons;
 
+define s:foldlK stream seed fn k =
+  <(stream, seed)> [ [|], seed = k seed;
+		     [f|r], seed -> fn (f, seed) {v -> self(r, v)} ];
+
+define s:foldrK stream seed fn k =
+  <(stream, k)> [ [|], k = k seed;
+		  [f|r], k = self(r, {v -> fn (f, v) k}) ];
+
 define n:range = {
   (low, high, step) -> (low < high) {
     .:true -> [low | n:range(low + step, high, step)];
