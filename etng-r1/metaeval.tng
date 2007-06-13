@@ -77,7 +77,7 @@ define Interpreter = [
     exit <.noNextMethod state>;
 
   .lookup state name k ->
-    reflection:searchEnvironment state.env name {
+    reflection:searchEnvironment (state.env) name {
       .:ok(v) -> k v;
       _ -> self.globals name {
 	    .:ok(v)-> k v;
@@ -86,9 +86,9 @@ define Interpreter = [
     };
 
   .apply state (closure, bindings, newSelf, newNextMethod) k ->
-    let env = reflection:extendEnvironment closure.reflection:env bindings;
+    let env = reflection:extendEnvironment (closure.reflection:env) bindings;
     self.eval (state.:with [.nextMethod_ = newNextMethod; .self_ = newSelf;])
-	      closure.reflection:exp
+	      (closure.reflection:exp)
 	      k;
 
   .send state receiver message k ->
@@ -104,23 +104,23 @@ define Interpreter = [
 
   .eval state exp k ->
     <exp.core:kind> {
-      .core:Namespace -> self.eval state exp.core:value k;
+      .core:Namespace -> self.eval state (exp.core:value) k;
       .core:Send ->
-	self.eval state exp.core:receiver {r ->
-	  self.eval state exp.core:message {m ->
+	self.eval state (exp.core:receiver) {r ->
+	  self.eval state (exp.core:message) {m ->
 	    self.send r m k};
-      .core:Object -> reflection:makeObject state exp.core:methods;
-      .core:Function -> reflection:makeFunction state exp.core:methods;
-      .core:Message -> self.evlis state exp.core:parts reflection:makeMessage;
+      .core:Object -> reflection:makeObject state (exp.core:methods);
+      .core:Function -> reflection:makeFunction state (exp.core:methods);
+      .core:Message -> self.evlis state (exp.core:parts) reflection:makeMessage;
       .core:Do ->
-	self.eval state exp.core:head {v ->
-	  self.eval state exp.core:tail k};
+	self.eval state (exp.core:head) {v ->
+	  self.eval state (exp.core:tail) k};
       .core:Let ->
-	self.eval state exp.core:value {v ->
-	  let newEnv = reflection:match exp.core:pattern v state.env;
-	  self.eval (state.:with [.env = newEnv]) exp.core:body k};
-      .core:Ref -> self.lookup state exp.core:name k;
-      .core:Tuple -> self.evlis state exp.core:elements {vals -> k (reflection:makeTuple vals)};
+	self.eval state (exp.core:value) {v ->
+	  let newEnv = reflection:match (exp.core:pattern) v (state.env);
+	  self.eval (state.:with [.env = newEnv]) (exp.core:body) k};
+      .core:Ref -> self.lookup state (exp.core:name) k;
+      .core:Tuple -> self.evlis state (exp.core:elements) {vals -> k (reflection:makeTuple vals)};
       .core:Lit -> exp.core:value;
       .core:Self -> state.self_;
       .core:NextMethod ->
