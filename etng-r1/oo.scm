@@ -29,3 +29,40 @@
 ;;
 ;; Note that objects can be constructed from smaller objects by
 ;; application of the traits operators '/', '+', '-' and '@'.
+
+;; words < qnames < byte-vectors
+(define (lit<? a b)
+  (cond
+   ((number? a)		(cond
+			 ((number? b) (< a b))
+			 (else #t)))
+   ((qname? a)		(cond
+			 ((qname? b) (or (string<? (qname-uri a) (qname-uri b))
+					 (and (string=? (qname-uri a) (qname-uri b))
+					      (string<? (symbol->string (qname-localname a))
+							(symbol->string (qname-localname b))))))
+			 ((number? b) #f)
+			 (else #t)))
+   ((string? a)		(cond
+			 ((string? b) (string<? a b))
+			 (else #f)))))
+
+;---------------------------------------------------------------------------
+; MzScheme magic
+(print-struct #t)
+(define previous-inspector (current-inspector))
+(current-inspector (make-inspector))
+;---------------------------------------------------------------------------
+
+(define-record-type tng-pattern
+  (make-pattern* literals tuples messages binding)
+  pattern?
+  (literals pattern-literals)
+  (tuples pattern-tuples)
+  (messages pattern-messages)
+  (binding pattern-binding))
+
+;---------------------------------------------------------------------------
+; MzScheme magic
+(current-inspector previous-inspector)
+;---------------------------------------------------------------------------

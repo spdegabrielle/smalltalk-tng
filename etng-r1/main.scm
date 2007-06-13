@@ -2,6 +2,7 @@
 	 (lib "4.ss" "srfi") ;; homogeneous-numeric-vectors, u8vector
 	 (lib "8.ss" "srfi") ;; receive
 	 (lib "9.ss" "srfi") ;; records
+	 (only (lib "list.ss") mergesort)
 	 (lib "pretty.ss")
 	 (lib "packrat.ss" "json-scheme"))
 
@@ -28,6 +29,7 @@
 (load "node.scm")
 (load "expand-qname.scm")
 (load "parse-etng.scm")
+(load "oo.scm")
 
 (define *debug-mode* '(sequence-phases))
 
