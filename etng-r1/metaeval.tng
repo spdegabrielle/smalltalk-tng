@@ -87,7 +87,7 @@ define Interpreter = [
 
   .apply state (closure, bindings, newSelf, newNextMethod) k ->
     let env = reflection:extendEnvironment (closure.reflection:env) bindings;
-    self.eval (state.:with [.nextMethod_ = newNextMethod; .self_ = newSelf;])
+    self.eval (state.:with [.env = env; .nextMethod_ = newNextMethod; .self_ = newSelf;])
 	      (closure.reflection:exp)
 	      k;
 
