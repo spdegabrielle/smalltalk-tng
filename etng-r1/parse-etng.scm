@@ -177,12 +177,16 @@
 	     (patterns (/ ((ps <- pattern)* (! #\,) ,(packrat-lambda (ps) ps))
 			  (p <- tuple-pattern ,(packrat-lambda (p) (list p)))))
 
-	     (pattern (/ message-pattern
-			 stream-pattern
-			 (#\_ ws ,(packrat-lambda () (make-node 'pat-discard)))
-			 (l <- literal ,(packrat-lambda (l) (make-node 'pat-lit 'value l)))
-			 (q <- qname ,(packrat-lambda (q) (make-node 'pat-binding 'name q)))
-			 (OPAREN p <- tuple-pattern CPAREN ,(packrat-lambda (p) p))))
+	     (pattern (/ (p1 <- simple-pattern HASH p2 <- pattern
+			     ,(packrat-lambda (p1 p2) (make-node 'pat-and 'left p1 'right p2)))
+			 simple-pattern))
+
+	     (simple-pattern (/ message-pattern
+				stream-pattern
+				(#\_ ws ,(packrat-lambda () (make-node 'pat-discard)))
+				(l <- literal ,(packrat-lambda (l) (make-node 'pat-lit 'value l)))
+				(q <- qname ,(packrat-lambda (q) (make-node 'pat-binding 'name q)))
+				(OPAREN p <- tuple-pattern CPAREN ,(packrat-lambda (p) p))))
 
 	     (tuple-pattern (ps <- comma-separated-patterns
 				,(packrat-lambda (ps)
@@ -251,8 +255,8 @@
 			     ,(packrat-lambda (d) (string->number (list->string d)))))
 
 	     (id-alpha (/ alpha #\_ #\$))
-	     (op-punct      (/: "!#%&*+/<=>?@\\^-~:|"))
-	     (op-punct-init (/: "!#%&*+/<=>?@\\^-~"))
+	     (op-punct      (/: "!%&*+/<=>?@\\^-~#:|"))
+	     (op-punct-init (/: "!%&*+/<=>?@\\^-~"))
 
 	     (ws (/ ((/: ,char-whitespace? "whitespace")+ ws)
 		    (#\" (/: ,nonquote "comment character")* #\" ws)
@@ -263,11 +267,13 @@
 	     (reserved-operator (/ ARROW
 				   COLONEQ
 				   EQ
+				   HASH
 				   PIPE))
 
 	     (ARROW ("->" (! op-punct) ws))
 	     (COLONEQ (":=" (! op-punct) ws))
 	     (EQ (#\= (! op-punct) ws))
+	     (HASH (#\# (! op-punct) ws))
 
 	     (SEMI (#\; ws))
 	     (OPAREN (OPARENnows ws))

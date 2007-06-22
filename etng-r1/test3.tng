@@ -102,3 +102,4 @@ myObj.method(argument);
 "Is it a good idea to treat everything as a tuple, with most values
  being tuples of length 1?"
 
+"Simultaneous binding: pat#pat"
