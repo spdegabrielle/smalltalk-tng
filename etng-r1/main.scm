@@ -29,7 +29,7 @@
 (load "node.scm")
 (load "expand-qname.scm")
 (load "parse-etng.scm")
-(load "oo.scm")
+;;(load "oo.scm")
 
 (define *debug-mode* '(sequence-phases))
 

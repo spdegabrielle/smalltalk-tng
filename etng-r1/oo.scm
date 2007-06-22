@@ -55,14 +55,90 @@
 ;---------------------------------------------------------------------------
 
 (define-record-type tng-pattern
-  (make-pattern* literals tuples messages binding)
+  (make-pattern* kind datum)
   pattern?
-  (literals pattern-literals)
-  (tuples pattern-tuples)
-  (messages pattern-messages)
-  (binding pattern-binding))
+  (kind pattern-kind)
+  (datum pattern-datum))
+
+(define-record-type tng-pattern-closure
+  (make-pattern-closure code env saved-self)
+  pattern-closure?
+  (code pattern-closure-code)
+  (env pattern-closure-env)
+  (saved-self pattern-closure-saved-self))
 
 ;---------------------------------------------------------------------------
 ; MzScheme magic
 (current-inspector previous-inspector)
 ;---------------------------------------------------------------------------
+
+(define (make-etng-object methods env saved-self)
+
+  (define (prepend-one patterns ...HERE%%%
+
+  (let loop ((methods methods)
+	     (rev-patterns '()))
+    (if (null? methods)
+	(reverse rev-patterns)
+	(let ((method (car methods)))
+	  (loop (cdr methods)
+		(node-match method
+		  ((core-constant patterns body)
+		   (prepend-one patterns
+				(make-node 'core-lit
+					   'value (error 'need-to-have-evaluated-already body))
+				rev-patterns))
+		  ((core-method patterns body)
+		   (prepend-one patterns
+				body
+				rev-patterns))))))))
+
+(define (etng-match patterns value sk-outer fk-outer)
+
+  (define (match-tuple pats vals bindings sk fk)
+    (let ((tuple-length (vector-length pats)))
+      (let tuple-loop ((index 0)
+		       (bindings bindings))
+	(if (= index tuple-length)
+	    (sk bindings)
+	    (match-pat (vector-ref pats index)
+		       (vector-ref vals index)
+		       bindings
+		       (lambda (new-bindings) (tuple-loop (+ index 1) new-bindings))
+		       fk)))))
+
+  (define (match-pat pat value bindings sk fk)
+    (let ((d (pattern-datum pat)))
+      (case (pattern-kind pat)
+	((literals)
+	 (let ((subpat (hash-table-get d value #f)))
+	   (if subpat
+	       (sk bindings)
+	       (fk))))
+	((tuples)
+	 (if (vector? value)
+	     (let ((probe-index (vector-length value)))
+	       (if (>= probe-index (vector-length d))
+		   (fk)
+		   (let ((subpats (vector-ref d probe-index)))
+		     (if subpats
+			 (match-tuple subpats value bindings sk fk)
+			 (fk)))))
+	     (fk)))
+	((binding)
+	 (sk (cons (cons d value) bindings)))
+	(else
+	 (error 'invalid-etng-match-pattern pat)))))
+
+  (let match-alternatives ((patterns patterns))
+    (if (null? patterns)
+	(fk)
+	(let* ((pat-and-closure (car patterns))
+	       (pat (car pat-and-closure))
+	       (clo (cdr pat-and-closure))
+	       (next-match (lambda () (match-alternatives (cdr patterns)))))
+	  (match-pat pat
+		     value
+		     (lambda (bindings)
+		       (sk-outer bindings clo next-match))
+		     next-match)))))
