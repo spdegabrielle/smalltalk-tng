@@ -72,9 +72,19 @@
 (current-inspector previous-inspector)
 ;---------------------------------------------------------------------------
 
+;; Currying of patterns:
+;;
+;; Methods: [([Pattern] * Body)]
+;; Dispatch tree: 
+;;
+;; - may be no patterns at all! (error situation)
+
+
 (define (make-etng-object methods env saved-self)
 
-  (define (prepend-one patterns ...HERE%%%
+  (define (prepend-one patterns body accumulated-patterns)
+    (if (or (null? accumulated-patterns)
+	    (not (aggregatable? patterns %%%%HERE ...
 
   (let loop ((methods methods)
 	     (rev-patterns '()))
