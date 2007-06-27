@@ -34,21 +34,21 @@ names (CBinding n) = [n]
 names (CTuple ps) = concatMap names ps
 names (CLiteral l) = []
 
-match v (CAnd l r) sk fk = match v l (\lbs -> match v r (\rbs -> sk (lbs ++ rbs)) fk) fk
-match v (CDiscard) sk fk = sk []
-match v (CBinding n) sk fk = sk [(n, v)]
-match v (CTuple ps) sk fk = matchTuple v ps sk fk
-match v (CLiteral l) sk fk = matchLiteral v l sk fk
+match (CAnd l r) v sk fk = match l v (\lbs -> match r v (\rbs -> sk (lbs ++ rbs)) fk) fk
+match (CDiscard) v sk fk = sk []
+match (CBinding n) v sk fk = sk [(n, v)]
+match (CTuple ps) v sk fk = matchTuple ps v sk fk
+match (CLiteral l) v sk fk = matchLiteral l v sk fk
 
-matchLiteral (VLiteral vl) pl sk fk = if vl == pl then sk [] else fk
-matchLiteral (VTuple _) p sk fk = fk
+matchLiteral pl (VLiteral vl) sk fk = if vl == pl then sk [] else fk ()
+matchLiteral p  (VTuple _) sk fk = fk ()
 
-matchTuple (VLiteral _) ps sk fk = fk
-matchTuple (VTuple vs) ps sk fk = matchTuple' vs ps sk fk
+matchTuple ps (VLiteral _) sk fk = fk ()
+matchTuple ps (VTuple vs) sk fk = matchTuple' ps vs sk fk
 
 matchTuple' [] [] sk fk = sk []
-matchTuple' (v:vs) (p:ps) sk fk = match v p (\bs -> matchTuple' vs ps (\bss -> sk (bs ++ bss)) fk) fk
-matchTuple' _ _ sk fk = fk
+matchTuple' (p:ps) (v:vs) sk fk = match p v (\bs -> matchTuple' ps vs (\bss -> sk (bs ++ bss)) fk) fk
+matchTuple' _ _ sk fk = fk ()
 
 -- We want a compiled matcher to be of type
 -- Value -> Maybe ([Value], ClosureBody, ClosureEnv)
