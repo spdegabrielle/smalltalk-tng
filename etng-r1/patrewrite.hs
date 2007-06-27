@@ -17,6 +17,17 @@ data Value = VLiteral Literal
            | VTuple [Value]
              deriving Show
 
+-- Pattern matcher:
+--   v     -> sk                        -> fk        -> result
+--   Value -> (Bindings -> a)           -> (() -> a) -> a
+--   Value -> ([(Varname, Value)] -> a) -> (() -> a) -> a
+
+-- data MatchTree = MDiscard Outcome
+--                | MBinding Varname Outcome
+--                | MTuple Integer Outcome
+--                | MLiteral Literal Outcome
+--                | MOr [MatchTree]
+
 names (CAnd l r) = names l ++ names r
 names (CDiscard) = []
 names (CBinding n) = [n]
