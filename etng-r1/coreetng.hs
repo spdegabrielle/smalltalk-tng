@@ -1,5 +1,6 @@
 module CoreETng where
 
+---------------------------------------------------------------------------
 -- If you don't want to support *groups* of clauses natively, then
 -- rewrite them to share a binding for self/super.
 --
@@ -12,6 +13,55 @@ module CoreETng where
 --    [.x=.result]
 --  + [msg = [xself = [xsuper = [.y=.foo] + [.b=xself.y] + [other=xsuper other]]] self super msg]
 --  + [vv=[1=vv]]
+---------------------------------------------------------------------------
+-- It's clear that messages (<exp1 exp2 ...>) can be rewritten into
+-- regular closures (let val1 = exp1 in let val2 = exp2 in
+-- ... {receiver -> receiver val1 val2 ...}). Message patterns can be
+-- rewritten, too:
+--
+--   [<pat1 pat2 ...> = exp]
+--
+-- becomes (using {} for closure-clauses, as for the full eTNG)
+--
+--   [msg -> msg {pat1 -> {pat2 -> {... -> exp}}}]
+--
+-- Note there's no default clause {_ -> super msg} here. That's up to
+-- the user. We don't automatically backtrack.
+--
+-- Of course, adjacent clauses in a group need to be rewritten
+-- carefully:
+--
+-- [.x 1 -> .a;
+--  .x 2 -> .b;
+--  <.c 1> -> .z;
+--  <.c 2> -> .w;
+--  v -> v]
+--
+-- becomes
+--
+-- [.x -> {1 -> .a;
+--         2 -> .b};
+--  msg -> msg {.c -> {1 -> .z;     "where msg is fresh"
+--                     2 -> .w};
+--              _ -> [v -> v] msg}]
+--
+-- Eww. I don't think that last catch-all line is a good idea. It
+-- should probably be illegal to to have multiple catch-all clauses in
+-- a group that can't be merged - so either the <.c ...>'s or the v->v
+-- would need to be removed to make that legal. This decision is in
+-- keeping with the don't-backtrack principle. Assuming we remove the
+-- v->v from the example, the result becomes
+--
+-- [.x -> {1 -> .a;
+--         2 -> .b};
+--  msg -> msg {.c -> {1 -> .z;   "where msg is fresh"
+--                     2 -> .w}}]
+--
+-- All this rewriting means that the debug-information used to report
+-- DNU may need to be a set of character ranges in disjoint pieces of
+-- code, since there'll be no single coherent place we can point to
+-- and say "this is the receiver of the failed message"!
+---------------------------------------------------------------------------
 
 import qualified Maybe
 import List
