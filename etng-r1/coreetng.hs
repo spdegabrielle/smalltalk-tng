@@ -62,6 +62,50 @@ module CoreETng where
 -- code, since there'll be no single coherent place we can point to
 -- and say "this is the receiver of the failed message"!
 ---------------------------------------------------------------------------
+-- Here's a piece of (pseudo-)code from test3.tng:
+--
+-- {<.s:empty>, <.s:empty> -> .bothEmpty;
+--           _, <.s:empty> -> .secondEmpty;
+--  <.s:empty>,          _ -> .firstEmpty;
+--           _,          _ -> .neitherEmpty}
+--
+-- There are a couple of interesting things here. Our rule about never
+-- backtracking means that some of the clauses, as written, are
+-- unreachable. Also, the presence of tuples *containing*
+-- message-pattern-matches could be awkward.
+--
+-- Let's pull out as much shared structure as possible between
+-- neighbouring clauses - here, it's the single outermost duple - and
+-- put fresh pattern variables in the slots where neighbours
+-- vary. Then reinject the pattern variables *in left to right order*
+-- using currying rather than structure. If we do things that way,
+-- then the last two clauses above are unreachable because of the
+-- discard in the left cell of the tuple pattern in the second clause.
+--
+-- {(t1, t2) -> {<.s:empty> -> {<.s:empty> -> .bothEmpty};
+--                        _ -> {<.s:empty> -> .secondEmpty};
+--               "No other rules - the remaining clauses are unreachable!"}
+--                    t1 t2}
+--
+-- Simplest might be just to plain not implement message-patterns
+-- yet. After all, any message-pattern can be easily rewritten away
+-- into cases - less convenient, but certainly clearer:
+--
+-- {<.a(x)> -> x;
+--  <.b(y)> -> y}
+--
+-- becomes
+--
+-- {value -> value {.a(x) -> x;
+--                  .b(y) -> y}}
+--
+-- which actually can also be written
+--
+-- <{.a(x) -> x;
+--   .b(y) -> y}>
+--
+-- Hmm!
+---------------------------------------------------------------------------
 
 import qualified Maybe
 import List
