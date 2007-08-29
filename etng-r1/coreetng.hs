@@ -124,6 +124,7 @@ type Environment = [(Varname, Val)]
 data Exp = Clause Pat Exp
          | Send Exp Exp
          | Extend Exp Exp
+         | TupleExp [Exp]
          | LitExp Literal
          | Ref Varname
          | Self
@@ -132,11 +133,13 @@ data Exp = Clause Pat Exp
 data Pat = Discard
          | LitPat Literal
          | Def Varname Pat
+         | TuplePat [Pat]
 
 type ClosureClause = (Environment, Pat, Exp)
 
 data Val = Closure [ClosureClause]
          | LitVal Literal
+         | TupleVal [Val]
 
 ---------------------------------------------------------------------------
 -- Evaluator
@@ -145,6 +148,7 @@ eval env self super = eval'
     where eval' (Clause p e) = Closure [(env, p, e)]
           eval' (Send e1 e2) = send (eval' e1) (eval' e2)
           eval' (Extend e1 e2) = extendClosure (eval' e1) (eval' e2)
+          eval' (TupleExp es) = TupleVal $ map eval' es
           eval' (LitExp l) = LitVal l
           eval' (Ref v) = maybe (unboundvariable v) id (lookup v env)
           eval' Self = self
@@ -161,11 +165,17 @@ match (LitPat l1) (LitVal l2)
     | l1 == l2 = Just []
     | otherwise = Nothing
 match (Def v p) val = maybe Nothing (\inner -> Just ((v,val):inner)) (match p val)
+match (TuplePat ps) (TupleVal vs)
+    | length ps /= length vs = Nothing
+    | otherwise = foldr accumulate (Just []) $ zip ps vs
+    where accumulate _ Nothing = Nothing
+          accumulate (p, v) (Just rightBindings) =
+              maybe Nothing (\inner -> Just (inner ++ rightBindings)) (match p v)
 match _ _ = Nothing
 
-extendClosure (LitVal _) c = c
-extendClosure c (LitVal _) = c
 extendClosure (Closure c1) (Closure c2) = Closure (c1 ++ c2)
+extendClosure c@(Closure _) _ = c
+extendClosure _ any = any
 
 doesnotunderstand receiver message = error $ "DNU:" ++ show (receiver, message)
 unboundvariable v = error $ "Unbound:" ++ show v
@@ -176,6 +186,7 @@ unboundvariable v = error $ "Unbound:" ++ show v
 freeIn (Clause p e) = freeIn e \\ boundIn p
 freeIn (Send e1 e2) = freeIn e1 `union` freeIn e2
 freeIn (Extend e1 e2) = freeIn e1 `union` freeIn e2
+freeIn (TupleExp es) = foldl union [] $ map freeIn es
 freeIn (LitExp _) = []
 freeIn (Ref v) = [v]
 freeIn Self = [] -- hmm.
@@ -184,6 +195,7 @@ freeIn Super = [] -- hmm.
 boundIn Discard = []
 boundIn (LitPat _) = []
 boundIn (Def v p) = [v] `union` boundIn p
+boundIn (TuplePat ps) = foldl union [] $ map boundIn ps -- duplicates?
 
 ---------------------------------------------------------------------------
 -- Reader
@@ -212,8 +224,12 @@ punct s = do string s; whiteSpace; return ()
 operator = P.operator tngTokenizer
 comma = P.comma tngTokenizer
 
+mktup ctor [part] = part
+mktup ctor parts = ctor parts
+
 readExp = readExtend
-readExtend = do (sub : supers) <- sepBy1 readApp (punct "+"); return $ foldl Extend sub supers
+readExtend = do (sub : supers) <- sepBy1 readTuple (punct "+"); return $ foldl Extend sub supers
+readTuple = do parts <- sepBy1 readApp (punct ","); return $ mktup TupleExp parts
 readApp = do (part : parts) <- sepBy1 readSimple whiteSpace; return $ foldl Send part parts
 readSimple =     do punct "("; e <- readExp; punct ")"; return e
              <|> do punct "["; p <- readPat; punct "="; e <- readExp; punct "]"; return $ Clause p e
@@ -223,11 +239,13 @@ readSimple =     do punct "("; e <- readExp; punct ")"; return e
              <|> try (do reserved "super"; return Super)
              <|> do i <- ident; return $ Ref i
 
-readPat =     do punct "_"; return Discard
-          <|> do punct "."; i <- ident; return $ LitPat $ SymLit i
-          <|> do i <- natural; return $ LitPat $ IntLit i
-          <|> try (do i <- ident; punct "@"; p <- readPat; return $ Def i p)
-          <|> do i <- ident; return $ Def i Discard
+readPat = do parts <- sepBy1 readSimplePat (punct ","); return $ mktup TuplePat parts
+readSimplePat =     do punct "("; p <- readPat; punct ")"; return p
+                <|> do punct "_"; return Discard
+                <|> do punct "."; i <- ident; return $ LitPat $ SymLit i
+                <|> do i <- natural; return $ LitPat $ IntLit i
+                <|> try (do i <- ident; punct "@"; p <- readSimplePat; return $ Def i p)
+                <|> do i <- ident; return $ Def i Discard
 
 parseExpFromString = parse (do whiteSpace; v <- readExp; eof; return v) ""
 
@@ -246,6 +264,7 @@ instance Show Exp where show v = showExp v
 showExp (Clause p e) = "[" ++ show p ++ "=" ++ show e ++ "]"
 showExp (Send e1 e2) = "(" ++ show e1 ++ " " ++ show e2 ++ ")"
 showExp (Extend e1 e2) = "(" ++ show e1 ++ " + " ++ show e2 ++ ")"
+showExp (TupleExp es) = "(" ++ sepList "" ", " (map showExp es) ++ ")"
 showExp (LitExp l) = show l
 showExp (Ref v) = v
 showExp Self = "self"
@@ -256,10 +275,12 @@ showPat Discard = "_"
 showPat (LitPat l) = show l
 showPat (Def v Discard) = v
 showPat (Def v p) = v ++ "@" ++ show p
+showPat (TuplePat ps) = "(" ++ sepList "" ", " (map showPat ps) ++ ")"
 
 instance Show Val where show v = showVal v
 showVal (Closure clauses) = "[" ++ sepList "" ", " (map showClause clauses) ++ "]"
 showVal (LitVal l) = show l
+showVal (TupleVal vs) = "(" ++ sepList "" ", " (map showVal vs) ++ ")"
 
 instance Show Literal where
     show (SymLit s) = "." ++ s
