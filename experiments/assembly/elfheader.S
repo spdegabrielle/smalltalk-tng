@@ -4,11 +4,10 @@ origin:
 elfheader:			# Elf32_Ehdr
 	.byte	0x7F
 	.ascii	"ELF"
-	.byte	1, 1, 1		# e_ident
+	.byte	1,1,1,0
+	.byte	0,0,0,0
+	.byte	0,0,0,0		# e_ident
 	
-	.byte	0,0,0,0
-	.byte	0,0,0,0
-	.byte	0
 	.short	2		# e_type
 	.short	3		# e_machine
 	.long	1		# e_version
