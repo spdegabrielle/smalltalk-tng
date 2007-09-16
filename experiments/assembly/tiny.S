@@ -5,7 +5,7 @@
 _start:
 	movl	$1, %ebx
 	movl	$hello, %ecx
-	movl	$(helloend - hello), %edx
+	movl	$hellolen, %edx
 	movl	$__NR_write, %eax
 	int	$0x80
 
@@ -15,7 +15,7 @@ _start:
 
 hello:
 	.ascii	"Hello, world!\n"
-helloend:
+	hellolen = . - hello
 
 fileend:
 	.set	memsize, fileend - origin
