@@ -805,6 +805,16 @@ code_\label :			// assembler code follows
 1:	pushl $0
 	NEXT
 
+	defcode ">",1,,GT	// greater-than
+	pop %eax
+	pop %ebx
+	cmp %ebx,%eax
+	jl 1f
+	pushl $0
+	NEXT
+1:	pushl $1
+	NEXT
+
 	defcode "0=",2,,ZEQU	// top of stack equals 0?
 	pop %eax
 	test %eax,%eax
