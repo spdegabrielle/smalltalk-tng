@@ -1,7 +1,7 @@
 all: tiny tiny.elf tiny.elf.stripped
 
-tiny: tiny.S elfheader.S
-	gcc -Wl,--oformat -Wl,binary -nostdlib -o tiny tiny.S
+%: %.S elfheader.S
+	gcc -Wl,--oformat -Wl,binary -nostdlib -o $@ $<
 
 tiny.elf.stripped: tiny.elf
 	cp tiny.elf tiny.elf.stripped
