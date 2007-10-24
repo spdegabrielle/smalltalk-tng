@@ -1,17 +1,17 @@
-namespace s = 'http://eighty-twenty.org/etng/r1/ns/stream';
-namespace core = 'http://eighty-twenty.org/etng/r1/ns/abstract-syntax/core';
-namespace reflection = 'http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation';
-namespace interpreter = 'http://eighty-twenty.org/etng/r1/ns/interpreter';
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream";
+namespace core = "http://eighty-twenty.org/etng/r1/ns/abstract-syntax/core";
+namespace reflection = "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation";
+namespace interpreter = "http://eighty-twenty.org/etng/r1/ns/interpreter";
 
-"---------------------------------------------------------------------------"
+---------------------------------------------------------------------------
 
 define :TExtendable = [
   .:with extension ->
     reflection:reflect(self).reflection:extendWith(reflection:reflect(extension)).reflection:reify;
 ];
 
-"---------------------------------------------------------------------------"
-namespace 'http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation';
+---------------------------------------------------------------------------
+namespace "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation";
 
 define makeQName uri localName = [
   .uri = uri;
@@ -54,27 +54,27 @@ define Tuple = [
 define makeTuple values ->
   1;
 
-"---------------------------------------------------------------------------"
-namespace 'http://eighty-twenty.org/etng/r1/ns/interpreter';
+---------------------------------------------------------------------------
+namespace "http://eighty-twenty.org/etng/r1/ns/interpreter";
 
 define InterpreterState = :TExtendable.:with [
   .env = reflection:emptyEnvironment;
-  .k = <>;
+  .k = < >;
   .self_ = [];
-  .nextMethod_ = {exit <.internalError>;} "??"
+  .nextMethod_ = {exit(<.internalError>);} -- ??
 ];
 
 define Interpreter = [
   .globals = 1;
 
   .unboundVariable state name ->
-    exit <.unboundVariable state name>;
+    exit(<.unboundVariable state name>);
 
   .doesNotUnderstand state receiver message ->
-    exit <.doesNotUnderstand state receiver message>;
+    exit(<.doesNotUnderstand state receiver message>);
 
   .noNextMethod state ->
-    exit <.noNextMethod state>;
+    exit(<.noNextMethod state>);
 
   .lookup state name k ->
     reflection:searchEnvironment (state.env) name {
@@ -92,7 +92,7 @@ define Interpreter = [
 	      k;
 
   .send state receiver message k ->
-    "need to handle <> messages here"
+    -- need to handle <...> messages here
     receiver.reflection:lookup message {
       .:ok result -> self.apply state result k;
       _ -> self.doesNotUnderstand receiver message;
@@ -103,12 +103,12 @@ define Interpreter = [
     s:foldlK elements [|] e {acc -> k (s:reverse acc)};
 
   .eval state exp k ->
-    <exp.core:kind> {
+    (<exp.core:kind>) {
       .core:Namespace -> self.eval state (exp.core:value) k;
       .core:Send ->
 	self.eval state (exp.core:receiver) {r ->
 	  self.eval state (exp.core:message) {m ->
-	    self.send r m k};
+	    self.send r m k}};
       .core:Object -> reflection:makeObject state (exp.core:methods);
       .core:Function -> reflection:makeFunction state (exp.core:methods);
       .core:Message -> self.evlis state (exp.core:parts) reflection:makeMessage;

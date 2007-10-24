@@ -4,7 +4,7 @@ define etngEnv = [
 
 define etngRepl = [
   .repl1(qnameEnv) ->
-    do '>>ETNG>> '.print();
+    do ">>ETNG>> ".print();
     do :stdout.flush();
     let results = packrat:stdinResults();
     etngParser.parse results {
@@ -15,9 +15,9 @@ define etngRepl = [
 	    newEnv;
 	  .:false ->
 	    do :newline();
-	    do ';; Failed language check'.println();
+	    do ";; Failed language check".println();
 	    do ast.prettyPrint();
-	    exit 'Failed language check';
+	    exit "Failed language check";
 	};
       .packrat:failure error ->
 	do error.prettyPrint();
@@ -28,5 +28,5 @@ define etngRepl = [
     let r = self;
     <r.initialEnvironment()> [e -> let e2 = r.repl1(e); self e2];
 
-  .initialEnvironment() = etngEnv.empty().extend('', 'http://eighty-twenty.org/etng/r1/ns/etng');
+  .initialEnvironment() = etngEnv.empty().extend("", "http://eighty-twenty.org/etng/r1/ns/etng");
 ];

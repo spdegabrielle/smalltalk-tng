@@ -1,69 +1,68 @@
-"---------------------------------------------------------------------------"
-"Alternative 4: first-class messages, in <angle brackets>. Not quite
- objects, because sends (message object) reduce to (object message),
- and obviously (object object) reduces normally, but (message message)
- is an error."
+---------------------------------------------------------------------------
+--  Alternative 4: first-class messages, in <angle brackets>. Not quite
+--  objects, because sends (message object) reduce to (object message),
+--  and obviously (object object) reduces normally, but (message message)
+--  is an error."
 
-"Here, .foo has no protocol at all, not even the implicit visitor
- protocol (.foo bar) --> (bar .foo) used earlier. Atoms are thus
- totally inert - they're just simple tags with no behaviour. Messages,
- on the other hand, have the meaning <x y z> --> {r -> r x y z} except
- that the x,y,z is evaluated before being closed over - so more like
- <x y z> --> let (x1,y1,z1) = (x,y,z); {r -> r x1 y1 z1}."
+--  Here, .foo has no protocol at all, not even the implicit visitor
+--  protocol (.foo bar) --> (bar .foo) used earlier. Atoms are thus
+--  totally inert - they're just simple tags with no behaviour. Messages,
+--  on the other hand, have the meaning <x y z> --> {r -> r x y z} except
+--  that the x,y,z is evaluated before being closed over - so more like
+--  <x y z> --> let (x1,y1,z1) = (x,y,z); {r -> r x1 y1 z1}.
 
-"Hey, that's neat - <> is the identity object!"
-"and <+ 2> is different from (2 +)..."
+-- Hey, that's neat - <> is the identity object!
+-- and <+ 2> is different from (2 +)...
 
-"Using <> in a pattern causes a visitor-probe to be sent to the object
- being matched. Obviously, it has to be expecting such a probe, so
- data objects (ie algebraic data type instances, as opposed to
- functions or other kinds of receiver) should be coded with
- visitor-DNU-behaviour,
+--  Using <> in a pattern causes a visitor-probe to be sent to the object
+--  being matched. Obviously, it has to be expecting such a probe, so
+--  data objects (ie algebraic data type instances, as opposed to
+--  functions or other kinds of receiver) should be coded with
+--  visitor-DNU-behaviour,
 
- {...; visitor -> visitor .thisIsWhatIam (someArg, otherArg)}
+--  {...; visitor -> visitor .thisIsWhatIam (someArg, otherArg)}
 
- Note that the sends to the visitor must occur in tail position. (What
- happens if they're not?)
+--  Note that the sends to the visitor must occur in tail position. (What
+--  happens if they're not?)
 
- A visitor-probe for the pattern <.foo bar> looks like
+--  A visitor-probe for the pattern <.foo bar> looks like
 
- { .foo bar -> ...continuation of matching...;
-   _ -> ...backtrack to next clause... }
+--  { .foo bar -> ...continuation of matching...;
+--    _ -> ...backtrack to next clause... }
 
- So the case below, {acc, <.s:empty> -> acc;
-                     acc, <.s:next(f, r)> -> loop(fn(f, acc), r)},
- 'expands' to a match tree like
-  - match tuple
-    - length 2
-    - element 0: accept any, bind to 'acc'
-    - element 1: visitor-probe {
-        .s:empty -> run continuation 'acc'
-        .s:next -> - match tuple
-                     - length 2
-                     - element 0: ...
-"
+--  So the case below, {acc, <.s:empty> -> acc;
+--                      acc, <.s:next(f, r)> -> loop(fn(f, acc), r)},
+--  'expands' to a match tree like
+--   - match tuple
+--     - length 2
+--     - element 0: accept any, bind to 'acc'
+--     - element 1: visitor-probe {
+--         .s:empty -> run continuation 'acc'
+--         .s:next -> - match tuple
+--                      - length 2
+--                      - element 0: ...
 
-"What happens when there are two visitors in a tuple?
+--  What happens when there are two visitors in a tuple?
 
- {<.s:empty>, <.s:empty> -> .bothEmpty;
-           _, <.s:empty> -> .secondEmpty;
-  <.s:empty>,          _ -> .firstEmpty;
-           _,          _ -> .neitherEmpty}
+--  {<.s:empty>, <.s:empty> -> .bothEmpty;
+--            _, <.s:empty> -> .secondEmpty;
+--   <.s:empty>,          _ -> .firstEmpty;
+--            _,          _ -> .neitherEmpty}
 
- It basically needs to backtrack. It should sort the branches
- appropriately before building the match tree:
+--  It basically needs to backtrack. It should sort the branches
+--  appropriately before building the match tree:
 
- {<.s:empty>, <.s:empty> -> .bothEmpty;
-  <.s:empty>,          _ -> .firstEmpty;
-           _, <.s:empty> -> .secondEmpty;
-           _,          _ -> .neitherEmpty}
+--  {<.s:empty>, <.s:empty> -> .bothEmpty;
+--   <.s:empty>,          _ -> .firstEmpty;
+--            _, <.s:empty> -> .secondEmpty;
+--            _,          _ -> .neitherEmpty}
 
- (and I'm thinking of the more general case here, where you might fail
- to match in the second element of the tuple, necessitating a
- backtrack out of the match in the first element. Something like {(1,
- 2) -> .a; (_, _) -> .b} when presented with (1, 3).)"
+--  (and I'm thinking of the more general case here, where you might fail
+--  to match in the second element of the tuple, necessitating a
+--  backtrack out of the match in the first element. Something like {(1,
+--  2) -> .a; (_, _) -> .b} when presented with (1, 3).)
 
-namespace s = 'http://eighty-twenty.org/etng/r1/ns/stream';
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream";
 define s:cons(f,r) = s:StreamOperations / <.s:next(f, r)>;
 define s:nil       = s:StreamOperations / <.s:empty>;
 
@@ -79,27 +78,27 @@ define s:StreamOperations = [
 ];
 
 [1, 2, 3].s:do println;
-[1, 2, 3].s:inject 0 {acc, each -> acc + each}; "6"
-[1, 2, 3].s:inject 0 (binop +) "6"
-[1, 2, 3].s:map (1 +) "[2, 3, 4]"
-[1, 2, 3].s:map <+ 2> "[3, 4, 5]"
-[1, 2, 3].s:map .:negated "an error"
-[1, 2, 3].s:map <.:negated> "[-1, -2, -3]"
+[1, 2, 3].s:inject 0 {acc, each -> acc + each};  -- 6
+[1, 2, 3].s:inject 0 (binop +)  -- 6
+[1, 2, 3].s:map (1 +)  -- [2, 3, 4]
+[1, 2, 3].s:map <+ 2>  -- [3, 4, 5]
+[1, 2, 3].s:map .:negated  -- an error
+[1, 2, 3].s:map <.:negated>  -- [-1, -2, -3]
 
-"[a, b, c] is shorthand for stream:cons(a, stream:cons(b, stream:cons(c, stream:nil)))"
-"[a, b | c] is shorthand for stream:cons(a, stream:cons(b, c))"
-"[| c] is thus 'shorthand' (longhand??) for c"
-"[a, b, c | ] is equivalent to [a, b, c]"
-"thus [|] is the empty stream, stream:nil"
-"When used in patterns, these shorthands are expanded into appropriate visitors."
-"Reserving '|' in this way gives us a nice hook for stream comprehensions later on."
+-- [a, b, c] is shorthand for stream:cons(a, stream:cons(b, stream:cons(c, stream:nil)))
+-- [a, b | c] is shorthand for stream:cons(a, stream:cons(b, c))
+-- [| c] is thus 'shorthand' (longhand??) for c
+-- [a, b, c | ] is equivalent to [a, b, c]
+-- thus [|] is the empty stream, stream:nil
+-- When used in patterns, these shorthands are expanded into appropriate visitors.
+-- Reserving '|' in this way gives us a nice hook for stream comprehensions later on.
 [ x || x <- [1, 2, 3, 4], x.number:isEven ]
 
 java:set myObj.field (newValue);
 myObj.field;
 myObj.method(argument);
 
-"Is it a good idea to treat everything as a tuple, with most values
- being tuples of length 1?"
+--  Is it a good idea to treat everything as a tuple, with most values
+--  being tuples of length 1?
 
-"Simultaneous binding: pat#pat"
+--  Simultaneous binding: pat#pat

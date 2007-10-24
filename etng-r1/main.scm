@@ -2,6 +2,7 @@
 	 (lib "4.ss" "srfi") ;; homogeneous-numeric-vectors, u8vector
 	 (lib "8.ss" "srfi") ;; receive
 	 (lib "9.ss" "srfi") ;; records
+	 (lib "13.ss" "srfi") ;; strings
 	 (only (lib "list.ss") mergesort)
 	 (lib "pretty.ss")
 	 (lib "packrat.ss" "json-scheme"))
@@ -28,7 +29,8 @@
 
 (load "node.scm")
 (load "expand-qname.scm")
-(load "parse-etng.scm")
+;;(load "parse-etng.scm")
+(load "alternaparse.scm")
 ;;(load "oo.scm")
 
 (define *debug-mode* '(sequence-phases))
@@ -49,14 +51,11 @@
       (core-object (methods (%list-of core-method)))
       (core-function (methods (%list-of core-method)))
       (core-message (parts (%list-of core-exp)))
-      (core-do (head core-exp) (tail core-exp))
-      (core-let (pattern data-pattern) (value core-exp) (body core-exp))
       (core-ref (name ,qname?))
       (core-tuple (elements (%list-of core-exp)))
       (core-lit (value #t))
       (core-self)
       (core-next-method)
-      (core-meta (sexp #t))
       ))
 
     (core-method
@@ -69,7 +68,7 @@
      (%or
       (pat-and (left data-pattern) (right data-pattern))
       (pat-discard)
-      (pat-message (parts (%list-of data-pattern)))
+      ;;(pat-message (parts (%list-of data-pattern)))
       (pat-binding (name ,qname?))
       (pat-tuple (elements (%list-of data-pattern)))
       (pat-lit (value #t))))
@@ -98,24 +97,19 @@
     (flush-output)
     (let ((results (stdin-results)))
       (parse-etng results
-		  (lambda (ast next)
-		    (let ((new-qname-env
-			   (if (node? ast)
-			       (if (check-language ast 'toplevel-command etng-r1-languages #f)
-				   (etng-eval-node ast qname-env)
-				   (begin
-				     (newline)
-				     (display ";; Failed language check")
-				     (newline)
-				     (pretty-print (node->list ast))
-				     (error "Failed language check")))
-			       (begin
-				 (newline)
-				 (display ";; No parse result")
-				 (newline)
-				 qname-env))))
-		      (when (and next (not (eq? next results)))
-			(loop new-qname-env))))
+		  (lambda (sexp next)
+		    (display (etng-sexp->string '() sexp))
+		    (newline)
+		    (pretty-print sexp)
+		    (let ((ast (etng-sexp-parse sexp)))
+		      (pretty-print (node->list ast))
+		      (newline)
+		      (if (check-language ast 'core-exp etng-r1-languages #f)
+			  (display ";; Language check passed")
+			  (error "Failed language check")))
+		    (newline)
+		    (when (and next (not (eq? next results)))
+		      (loop qname-env)))
 		  (lambda (error-description)
 		    (pretty-print error-description)
 		    (loop qname-env))))))
