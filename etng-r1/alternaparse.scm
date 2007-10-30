@@ -392,7 +392,9 @@
        ((paren? n) (x-pattern (cdr n)))
        ((qname? n) (make-node 'pat-binding 'name (expand-qnames n nsenv)))
        ((eq? n '_) (make-node 'pat-discard))
-       ((string? n) (make-node 'pat-lit 'value n))
+       ((string? n)
+	;;(make-node 'pat-lit 'value n)
+	(error "Strings or streams in patterns not yet supported"))
        ((number? n) (make-node 'pat-lit 'value n))
        (else (error "Invalid pattern atom" n))))
 
