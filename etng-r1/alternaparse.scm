@@ -281,6 +281,7 @@
       (and (pair? segment)
 	   (or (etng-sexp-special-match? segment EMPTY-SYMBOL 'quote)
 	       (etng-sexp-special-match? segment EMPTY-SYMBOL 'unquote)
+	       (etng-sexp-special-match? segment #f 'namespace)
 	       (etng-sexp-special-match? segment #f 'do)
 	       (etng-sexp-special-match? segment #f 'let))))
 
@@ -308,6 +309,7 @@
 	  (case (special-localname (car segment))
 	    ((quote) (k (make-node 'core-lit 'value (cadr segment)) remaining))
 	    ((unquote) (error "Naked unquote" segments))
+	    ((namespace) (x-namespace-declaration segment remaining k))
 	    ((do) (x-expr remaining
 			  (lambda (tail remaining1)
 			    (k (make-node 'core-send
@@ -324,6 +326,27 @@
 						 'message (x-tuple (cadr parts)))
 				      remaining1))))))))
 	 (else (k (x-tuple segment) remaining)))))
+
+    (define (x-namespace-declaration segment remaining k)
+      (define (ns-wrap prefix uri)
+	(x-expr remaining
+		(lambda (tail remaining1)
+		  (k (make-node 'core-namespace
+				'prefix prefix
+				'uri uri
+				'value tail)
+		     remaining1))))
+      (cond
+       ((and (= (length segment) 4)
+	     (symbol? (cadr segment))
+	     (eq? (caddr segment) '=)
+	     (string? (cadddr segment)))
+	(ns-wrap (cadr segment) (cadddr segment)))
+       ((and (= (length segment) 2)
+	     (string? (cadr segment)))
+	(ns-wrap #f (cadr segment)))
+       (else
+	(error "Invalid namespace declaration" segment))))
 
     (define (x-tuple segment)
       (parse-tuple segment 'core-tuple x-send))

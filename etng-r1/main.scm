@@ -35,18 +35,22 @@
 
 (define *debug-mode* '(sequence-phases))
 
+(define (valid-namespace-prefix? x)
+  (or (symbol? x)
+      (not x)))
+
 (define etng-r1-languages
   `(
     (toplevel-command
      (%or
-      (command-define-namespace (prefix ,symbol?) (uri ,string?))
+      (command-define-namespace (prefix ,valid-namespace-prefix?) (uri ,string?))
       (command-define-values (pattern data-pattern) (value core-exp))
       (command-define-object (name ,qname?) (args (%list-of data-pattern)) (body core-exp))
       (command-exp (value core-exp))))
 
     (core-exp
      (%or
-      (core-namespace (prefix ,symbol?) (uri ,string?) (value core-exp))
+      (core-namespace (prefix ,valid-namespace-prefix?) (uri ,string?) (value core-exp))
       (core-send (receiver core-exp) (message core-exp))
       (core-object (methods (%list-of core-method)))
       (core-function (methods (%list-of core-method)))
