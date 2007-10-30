@@ -131,7 +131,7 @@
 		 (lambda (sexp next)
 		   (pp 'raw-sexp sexp)
 		   (display (etng-sexp->string '() sexp)) (newline)
-		   (let* ((ast (pp 'unexpanded-ast (etng-sexp-parse sexp qname-env) node->list)))
+		   (let* ((ast (pp 'ast (etng-sexp-parse sexp qname-env) node->list)))
 		     (if (check-language ast 'core-exp etng-r1-languages #f)
 			 (display ";; Language check passed")
 			 (error "Failed language check")))
