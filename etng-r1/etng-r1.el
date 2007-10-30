@@ -59,6 +59,7 @@
 	"in"
 	"let"
 	"self"
+	"super"
 	"nextMethod"
 	;;"letrec"
 	"namespace"
