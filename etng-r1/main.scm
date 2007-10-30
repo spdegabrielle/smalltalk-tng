@@ -49,6 +49,19 @@
 	  (lambda ()
 	    node))))))
 
+(define (gen-random-string charcount)
+  (list->string
+   (let gen ((charcount charcount))
+     (if (zero? charcount)
+	 '()
+	 (cons (string-ref "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+			   (random 64))
+	       (gen (- charcount 1)))))))
+
+(define (genqname)
+  (make-qname "http://eighty-twenty.org/etng/r1/ns/etng/gensyms#"
+	      (string->uninterned-symbol (gen-random-string 16))))
+
 (define *debug-mode* '(sequence-phases))
 
 (define (valid-namespace-prefix? x)

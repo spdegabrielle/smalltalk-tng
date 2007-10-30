@@ -7,6 +7,7 @@
 (define (expand-qname q env)
   (let ((prefix (qname-uri q)))
     (make-qname (cond
+		 ((string? prefix) prefix) ;; it's already a uri
 		 ((assv prefix env) => cdr)
 		 (else (error "Unknown namespace prefix" q)))
 		(qname-localname q))))
