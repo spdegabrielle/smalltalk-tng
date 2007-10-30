@@ -378,6 +378,10 @@
 	  (case (special-localname (car seq))
 	    ((quote) (make-node 'pat-lit 'value (expand-qnames (cadr seq) nsenv))))
 	  (case (length seq)
+;; 	    ((3) (if (equal? (cadr seq) HASH-QNAME)
+;; 		     (make-node 'pat-and
+;; 				'left (x-pattern-atom (car seq))
+;; 				'right (x-pattern-atom (caddr seq)))))
 	    ((1) (x-pattern-atom (car seq)))
 	    ((0) (make-node 'pat-tuple 'elements '()))
 	    (else

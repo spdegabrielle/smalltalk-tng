@@ -84,7 +84,7 @@
 
     (data-pattern
      (%or
-      (pat-and (left data-pattern) (right data-pattern))
+      ;;(pat-and (left data-pattern) (right data-pattern))
       (pat-discard)
       ;;(pat-message (parts (%list-of data-pattern)))
       (pat-binding (name ,qname?))
