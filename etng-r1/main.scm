@@ -85,8 +85,6 @@
       (core-ref (name ,qname?))
       (core-tuple (elements (%list-of core-exp)))
       (core-lit (value #t))
-      (core-self)
-      (core-next-method)
       ))
 
     (core-method
@@ -97,12 +95,30 @@
 
     (data-pattern
      (%or
-      ;;(pat-and (left data-pattern) (right data-pattern))
       (pat-discard)
-      ;;(pat-message (parts (%list-of data-pattern)))
       (pat-binding (name ,qname?))
       (pat-tuple (elements (%list-of data-pattern)))
       (pat-lit (value #t))))
+
+    (med-exp
+     (%or
+      med-object
+      (med-send (receiver med-exp) (message med-exp))
+      (med-tuple (elements (%list-of med-exp)))
+      (med-lit (value #t))
+      (med-ref (name ,qname?))
+      (med-self)
+      (med-super)
+      ))
+
+    (med-object
+     (%or
+      (med-discard (k med-exp))
+      (med-bind (name ,qname?) (k med-exp))
+      (med-litmatch (value #t) (match-k med-exp) (nomatch-k med-exp))
+      (med-tuplematch (arity ,integer?) (match-k med-exp) (nomatch-k med-exp))
+      (med-extend (over med-exp) (under med-exp))
+      ))
 
     ))
 
