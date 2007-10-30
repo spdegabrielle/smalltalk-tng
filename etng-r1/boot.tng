@@ -1,8 +1,8 @@
-namespace s = "http://eighty-twenty.org/etng/r1/ns/stream";
-namespace n = "http://eighty-twenty.org/etng/r1/ns/number";
-namespace repl = "http://eighty-twenty.org/etng/r1/ns/repl";
-namespace socket = "http://eighty-twenty.org/etng/r1/ns/socket";
-namespace string = "http://eighty-twenty.org/etng/r1/ns/string";
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
+namespace n = "http://eighty-twenty.org/etng/r1/ns/number#";
+namespace repl = "http://eighty-twenty.org/etng/r1/ns/repl#";
+namespace socket = "http://eighty-twenty.org/etng/r1/ns/socket#";
+namespace string = "http://eighty-twenty.org/etng/r1/ns/string#";
 
 define :true = <.:true>;
 define :false = <.:false>;

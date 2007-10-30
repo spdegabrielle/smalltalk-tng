@@ -1,7 +1,7 @@
-namespace s = "http://eighty-twenty.org/etng/r1/ns/stream";
-namespace core = "http://eighty-twenty.org/etng/r1/ns/abstract-syntax/core";
-namespace reflection = "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation";
-namespace interpreter = "http://eighty-twenty.org/etng/r1/ns/interpreter";
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
+namespace core = "http://eighty-twenty.org/etng/r1/ns/abstract-syntax/core#";
+namespace reflection = "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation#";
+namespace interpreter = "http://eighty-twenty.org/etng/r1/ns/interpreter#";
 
 ---------------------------------------------------------------------------
 
@@ -11,7 +11,7 @@ define :TExtendable = [
 ];
 
 ---------------------------------------------------------------------------
-namespace "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation";
+namespace "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation#";
 
 define makeQName uri localName = [
   .uri = uri;
@@ -55,7 +55,7 @@ define makeTuple values ->
   1;
 
 ---------------------------------------------------------------------------
-namespace "http://eighty-twenty.org/etng/r1/ns/interpreter";
+namespace "http://eighty-twenty.org/etng/r1/ns/interpreter#";
 
 define InterpreterState = :TExtendable.:with [
   .env = reflection:emptyEnvironment;

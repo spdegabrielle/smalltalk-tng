@@ -32,11 +32,27 @@
 (load "alternaparse.scm")
 ;;(load "oo.scm")
 
+(define (generic-node-map fn node)
+  (let visit ((node node))
+    (cond
+     ((node? node)
+      (fn node
+	  (lambda ()
+	    (make-node* (node-kind node)
+			(map (lambda (field) (list (car field) (visit (cadr field))))
+			     (node-fields node))))))
+     ((pair? node)
+      (cons (visit (car node))
+	    (visit (cdr node))))
+     (else
+      (fn node
+	  (lambda ()
+	    node))))))
+
 (define *debug-mode* '(sequence-phases))
 
 (define (valid-namespace-prefix? x)
-  (or (symbol? x)
-      (not x)))
+  (symbol? x))
 
 (define etng-r1-languages
   `(
@@ -49,7 +65,6 @@
 
     (core-exp
      (%or
-      (core-namespace (prefix ,valid-namespace-prefix?) (uri ,string?) (value core-exp))
       (core-send (receiver core-exp) (message core-exp))
       (core-object (methods (%list-of core-method)))
       (core-function (methods (%list-of core-method)))
@@ -93,20 +108,30 @@
       (else
        qname-env))))
 
+(define (pp clue x . maybe-transformer)
+  (pretty-print (list clue 
+		      (if (null? maybe-transformer)
+			  x
+			  ((car maybe-transformer) x))))
+  (newline)
+  x)
+
+(define (!pp clue x . maybe-transformer)
+  x)
+
 (define (etng-repl)
-  (let loop ((qname-env (extend-qname-env '() (string->symbol "")
-					  "http://eighty-twenty.org/etng/r1/ns/etng")))
+  (let loop ((qname-env (extend-qname-env* `((,(string->symbol "") .
+					      "http://eighty-twenty.org/etng/r1/ns/etng#")
+					     (#f . ""))
+					   '())))
     (display ">>ETNG>> ")
     (flush-output)
     (let ((results (stdin-results)))
       (read-etng results
 		 (lambda (sexp next)
-		   (display (etng-sexp->string '() sexp))
-		   (newline)
-		   (pretty-print sexp)
-		   (let ((ast (etng-sexp-parse sexp)))
-		     (pretty-print (node->list ast))
-		     (newline)
+		   (pp 'raw-sexp sexp)
+		   (display (etng-sexp->string '() sexp)) (newline)
+		   (let* ((ast (pp 'unexpanded-ast (etng-sexp-parse sexp qname-env) node->list)))
 		     (if (check-language ast 'core-exp etng-r1-languages #f)
 			 (display ";; Language check passed")
 			 (error "Failed language check")))

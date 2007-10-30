@@ -28,5 +28,5 @@ define etngRepl = [
     let r = self;
     <r.initialEnvironment()> [e -> let e2 = r.repl1(e); self e2];
 
-  .initialEnvironment() = etngEnv.empty().extend("", "http://eighty-twenty.org/etng/r1/ns/etng");
+  .initialEnvironment() = etngEnv.empty().extend("", "http://eighty-twenty.org/etng/r1/ns/etng#");
 ];

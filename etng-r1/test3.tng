@@ -62,7 +62,7 @@
 --  backtrack out of the match in the first element. Something like {(1,
 --  2) -> .a; (_, _) -> .b} when presented with (1, 3).)
 
-namespace s = "http://eighty-twenty.org/etng/r1/ns/stream";
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
 define s:cons(f,r) = s:StreamOperations / <.s:next(f, r)>;
 define s:nil       = s:StreamOperations / <.s:empty>;
 

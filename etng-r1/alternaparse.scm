@@ -11,18 +11,24 @@
 	   (memv ch etng-naked-id-terminators))))
 
 (define EMPTY-SYMBOL (string->symbol ""))
-(define SEMI-SYMBOL (string->symbol ";"))
-(define COMMA-SYMBOL (string->symbol ","))
-(define EQUAL-SYMBOL (string->symbol "="))
+(define QUOTE-QNAME (make-qname EMPTY-SYMBOL 'quote))
+(define UNQUOTE-QNAME (make-qname EMPTY-SYMBOL 'unquote))
+(define SEMI-QNAME (make-qname #f (string->symbol ";")))
+(define COMMA-QNAME (make-qname #f (string->symbol ",")))
+(define EQUAL-QNAME (make-qname #f '=))
+(define ARROW-QNAME (make-qname #f '->))
+(define NAMESPACE-QNAME (make-qname #f 'namespace))
+(define DO-QNAME (make-qname #f 'do))
+(define LET-QNAME (make-qname #f 'let))
+
+(define (list-interleave x xs)
+  (cond
+   ((null? xs) '())
+   ((null? (cdr xs)) xs)
+   (else (cons (car xs) (cons x (list-interleave x (cdr xs)))))))
 
 (define read-etng
   (let ()
-    (define (list-interleave x xs)
-      (cond
-       ((null? xs) '())
-       ((null? (cdr xs)) xs)
-       (else (cons (car xs) (cons x (list-interleave x (cdr xs)))))))
-
     (define read-etng
       (let* ((non-eol (lambda (ch) (not (or (eqv? ch #\return)
 					    (eqv? ch #\newline)))))
@@ -35,9 +41,9 @@
 		 (entry-point sexp)
 
 		 (sexp (/ (ws #\. s <- sexp
-			   ,(packrat-lambda (s) `(paren ,(make-qname EMPTY-SYMBOL 'quote) ,s)))
+			   ,(packrat-lambda (s) `(paren ,QUOTE-QNAME ,s)))
 			  (ws #\` s <- sexp
-			   ,(packrat-lambda (s) `(paren ,(make-qname EMPTY-SYMBOL 'unquote) ,s)))
+			   ,(packrat-lambda (s) `(paren ,UNQUOTE-QNAME ,s)))
 			  (ws #\( ss <- sexps ws #\)
 			      ,(packrat-lambda (ss) `(paren ,@ss)))
 			  (ws #\[ ss <- sexps ws #\]
@@ -59,15 +65,13 @@
 			   (ws #\: rhs <- id ,(packrat-lambda (rhs)
 						(make-qname EMPTY-SYMBOL rhs)))
 			   (rhs <- id ,(packrat-lambda (rhs)
-					 rhs
-					 ;;(make-qname #f rhs)
-					 ))))
+					 (make-qname #f rhs)))))
 
 		 (id (/ (ws i <- id1 ,(packrat-lambda (i)
 					(string->symbol
 					 (string-concatenate (list-interleave "'" i)))))
-			(ws #\; ,(packrat-lambda () SEMI-SYMBOL))
-			(ws #\, ,(packrat-lambda () COMMA-SYMBOL))
+			(ws #\; ,(packrat-lambda () (string->symbol ";")))
+			(ws #\, ,(packrat-lambda () (string->symbol ",")))
 			(ws (a <- id-alpha) (r <- (/ id-alpha digit))*
 			    ,(packrat-lambda (a r) (string->symbol (list->string (cons a r)))))
 			(ws (p <- id-punct)+
@@ -116,14 +120,10 @@
 		 k-ok
 		 k-fail))))
 
-(define (etng-sexp-special-match? sexps uri localname)
+(define (etng-sexp-special-match? sexps qname)
   (and (pair? sexps)
        (let ((tok (car sexps)))
-	 (if uri
-	     (and (qname? tok)
-		  (eq? uri (qname-uri tok))
-		  (eq? localname (qname-localname tok)))
-	     (eq? localname tok)))))
+	 (equal? tok qname))))
 
 (define (etng-sexp->string namespace-env n)
   (let ()
@@ -133,9 +133,9 @@
 	(case (car n)
 	  ((paren)
 	   (cond
-	    ((etng-sexp-special-match? (cdr n) EMPTY-SYMBOL 'quote)
+	    ((etng-sexp-special-match? (cdr n) QUOTE-QNAME)
 	     (cons #\. (x (caddr n) tail)))
-	    ((etng-sexp-special-match? (cdr n) EMPTY-SYMBOL 'unquote)
+	    ((etng-sexp-special-match? (cdr n) UNQUOTE-QNAME)
 	     (cons #\` (x (caddr n) tail)))
 	    (else
 	     (wrap #\( #\) (cdr n) tail))))
@@ -143,7 +143,6 @@
 	  ((brace) (wrap #\{ #\} (cdr n) tail))
 	  (else (cons #\? (cons #\? tail)))))
        ((qname? n) (x-qname n tail))
-       ((symbol? n) (x-base-id n tail))
        ((string? n) (x-string n tail))
        ((number? n) (append (string->list (number->string n)) tail))))
 
@@ -190,7 +189,7 @@
 
     (list->string (x n '()))))
 
-(define (etng-sexp-parse n)
+(define (etng-sexp-parse n nsenv)
   (let ()
     (define (x n)
       (cond
@@ -200,8 +199,7 @@
 	  ((brack) (x-obj 'core-object (cdr n)))
 	  ((brace) (x-obj 'core-function (cdr n)))
 	  (else (error "Bad etng-sexp" n))))
-       ((qname? n) (make-node 'core-ref 'name n))
-       ((symbol? n) (make-node 'core-ref 'name (make-qname #f n)))
+       ((qname? n) (make-node 'core-ref 'name (expand-qnames n nsenv)))
        ((string? n) (make-node 'core-lit 'value n))
        ((number? n) (make-node 'core-lit 'value n))))
 
@@ -211,12 +209,12 @@
 		 (acc '()))
 	(cond
 	 ((null? elts) (reverse (cons (reverse current) acc)))
-	 ((eq? (car elts) sep) (loop (cdr elts) '() (cons (reverse current) acc)))
+	 ((equal? (car elts) sep) (loop (cdr elts) '() (cons (reverse current) acc)))
 	 (else (loop (cdr elts) (cons (car elts) current) acc)))))
 
     (define (split-semi xs)
       (filter (lambda (x) (not (null? x)))
-	      (split xs SEMI-SYMBOL)))
+	      (split xs SEMI-QNAME)))
 
     (define (x-seq elts)
       (let ((segments (split-semi elts)))
@@ -233,11 +231,11 @@
 		 (methodsrev '()))
 	(if (null? segments)
 	    (make-node kind 'methods (reverse methodsrev))
-	    (x-method segments '-> 'core-method
+	    (x-method segments ARROW-QNAME 'core-method
 		      (lambda (method remaining)
 			(loop remaining (cons method methodsrev)))
 		      (lambda ()
-			(x-method segments '= 'core-constant
+			(x-method segments EQUAL-QNAME 'core-constant
 				  (lambda (method remaining)
 				    (loop remaining (cons method methodsrev)))
 				  (lambda ()
@@ -272,22 +270,22 @@
 	      (error "Too many method-header-separators" segments))))))
 
     (define (x-method-patterns segment)
-      (let ((parts (split segment COMMA-SYMBOL)))
+      (let ((parts (split segment COMMA-QNAME)))
 	(if (= (length parts) 1)
 	    (map x-pattern-atom segment)
 	    (list (x-pattern segment)))))
 
     (define (special-segment? segment)
       (and (pair? segment)
-	   (or (etng-sexp-special-match? segment EMPTY-SYMBOL 'quote)
-	       (etng-sexp-special-match? segment EMPTY-SYMBOL 'unquote)
-	       (etng-sexp-special-match? segment #f 'namespace)
-	       (etng-sexp-special-match? segment #f 'do)
-	       (etng-sexp-special-match? segment #f 'let))))
+	   (or (etng-sexp-special-match? segment QUOTE-QNAME)
+	       (etng-sexp-special-match? segment UNQUOTE-QNAME)
+	       (etng-sexp-special-match? segment NAMESPACE-QNAME)
+	       (etng-sexp-special-match? segment DO-QNAME)
+	       (etng-sexp-special-match? segment LET-QNAME))))
 
     (define (special-pattern-segment? segment)
       (and (pair? segment)
-	   (or (etng-sexp-special-match? segment EMPTY-SYMBOL 'quote))))
+	   (or (etng-sexp-special-match? segment QUOTE-QNAME))))
 
     (define (special-localname n)
       (if (qname? n)
@@ -307,7 +305,8 @@
 	 ((null? segment) (error "Empty segment in sequence" segments))
 	 ((special-segment? segment)
 	  (case (special-localname (car segment))
-	    ((quote) (k (make-node 'core-lit 'value (cadr segment)) remaining))
+	    ((quote) (k (make-node 'core-lit 'value (expand-qnames (cadr segment) nsenv))
+			remaining))
 	    ((unquote) (error "Naked unquote" segments))
 	    ((namespace) (x-namespace-declaration segment remaining k))
 	    ((do) (x-expr remaining
@@ -316,7 +315,7 @@
 					  'receiver (fun (make-node 'pat-discard) tail)
 					  'message (x-tuple (cdr segment)))
 			       remaining1))))
-	    ((let) (let ((parts (split (cdr segment) EQUAL-SYMBOL)))
+	    ((let) (let ((parts (split (cdr segment) EQUAL-QNAME)))
 		     (if (not (= (length parts) 2))
 			 (error "Invalid let clause" segment)
 			 (x-expr remaining
@@ -329,19 +328,16 @@
 
     (define (x-namespace-declaration segment remaining k)
       (define (ns-wrap prefix uri)
-	(x-expr remaining
-		(lambda (tail remaining1)
-		  (k (make-node 'core-namespace
-				'prefix prefix
-				'uri uri
-				'value tail)
-		     remaining1))))
+	(k (etng-sexp-parse `(paren ,@(concatenate (list-interleave (list SEMI-QNAME) remaining)))
+			    (extend-qname-env nsenv prefix uri))
+	   '()))
       (cond
        ((and (= (length segment) 4)
-	     (symbol? (cadr segment))
-	     (eq? (caddr segment) '=)
+	     (qname? (cadr segment))
+	     (not (qname-uri (cadr segment)))
+	     (equal? (caddr segment) EQUAL-QNAME)
 	     (string? (cadddr segment)))
-	(ns-wrap (cadr segment) (cadddr segment)))
+	(ns-wrap (qname-localname (cadr segment)) (cadddr segment)))
        ((and (= (length segment) 2)
 	     (string? (cadr segment)))
 	(ns-wrap #f (cadr segment)))
@@ -352,7 +348,7 @@
       (parse-tuple segment 'core-tuple x-send))
 
     (define (parse-tuple segment kind k)
-      (let ((elements (split segment COMMA-SYMBOL)))
+      (let ((elements (split segment COMMA-QNAME)))
 	(if (null? (cdr elements))
 	    (k (car elements))
 	    (make-node kind 'elements (map k elements)))))
@@ -381,7 +377,7 @@
     (define (x-pattern-element seq)
       (if (special-pattern-segment? seq)
 	  (case (special-localname (car seq))
-	    ((quote) (make-node 'pat-lit 'value (cadr seq))))
+	    ((quote) (make-node 'pat-lit 'value (expand-qnames (cadr seq) nsenv))))
 	  (case (length seq)
 	    ((1) (x-pattern-atom (car seq)))
 	    ((0) (make-node 'pat-tuple 'elements '()))
@@ -394,9 +390,8 @@
 	(case (car n)
 	  ((paren) (x-pattern (cdr n)))
 	  (else (error "Invalid pattern atom" n))))
-       ((qname? n) (make-node 'pat-binding 'name n))
+       ((qname? n) (make-node 'pat-binding 'name (expand-qnames n nsenv)))
        ((eq? n '_) (make-node 'pat-discard))
-       ((symbol? n) (make-node 'pat-binding 'name (make-qname #f n)))
        ((string? n) (make-node 'pat-lit 'value n))
        ((number? n) (make-node 'pat-lit 'value n))))
 
