@@ -125,23 +125,24 @@
        (let ((tok (car sexps)))
 	 (equal? tok qname))))
 
+(define (paren? n) (and (pair? n) (eq? (car n) 'paren)))
+(define (brack? n) (and (pair? n) (eq? (car n) 'brack)))
+(define (brace? n) (and (pair? n) (eq? (car n) 'brace)))
+
 (define (etng-sexp->string namespace-env n)
   (let ()
     (define (x n tail)
       (cond
-       ((pair? n)
-	(case (car n)
-	  ((paren)
-	   (cond
-	    ((etng-sexp-special-match? (cdr n) QUOTE-QNAME)
-	     (cons #\. (x (caddr n) tail)))
-	    ((etng-sexp-special-match? (cdr n) UNQUOTE-QNAME)
-	     (cons #\` (x (caddr n) tail)))
-	    (else
-	     (wrap #\( #\) (cdr n) tail))))
-	  ((brack) (wrap #\[ #\] (cdr n) tail))
-	  ((brace) (wrap #\{ #\} (cdr n) tail))
-	  (else (cons #\? (cons #\? tail)))))
+       ((paren? n)
+	(cond
+	 ((etng-sexp-special-match? (cdr n) QUOTE-QNAME)
+	  (cons #\. (x (caddr n) tail)))
+	 ((etng-sexp-special-match? (cdr n) UNQUOTE-QNAME)
+	  (cons #\` (x (caddr n) tail)))
+	 (else
+	  (wrap #\( #\) (cdr n) tail))))
+       ((brack? n) (wrap #\[ #\] (cdr n) tail))
+       ((brace? n) (wrap #\{ #\} (cdr n) tail))
        ((qname? n) (x-qname n tail))
        ((string? n) (x-string n tail))
        ((number? n) (append (string->list (number->string n)) tail))))
@@ -193,15 +194,13 @@
   (let ()
     (define (x n)
       (cond
-       ((pair? n)
-	(case (car n)
-	  ((paren) (x-seq (cdr n)))
-	  ((brack) (x-obj 'core-object (cdr n)))
-	  ((brace) (x-obj 'core-function (cdr n)))
-	  (else (error "Bad etng-sexp" n))))
+       ((paren? n) (x-seq (cdr n)))
+       ((brack? n) (x-obj 'core-object (cdr n)))
+       ((brace? n) (x-obj 'core-function (cdr n)))
        ((qname? n) (make-node 'core-ref 'name (expand-qnames n nsenv)))
        ((string? n) (make-node 'core-lit 'value n))
-       ((number? n) (make-node 'core-lit 'value n))))
+       ((number? n) (make-node 'core-lit 'value n))
+       (else (error "Bad etng-sexp" n))))
 
     (define (split elts sep)
       (let loop ((elts elts)
@@ -386,14 +385,12 @@
 
     (define (x-pattern-atom n)
       (cond
-       ((pair? n)
-	(case (car n)
-	  ((paren) (x-pattern (cdr n)))
-	  (else (error "Invalid pattern atom" n))))
+       ((paren? n) (x-pattern (cdr n)))
        ((qname? n) (make-node 'pat-binding 'name (expand-qnames n nsenv)))
        ((eq? n '_) (make-node 'pat-discard))
        ((string? n) (make-node 'pat-lit 'value n))
-       ((number? n) (make-node 'pat-lit 'value n))))
+       ((number? n) (make-node 'pat-lit 'value n))
+       (else (error "Invalid pattern atom" n))))
 
     (x n)))
 
