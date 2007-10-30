@@ -29,7 +29,6 @@
 
 (load "node.scm")
 (load "expand-qname.scm")
-;;(load "parse-etng.scm")
 (load "alternaparse.scm")
 ;;(load "oo.scm")
 
