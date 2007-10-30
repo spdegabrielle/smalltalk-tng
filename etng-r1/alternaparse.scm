@@ -15,7 +15,7 @@
 (define COMMA-SYMBOL (string->symbol ","))
 (define EQUAL-SYMBOL (string->symbol "="))
 
-(define parse-etng
+(define read-etng
   (let ()
     (define (list-interleave x xs)
       (cond
