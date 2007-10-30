@@ -4,8 +4,8 @@
 ;;
 ;; Copyright (C) 2005 Tony Garnock-Jones <tonyg@kcbbs.gen.nz>
 
-;;(require (lib "1.ss" "srfi") (lib "9.ss" "srfi") (lib "pretty.ss"))
-(require 'srfi-1)
+(require (lib "1.ss" "srfi") (lib "9.ss" "srfi") (lib "pretty.ss"))
+;;(require 'srfi-1)
 
 (define (make-node kind . vals0)
   (let walk ((vals vals0)
