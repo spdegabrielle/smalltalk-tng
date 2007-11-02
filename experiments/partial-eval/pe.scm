@@ -394,3 +394,12 @@
 		       (+ (fib (- n 1))
 			  (fib (- n 2)))))))
      (fib arg)))
+
+(define curried-exp
+  '((((lambda (a)
+	(lambda (b)
+	  (lambda (c)
+	    (do-something-with a b c))))
+      'aa)
+     (bb))
+    'cc))
