@@ -403,3 +403,10 @@
       'aa)
      (bb))
     'cc))
+
+(define curried-cps-exp
+  '((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
+    (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
+				      'cc))
+		     (bb)))
+    'aa))
