@@ -60,7 +60,8 @@
        (else
 	(case (car exp)
 	  ((quote) (make-lit (cadr exp)))
-	  ((lambda) (let* ((has-filter (eq? (car (caddr exp)) 'filter))
+	  ((lambda) (let* ((has-filter (and (pair? (caddr exp))
+					    (eq? (car (caddr exp)) 'filter)))
 			   (formals (cadr exp))
 			   (filter (and has-filter (cadr (caddr exp))))
 			   (body (if has-filter (cdddr exp) (cddr exp)))
