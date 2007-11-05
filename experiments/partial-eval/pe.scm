@@ -70,6 +70,9 @@
 				 'formals formals
 				 'filter (and filter (parse filter newenv))
 				 'body (parse `(begin ,@body) newenv))))
+	  ((lambda*) (parse `(lambda ,(cadr exp)
+			       (filter 'unfold)
+			       ,@(cddr exp)) env))
 	  ((begin) (cond
 		    ((null? (cdr exp)) (make-undefined))
 		    ((null? (cddr exp)) (walk (cadr exp)))
