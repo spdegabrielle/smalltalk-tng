@@ -367,8 +367,101 @@
 			  (fold-right cons b a)))
 	 )))
 
+(define (basic-env/streams)
+  (fold (lambda (entry env)
+	  (cons (list (car entry)
+		      (pe (parse (cadr entry) '()) env '()))
+		env))
+	(basic-env)
+	(list
+	 (list 'make-stream '(lambda* (stepper state)
+			       (cons 'stream (cons stepper state))))
+	 (list 'stream-stepper '(lambda* (stream)
+				  (PRIMcar (PRIMcdr stream))))
+	 (list 'stream-state '(lambda* (stream)
+				(PRIMcdr (PRIMcdr stream))))
+	 (list 'stream-maker '(lambda* (stepper)
+				(lambda* (state)
+				  (make-stream stepper state))))
+	 (list 'list-stream-stepper '(lambda (l done skip yield)
+				       (if (null? l)
+					   (done)
+					   (yield (car l) (cdr l)))))
+	 (list 'list->stream '(stream-maker list-stream-stepper))
+	 (list 'string->stream '(lambda* (s)
+				  (make-stream (lambda (index done skip yield)
+						 (filter '(#f #t #t #t))
+						 (if (= index (string-length s))
+						     (done)
+						     (yield (string-ref s index)
+							    (+ index 1))))
+					       0)))
+	 (list 'smap
+	       '(lambda* (f stream)
+		  (let ((stepper (stream-stepper stream)))
+		    (make-stream (lambda* (state done skip yield)
+				   (stepper state
+					    done
+					    skip
+					    (lambda* (elt new-state) (yield (f elt) new-state))))
+				 (stream-state stream)))))
+	 (list 'sfilter '(lambda* (pred stream)
+			   (let ((stepper (stream-stepper stream)))
+			     (make-stream (lambda* (state done skip yield)
+					    (stepper state
+						     done
+						     skip
+						     (lambda* (elt new-state)
+						       (if (pred elt)
+							   (yield elt new-state)
+							   (skip new-state)))))
+					  (stream-state stream)))))
+	 (list 'sfoldr
+	       '(lambda* (kons knil stream)
+		  (let ((stepper (stream-stepper stream)))
+		    (let loop ((state (stream-state stream)))
+		      (stepper state
+			       (lambda* () knil)
+			       (lambda* (new-state) (loop new-state))
+			       (lambda* (elt new-state) (kons elt (loop new-state))))))))
+	 (list 'stream->list '(lambda* (stream)
+				(sfoldr cons '() stream)))
+	 (list 'make-szip-state '(lambda* (cell left right)
+				   (cons cell (cons left (cons right '())))))
+	 (list 'szip-state-cell '(lambda* (s) (PRIMcar s)))
+	 (list 'szip-state-left '(lambda* (s) (PRIMcar (PRIMcdr s))))
+	 (list 'szip-state-right '(lambda* (s) (PRIMcar (PRIMcdr (PRIMcdr s)))))
+	 (list 'szip
+	       '(lambda* (left right)
+		  (let ((left-stepper (stream-stepper left))
+			(right-stepper (stream-stepper right)))
+		    (make-stream
+		     (lambda (state done skip yield)
+		       ;;(filter (if (sval-known? (szip-state-cell state)) 'unfold '(#f #f #f #f)))
+		       (let ((cell (szip-state-cell state)))
+			 (cond
+			  ((null? cell)
+			   (right-stepper
+			    (szip-state-right state)
+			    done
+			    (lambda* (new-right)
+			      (skip (make-szip-state '() (szip-state-left state) new-right)))
+			    (lambda* (elt new-right)
+			      (skip (make-szip-state (cons elt '()) (szip-state-left state) new-right)))))
+			  (else
+			   (left-stepper
+			    (szip-state-left state)
+			    done
+			    (lambda* (new-left)
+			      (skip (make-szip-state cell new-left (szip-state-right state))))
+			    (lambda* (elt new-left)
+			      (yield (cons elt cell)
+				     (make-szip-state '() new-left (szip-state-right state)))))))))
+		     (make-szip-state '() (stream-state left) (stream-state right))))))
+	 )))
+
 (define (test-exp exp)
-  (pe (parse exp '()) (basic-env) '()))
+  (pe (parse exp '()) (basic-env/streams) '()))
 
 (define (test)
   (let ((result (test-exp '(map (lambda (x)
