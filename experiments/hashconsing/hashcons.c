@@ -119,22 +119,26 @@ static void gc(void) {
   sweep_heap();
 }
 
-static CONS alloc_pair(void) {
+static CONS gc_alloc_pair(void) {
+  gc();
+  if (heap_next == NULL) {
+    fprintf(stderr, "out of memory\n");
+    exit(3);
+  }
+  {
+    CONS result = heap_next;
+    heap_next = heap_next->next;
+    return result;
+  }
+}
+
+static inline CONS alloc_pair(void) {
   if (heap_next != NULL) {
     CONS result = heap_next;
     heap_next = heap_next->next;
     return result;
   } else {
-    gc();
-    if (heap_next == NULL) {
-      fprintf(stderr, "out of memory\n");
-      exit(3);
-    }
-    {
-      CONS result = heap_next;
-      heap_next = heap_next->next;
-      return result;
-    }
+    return gc_alloc_pair();
   }
 }
 
