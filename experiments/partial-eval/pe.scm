@@ -425,6 +425,11 @@
 		       (if (sval-known? x)
 			   (make-lit (zero? (lit-value x)))
 			   (residualize-apply 'zero? x))))
+	(list 'eq? (lambda (x y)
+		     (if (and (lit? x)
+			      (lit? y))
+			 (make-lit (eq? (lit-value x) (lit-value y)))
+			 (residualize-apply 'eq? x y))))
 	(list 'PRIMcar (lambda (x)
 			 (if (sval-known? x)
 			     (cond
