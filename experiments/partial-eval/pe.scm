@@ -684,9 +684,28 @@
      (bb))
     'cc))
 
+(define curried-exp2
+  '(let ((bv (bb)))
+     ((((lambda (a)
+	  (lambda (b)
+	    (lambda (c)
+	      (do-something-with a b c))))
+	'aa)
+       bv)
+      'cc)))
+
 (define curried-cps-exp
   '((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
     (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
 				      'cc))
 		     (bb)))
     'aa))
+
+(define code-duplication-exp
+  '(let ((x (f a b c)))
+     (let ((y (g x x)))
+       (h y y))))
+
+;;; Local Variables:
+;;; eval: (put 'lambda* 'scheme-indent-function 1)
+;;; End:
