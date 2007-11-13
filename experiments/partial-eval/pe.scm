@@ -550,6 +550,15 @@
 			       (lambda* () knil)
 			       (lambda* (new-state) (loop new-state))
 			       (lambda* (elt new-state) (kons elt (loop new-state))))))))
+	 (list 'sfoldl
+	       '(lambda* (kons knil stream)
+		  (let ((stepper (stream-stepper stream)))
+		    (let loop ((knil knil)
+			       (state (stream-state stream)))
+		      (stepper state
+			       (lambda* () knil)
+			       (lambda* (new-state) (loop new-state))
+			       (lambda* (elt new-state) (loop (kons elt knil) new-state)))))))
 	 (list 'stream->list '(lambda* (stream)
 				(sfoldr cons '() stream)))
 	 (list 'make-szip-state '(lambda* (cell left right)
