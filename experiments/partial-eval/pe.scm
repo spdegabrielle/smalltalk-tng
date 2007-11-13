@@ -501,11 +501,11 @@
 	(basic-env)
 	(list
 	 (list 'make-stream '(lambda* (stepper state)
-			       (cons 'stream (cons stepper state))))
+			       (cons 'stream (cons stepper (cons state '())))))
 	 (list 'stream-stepper '(lambda* (stream)
 				  (PRIMcar (PRIMcdr stream))))
 	 (list 'stream-state '(lambda* (stream)
-				(PRIMcdr (PRIMcdr stream))))
+				(PRIMcar (PRIMcdr (PRIMcdr stream)))))
 	 (list 'stream-maker '(lambda* (stepper)
 				(lambda* (state)
 				  (make-stream stepper state))))
