@@ -593,6 +593,49 @@
 			      (yield (cons elt cell)
 				     (make-szip-state '() new-left (szip-state-right state)))))))))
 		     (make-szip-state '() (stream-state left) (stream-state right))))))
+	 (list 'make-sconcatmap-state '(lambda* (fstep fstate rs)
+					 (cons fstep (cons fstate (cons rs '())))))
+	 (list 'sconcatmap-state-first-stepper '(lambda* (s) (PRIMcar s)))
+	 (list 'sconcatmap-state-first-state '(lambda* (s) (PRIMcar (PRIMcdr s))))
+	 (list 'sconcatmap-state-remaining-streams '(lambda* (s) (PRIMcar (PRIMcdr (PRIMcdr s)))))
+	 (list 'sconcatmap
+	       '(lambda* (f streams)
+		  (let ((remaining-streams-stepper (stream-stepper streams)))
+		    (make-stream (lambda (state done skip yield)
+				   (let ((first-stepper (sconcatmap-state-first-stepper state)))
+				     (if first-stepper
+					 (first-stepper
+					  (sconcatmap-state-first-state state)
+					  (lambda* ()
+					    (skip (make-sconcatmap-state
+						   #f #f
+						   (sconcatmap-state-remaining-streams state))))
+					  (lambda* (new-first-state)
+					    (skip (make-sconcatmap-state
+						   first-stepper new-first-state
+						   (sconcatmap-state-remaining-streams state))))
+					  (lambda* (elt new-first-state)
+					    (yield elt
+						   (make-sconcatmap-state
+						    first-stepper new-first-state
+						    (sconcatmap-state-remaining-streams state)))))
+					 (remaining-streams-stepper
+					  (sconcatmap-state-remaining-streams state)
+					  done
+					  (lambda* (new-remaining-streams)
+					    (skip (make-sconcatmap-state
+						   #f #f
+						   new-remaining-streams)))
+					  (lambda* (first new-remaining-streams)
+					    (let ((first-stream (f first)))
+					      (skip (make-sconcatmap-state
+						     (stream-stepper first-stream)
+						     (stream-state first-stream)
+						     new-remaining-streams))))))))
+				 (make-sconcatmap-state #f #f (stream-state streams))))))
+	 (list 'sconcatenate
+	       '(lambda* (streams)
+		  (sconcatmap (lambda* (stream) stream) streams)))
 	 )))
 
 (define (test-exp exp)
