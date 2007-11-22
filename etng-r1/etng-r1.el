@@ -46,7 +46,18 @@
     (list
      '(";;" . font-lock-warning-face)
 
+     ;; Method definitions.
+     '("\\(\\.[a-zA-Z:]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~:]\\)*\\>\\).*->"
+       (1 font-lock-function-name-face))
+     '("define\\s +\\([^: ]*:\\)?\\(\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>\\)"
+       (2 font-lock-type-face))
+     ;;'("define\\s +\\([a-zA-Z:]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~:]\\)*\\>\\)\\s +="
+     ;;  (1 font-lock-variable-name-face))
+     '("define\\s +\\([a-zA-Z:]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~:]\\)*\\>\\)"
+       (1 font-lock-function-name-face))
+
      ;; Atoms.
+     ;;'("\\.[a-zA-Z:]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~:]\\)*\\>" . font-lock-constant-face)
      ;;'("\\.\\<\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-constant-face)
 
      ;; Keywords.
@@ -90,7 +101,7 @@
      ;;(1 font-lock-function-name-face))
 
      ;; Variables.
-     '("\\.[a-zA-Z:]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~:]\\)*\\>" . font-lock-variable-name-face)
+     ;;'("[a-zA-Z:]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~:]\\)*\\>" . font-lock-variable-name-face)
 
      ;; Infixops.
      '("\\<[-+=_|/?<>*&^%$@!`~]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>"
