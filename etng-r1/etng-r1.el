@@ -61,14 +61,13 @@
      ;;'("\\.\\<\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-constant-face)
 
      ;; Keywords.
-     '("\\<define\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-keyword-face)
+     '("\\<\\(define\\|let\\)\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\)*\\>" . font-lock-keyword-face)
      ;; '("\\<\\(new\\)\\s \\([a-zA-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`~]\\|::\\)*\\)\\>"
      ;;   (1 font-lock-keyword-face) (2 font-lock-type-face))
      (regexp-opt
       '(
 	"do"
 	"in"
-	"let"
 	"self"
 	"super"
 	"nextMethod"
