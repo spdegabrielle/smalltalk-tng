@@ -60,7 +60,6 @@
 (define (special-segment-head? token)
   (or (equal? token QUOTE-QNAME)
       (equal? token UNQUOTE-QNAME)
-      (equal? token NAMESPACE-QNAME)
       (memq token '(namespace do let))))
 
 (define read-etng* (load-ometa "etng-reader.g"))
