@@ -1,0 +1,91 @@
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
+namespace n = "http://eighty-twenty.org/etng/r1/ns/number#";
+namespace repl = "http://eighty-twenty.org/etng/r1/ns/repl#";
+namespace socket = "http://eighty-twenty.org/etng/r1/ns/socket#";
+namespace string = "http://eighty-twenty.org/etng/r1/ns/string#";
+
+define :true = <.:true>;
+define :false = <.:false>;
+
+define :repeat block ->
+  do block();
+  :repeat block;
+
+define s:foldl stream seed fn ->
+  <(stream, seed)> [ [|], seed = seed;
+		     [f|r], seed -> self(r, fn(f, seed)) ];
+
+define s:foldr stream seed fn ->
+  <stream> [ [|] = seed;
+             [f|r] -> fn(f, self(r)) ];
+
+define s:reverse stream -> s:foldl stream [|] s:cons;
+define s:append(s1, s2) -> s:foldr s1 s2 s:cons;
+
+define s:foldlK stream seed fn k ->
+  <(stream, seed)> [ [|], seed = k seed;
+		     [f|r], seed -> fn (f, seed) {v -> self(r, v)} ];
+
+define s:foldrK stream seed fn k ->
+  <(stream, k)> [ [|], k = k seed;
+		  [f|r], k = self(r, {v -> fn (f, v) k}) ];
+
+define n:range = {
+  (low, high, step) -> (low < high) {
+    .:true -> [low | n:range(low + step, high, step)];
+    .:false -> [|]
+  };
+  (low, high) -> n:range(low, high, 1);
+  (high) -> n:range(0, high, 1)
+};
+
+define s:concatenate stream -> s:foldr stream [|] s:append;
+
+define s:map stream fn -> s:foldr stream [|] {elt, acc -> [fn(elt) | acc]};
+
+define s:foreach stream fn ->
+  <stream> [ [|] -> .:ok;
+	     [f|r] -> do fn(f); self(r) ];
+
+define string:stream = {
+  (str, startIndex) ->
+    let len = string:length(str);
+    <startIndex> [ index ->
+      (index < len) {
+	.:true -> {.bytes = str;
+		   .offset = index;
+		   visitor -> visitor.s:next(string:charAt(str, index),
+					     self(index + 1))};
+	.:false -> s:nil
+      }
+    ];
+
+  (str) -> string:stream(str, 0)
+};
+
+define repl:newOn(port) ->
+  let socket = socket:ServerSocket.new(port);
+  :spawn { repl:acceptLoop(socket) };
+
+define repl:acceptLoop(serverSocket) ->
+  :repeat {
+    let sock = serverSocket.accept();
+    :spawn { repl:mainLoop(sock) }
+  };
+
+define repl:mainLoop(sock) ->
+  catch { sessionReturn ->
+    let writer = sock.writer();
+    do writer.println("Welcome to ThiNG!");
+    :repeat {
+      do writer.print("ThiNG> ");
+      do sock.compileOneStatement() {
+	.ok(thunk) -> writer.println(thunk());
+	.error(detail) ->
+	  do s:foreach ["PARSE ERROR", detail] (writer.println);
+	  do sock.close();
+	  sessionReturn();
+      };
+      writer.println();
+    }
+  };

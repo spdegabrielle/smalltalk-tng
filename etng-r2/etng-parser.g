@@ -1,6 +1,16 @@
 -- -*- text -*-
 
-toplevel ::= <(parse)>:v ~_ =>v;
+toplevel ::= <(toplevel-item)>:v ~_ =>v;
+
+toplevel-item ::=
+	  {#paren #namespace :prefix ?(symbol? id) <(equal)> :urn ?(string? urn) ~_
+	  	  =>`(define-namespace ,id ,urn)}
+	| {#paren #define :q ?(qname? q) <(equal)> <(parse)>:exp ~_
+		  =>`(define-value ,q ,exp)}
+	| {#paren #define :q ?(qname? q) <(normal-method)>:def ~_
+	  	  =>`(define-function ,q ,def)}
+	| <(parse)>
+;
 
 parse ::=
 	  ~(<(comma)> | <(semi)>)
