@@ -1,10 +1,9 @@
-(require (lib "1.ss" "srfi") ;; lists
-	 (lib "4.ss" "srfi") ;; homogeneous-numeric-vectors, u8vector
-	 (lib "8.ss" "srfi") ;; receive
-	 (lib "9.ss" "srfi") ;; records
-	 (lib "13.ss" "srfi") ;; strings
-	 (only (lib "list.ss") mergesort)
-	 (lib "pretty.ss"))
+(require srfi/1) ;; lists
+(require srfi/4) ;; homogeneous-numeric-vectors, u8vector
+(require srfi/8) ;; receive
+(require srfi/9) ;; records
+(require srfi/13) ;; strings
+(require scheme/pretty)
 
 (print-struct #t)
 (define previous-inspector (current-inspector))
@@ -18,7 +17,8 @@
 
 (current-inspector previous-inspector)
 
-(load "../../ometa-scheme/ometa.scm")
+(require "../../ometa-scheme/ometa.scm")
+(ometa-library-path "../../ometa-scheme")
 
 (define etng-naked-id-terminators (string->list "`.()[]{}:;,'\""))
 
