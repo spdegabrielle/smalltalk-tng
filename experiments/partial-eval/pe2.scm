@@ -21,7 +21,7 @@
     (define (prim0 f) (lambda (arguments k) (k (f))))
     (define (prim1 f) (lambda (arguments k) (k (f (car arguments)))))
     (define (prim2 f) (lambda (arguments k) (k (f (car arguments) (cadr arguments)))))
-    (define (munge-entry entry) (cons (car entry) (cons (cadr entry) (box (caddr entry)))))
+    (define (munge-entry entry) (cons (car entry) (cons (box (cadr entry)) (box (caddr entry)))))
     (map munge-entry
 	 `((let macro ,(lambda (x env exp)
 			 (let ((names (map car (cadr x)))
@@ -109,46 +109,63 @@
 
 	   ))))
 
-(define-global! 'eval
-  (let ()
-    (define (error key val) (12345678 'magic-error-procedure key val))
-    (define (undefined) 17)
+(define-global! 'make-eval
+  (lambda (
+	   error
+	   undefined
+	   allocate-env
+	   update-env
+	   load-env
+	   load-literal
+	   load-closure
+	   do-if
+	   push-frame
+	   update-frame
+	   do-call
+	   push-continuation
+	   )
     (define (env-null? env) (null? env))
     (define (env-name env) (caar env))
-    (define (env-kind env) (cadar env))
+    (define (env-annotation env) (unbox (cadar env)))
     (define (env-value env) (unbox (cddar env)))
-    (define (set-env-value! env value) (set-box! (cddar env) value))
+    (define (set-env-value! env value)
+      (set-box! (cadar env) (update-env (env-name env) (env-annotation env) value))
+      (set-box! (cddar env) value))
     (define (env-next env) (cdr env))
-    (define (make-env name kind value next) (cons (cons name (cons kind (box value))) next))
+    (define (make-env name value next)
+      (cons (cons name (cons (box (allocate-env name value)) (box value))) next))
     (define (search-one-env env n k fk)
       (cond
        ((env-null? env) (fk))
-       ((eq? (env-name env) n) (k (env-kind env) (env-value env) env))
+       ((eq? (env-name env) n) (k (env-annotation env) (env-value env) env))
        (else (search-one-env (env-next env) n k fk))))
     (define (search-env env n k fk)
       (search-one-env env n k (lambda () (search-one-env global-env n k fk))))
+    ;; BUG: not proper expansion-passing-style; need separate expansion phase!
+    ;; (how else to implement macrolet?)
     (define (expand x env)
       (if (and (pair? x)
 	       (symbol? (car x)))
 	  (search-env env (car x)
-		      (lambda (kind v cell) (if (eq? kind 'macro)
-						(v x env (lambda (exp) (expand exp env)))
-						x))
+		      (lambda (annotation v cell) (if (eq? annotation 'macro)
+						      (v x env (lambda (exp) (expand exp env)))
+						      x))
 		      (lambda () x))
 	  x))
     (define (make-recursive-env defs env)
       (if (null? defs)
 	  env
-	  (make-env (caar defs) 'local #f (make-recursive-env (cdr defs) env))))
+	  (make-env (caar defs) #f (make-recursive-env (cdr defs) env))))
     (define (e-recursive-definitions defs xs env k)
       (let ((new-env (make-recursive-env defs env)))
 	(define (fill-init defs pos)
 	  (if (null? defs)
 	      (e (cons 'begin xs) new-env k)
 	      (e (cdar defs) new-env
-		 (lambda (v)
-		   (set-env-value! pos v)
-		   (fill-init (cdr defs) (env-next pos))))))
+		 (push-continuation
+		  (lambda (v)
+		    (set-env-value! pos v)
+		    (fill-init (cdr defs) (env-next pos)))))))
 	(fill-init defs new-env)))
     (define (e-body defs xs env k)
       (if (null? xs)
@@ -167,53 +184,141 @@
     (define (extend-env-with-actuals formals actuals env)
       (if (null? formals)
 	  env
-	  (make-env (car formals) 'local (car actuals)
+	  (make-env (car formals) (car actuals)
 		    (extend-env-with-actuals (cdr formals) (cdr actuals) env))))
-    (define (e-operands operator unevaluated evaluated env k)
+    (define (e-operands index unevaluated evaluated env k)
       (if (null? unevaluated)
-	  (operator (reverse evaluated) k)
+	  (k (reverse evaluated))
 	  (e (car unevaluated) env
-	     (lambda (newly-evaluated)
-	       (e-operands operator (cdr unevaluated) (cons newly-evaluated evaluated) env k)))))
+	     (push-continuation
+	      (lambda (newly-evaluated)
+		(e-operands (+ index 1)
+			    (cdr unevaluated)
+			    (cons (update-frame index newly-evaluated) evaluated)
+			    env
+			    k))))))
     (define (e x env k)
       (let ((x (expand x env)))
 	(cond
 	 ((symbol? x) (search-env env x
-				  (lambda (kind v cell) (if (eq? kind 'macro)
-							    (error 'macro-in-variable-position x)
-							    (k v)))
+				  (lambda (annotation v cell)
+				    (if (eq? annotation 'macro)
+					(error 'macro-in-variable-position x)
+					(k (load-env x annotation v))))
 				  (lambda () (error 'unbound-variable x))))
-	 ((not (pair? x)) (k x))
+	 ((not (pair? x)) (k (load-literal x)))
 	 (else
 	  (case (car x)
-	    ((quote) (k (cadr x)))
+	    ((quote) (k (load-literal (cadr x))))
 	    ((define) (error 'internal-definition-in-invalid-position x))
-	    ((lambda) (k (lambda (actuals k)
-			   (let ((new-env (extend-env-with-actuals (cadr x) actuals env)))
-			     (e-body '() (cddr x) new-env k)))))
+	    ((lambda) (k (load-closure
+			  (cadr x)
+			  (lambda (actuals k)
+			    (let ((new-env (extend-env-with-actuals (cadr x) actuals env)))
+			      (e-body '() (cddr x) new-env k))))))
 	    ((begin) (cond ((null? (cdr x)) (k (undefined)))
 			   ((null? (cddr x)) (e (cadr x) env k))
 			   (else (e (cadr x) env
-				    (lambda (v)
-				      (e (cons 'begin (cddr x)) env k))))))
+				    (push-continuation
+				     (lambda (v)
+				       (e (cons 'begin (cddr x)) env k)))))))
 	    ((if) (e (cadr x) env
-		     (lambda (v)
-		       (if v
-			   (e (caddr x) env k)
-			   (e (cadddr x) env k)))))
+		     (push-continuation
+		      (lambda (v)
+			(do-if v
+			       (lambda () (e (caddr x) env k))
+			       (lambda () (e (cadddr x) env k)))))))
 	    ((set!) (search-env env (cadr x)
-				(lambda (kind v cell) (if (eq? kind 'macro)
-							  (error 'macro-in-variable-position x)
-							  (e (caddr x) env
-							     (lambda (v)
-							       (set-env-value! cell v)
-							       (k v)))))
+				(lambda (annotation v cell)
+				  (if (eq? annotation 'macro)
+				      (error 'macro-in-variable-position x)
+				      (e (caddr x) env
+					 (push-continuation
+					  (lambda (v)
+					    (set-env-value! cell v)
+					    (k v))))))
 				(lambda () (error 'unbound-variable x))))
-	    (else (e (car x) env
-		     (lambda (operator)
-		       (e-operands operator (cdr x) '() env k)))))))))
+	    (else (e-operands 0 (cdr x) '() env
+			      (push-frame (length (cdr x))
+					  (lambda (operands)
+					    (e (car x) env
+					       (push-continuation
+						(lambda (operator)
+						  (do-call operator operands k)))))))))))))
     (lambda (x)
       (e x '() (lambda (v) v)))))
+
+(define-global! 'eval
+  (let ()
+    (define (error key val) (12345678 'magic-error-procedure key val))
+    (define (undefined) 17)
+    (define (allocate-env name v) 'local)
+    (define (update-env name old-annotation v) old-annotation)
+    (define (load-env name annotation v) v)
+    (define (load-literal x) x)
+    (define (load-closure formals f) f)
+    (define (do-if v tk fk) (if v (tk) (fk)))
+    (define (push-frame count k) k)
+    (define (update-frame index v) v)
+    (define (do-call operator operands k) (operator operands k))
+    (define (push-continuation k) k)
+    (make-eval error undefined allocate-env update-env load-env load-literal load-closure do-if
+	       push-frame update-frame do-call push-continuation)))
+
+(define-global! 'compile
+  (lambda (exp)
+    (let ((continuation-depth (make-parameter 0)))
+      (define (error key val) (12345678 'magic-error-procedure key val))
+      (define (undefined) (load-literal 17))
+      (define (allocate-env name v)
+	(write `(allocate-env ,name ,v)) (newline)
+	'local)
+      (define (update-env name old-annotation v)
+	(write `(update-env ,name ,old-annotation)) (newline)
+	old-annotation)
+      (define (load-env name annotation v)
+	(write `(load-env ,name ,annotation)) (newline)
+	v)
+      (define (load-literal x)
+	(write `(load-literal ,x)) (newline)
+	x)
+      (define (load-closure formals f)
+	(write `(load-closure ,formals)) (newline)
+	(parameterize ((continuation-depth 0))
+	  (write `(IN================)) (newline)
+	  (f formals (lambda (v)
+		       (write `(return)) (newline)
+		       v))
+	  (write `(OUT===============)) (newline)
+	  'closure-result))
+      (define (do-if v tk fk)
+	(write `(do-if ,v)) (newline)
+	(write `tk) (newline)
+	(tk)
+	(write `fk) (newline)
+	(fk))
+      (define (push-frame count k)
+	(write `(push-frame ,count)) (newline)
+	k)
+      (define (update-frame index v)
+	(write `(update-frame ,index ,v)) (newline)
+	v)
+      (define (do-call operator operands k)
+	(write `(do-call ,(if (= (continuation-depth) 0)
+			      'tailcall
+			      'normalcall) ,operator ,operands))
+	(newline)
+	(k 'do-call-result))
+      (define (push-continuation k)
+	;;(write `(push-continuation)) (newline)
+	(continuation-depth (+ (continuation-depth) 1))
+	(lambda (v)
+	  ;;(write `(pop-continuation ,v)) (newline)
+	  (continuation-depth (- (continuation-depth) 1))
+	  (k v)))
+      ((make-eval error undefined allocate-env update-env load-env load-literal load-closure do-if
+		  push-frame update-frame do-call push-continuation)
+       exp))))
 
 (define (syms x)
   (cond
