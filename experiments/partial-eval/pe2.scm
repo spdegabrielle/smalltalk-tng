@@ -116,6 +116,7 @@
 	   allocate-env
 	   update-env
 	   load-env
+	   unbound-variable-read
 	   load-literal
 	   load-closure
 	   do-if
@@ -205,7 +206,8 @@
 				    (if (eq? annotation 'macro)
 					(error 'macro-in-variable-position x)
 					(k (load-env x annotation v))))
-				  (lambda () (error 'unbound-variable x))))
+				  (lambda ()
+				    (k (unbound-variable-read x)))))
 	 ((not (pair? x)) (k (load-literal x)))
 	 (else
 	  (case (car x)
@@ -255,6 +257,7 @@
     (define (allocate-env name v) 'local)
     (define (update-env name old-annotation v) old-annotation)
     (define (load-env name annotation v) v)
+    (define (unbound-variable-read x) (error 'unbound-variable-read x))
     (define (load-literal x) x)
     (define (load-closure formals f) f)
     (define (do-if v tk fk) (if v (tk) (fk)))
@@ -262,8 +265,8 @@
     (define (update-frame index v) v)
     (define (do-call operator operands k) (operator operands k))
     (define (push-continuation k) k)
-    (make-eval error undefined allocate-env update-env load-env load-literal load-closure do-if
-	       push-frame update-frame do-call push-continuation)))
+    (make-eval error undefined allocate-env update-env load-env unbound-variable-read
+	       load-literal load-closure do-if push-frame update-frame do-call push-continuation)))
 
 (define-global! 'compile
   (lambda (exp)
@@ -279,6 +282,9 @@
       (define (load-env name annotation v)
 	(write `(load-env ,name ,annotation)) (newline)
 	v)
+      (define (unbound-variable-read name)
+	(write `(load-implicit-global ,name)) (newline)
+	'implicit-global-value)
       (define (load-literal x)
 	(write `(load-literal ,x)) (newline)
 	x)
@@ -316,8 +322,8 @@
 	  ;;(write `(pop-continuation ,v)) (newline)
 	  (continuation-depth (- (continuation-depth) 1))
 	  (k v)))
-      ((make-eval error undefined allocate-env update-env load-env load-literal load-closure do-if
-		  push-frame update-frame do-call push-continuation)
+      ((make-eval error undefined allocate-env update-env load-env unbound-variable-read
+		  load-literal load-closure do-if push-frame update-frame do-call push-continuation)
        exp))))
 
 (define (syms x)
