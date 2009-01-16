@@ -95,6 +95,7 @@
 	   (unbox global ,(prim1 unbox))
 	   (set-box! global ,(prim2 set-box!))
     
+	   (length global ,(prim1 length))
 	   (append global ,(prim2 append))
 	   (reverse global ,(prim1 reverse))
 	   (cons global ,(prim2 cons))
