@@ -332,14 +332,16 @@
    ((null? x))
    (else (write x) (newline))))
 
-(define (r)
+(define (r* repl-eval)
   (display ">>> ")
   (let ((x (read)))
     (if (eof-object? x)
 	'done
-	(begin (write (eval x))
+	(begin (write (repl-eval x))
 	       (newline)
-	       (r)))))
+	       (r* repl-eval)))))
+
+(define (r) (r* eval))
 
 (eval `(define-global! 'global-env ',global-env))
 (r)
