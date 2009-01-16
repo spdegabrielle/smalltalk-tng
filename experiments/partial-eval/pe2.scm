@@ -23,7 +23,14 @@
     (define (prim2 f) (lambda (arguments k) (k (f (car arguments) (cadr arguments)))))
     (define (munge-entry entry) (cons (car entry) (cons (box (cadr entry)) (box (caddr entry)))))
     (map munge-entry
-	 `((let macro ,(lambda (x env exp)
+	 `((quote macro ,(lambda (x env exp) x))
+	   (define macro ,(lambda (x env exp) `(define ,(cadr x) ,@(map exp (cddr x)))))
+	   (lambda macro ,(lambda (x env exp) `(lambda ,(cadr x) ,@(map exp (cddr x)))))
+	   (begin macro ,(lambda (x env exp) `(begin ,@(map exp (cdr x)))))
+	   (if macro ,(lambda (x env exp) `(if ,@(map exp (cdr x)))))
+	   (set! macro ,(lambda (x env exp) `(set! ,(cadr x) ,(exp (caddr x)))))
+
+	   (let macro ,(lambda (x env exp)
 			 (let ((names (map car (cadr x)))
 			       (inits (map cadr (cadr x)))
 			       (exps (cddr x)))
@@ -143,16 +150,16 @@
        (else (search-one-env (env-next env) n k fk))))
     (define (search-env env n k fk)
       (search-one-env env n k (lambda () (search-one-env global-env n k fk))))
-    ;; BUG: not proper expansion-passing-style; need separate expansion phase!
-    ;; (how else to implement macrolet?)
     (define (expand x env)
-      (if (and (pair? x)
-	       (symbol? (car x)))
-	  (search-env env (car x)
-		      (lambda (annotation v cell) (if (eq? annotation 'macro)
-						      (v x env (lambda (exp) (expand exp env)))
-						      x))
-		      (lambda () x))
+      (define (exp x) (expand x env))
+      (if (pair? x)
+	  (if (symbol? (car x))
+	      (search-env env (car x)
+			  (lambda (annotation v cell) (if (eq? annotation 'macro)
+							  (v x env exp)
+							  (map exp x)))
+			  (lambda () (map exp x)))
+	      (map exp x))
 	  x))
     (define (make-recursive-env defs env)
       (if (null? defs)
@@ -172,7 +179,7 @@
     (define (e-body defs xs env k)
       (if (null? xs)
 	  (e-recursive-definitions defs xs env k)
-	  (let ((x (expand (car xs) env)))
+	  (let ((x (car xs)))
 	    (if (not (pair? x))
 		(e-recursive-definitions defs (cons x (cdr xs)) env k)
 		(case (car x)
@@ -200,56 +207,56 @@
 			    env
 			    k))))))
     (define (e x env k)
-      (let ((x (expand x env)))
-	(cond
-	 ((symbol? x) (search-env env x
-				  (lambda (annotation v cell)
-				    (if (eq? annotation 'macro)
-					(error 'macro-in-variable-position x)
-					(k (load-env x annotation v))))
-				  (lambda ()
-				    (k (unbound-variable-read x)))))
-	 ((not (pair? x)) (k (load-literal x)))
-	 (else
-	  (case (car x)
-	    ((quote) (k (load-literal (cadr x))))
-	    ((define) (error 'internal-definition-in-invalid-position x))
-	    ((lambda) (k (load-closure
-			  (cadr x)
-			  (lambda (actuals k)
-			    (let ((new-env (extend-env-with-actuals (cadr x) actuals env)))
-			      (e-body '() (cddr x) new-env k))))))
-	    ((begin) (cond ((null? (cdr x)) (k (undefined)))
-			   ((null? (cddr x)) (e (cadr x) env k))
-			   (else (e (cadr x) env
-				    (push-continuation
-				     (lambda (v)
-				       (e (cons 'begin (cddr x)) env k)))))))
-	    ((if) (e (cadr x) env
-		     (push-continuation
-		      (lambda (v)
-			(do-if v
-			       (lambda () (e (caddr x) env k))
-			       (lambda () (e (cadddr x) env k)))))))
-	    ((set!) (search-env env (cadr x)
+      (cond
+       ((symbol? x) (search-env env x
 				(lambda (annotation v cell)
 				  (if (eq? annotation 'macro)
 				      (error 'macro-in-variable-position x)
-				      (e (caddr x) env
-					 (push-continuation
-					  (lambda (v)
-					    (set-env-value! cell v)
-					    (k v))))))
-				(lambda () (error 'unbound-variable x))))
-	    (else (e-operands 0 (cdr x) '() env
-			      (push-frame (length (cdr x))
-					  (lambda (operands)
-					    (e (car x) env
-					       (push-continuation
-						(lambda (operator)
-						  (do-call operator operands k)))))))))))))
+				      (k (load-env x annotation v))))
+				(lambda ()
+				  (k (unbound-variable-read x)))))
+       ((not (pair? x)) (k (load-literal x)))
+       (else
+	(case (car x)
+	  ((quote) (k (load-literal (cadr x))))
+	  ((define) (error 'internal-definition-in-invalid-position x))
+	  ((lambda) (k (load-closure
+			(cadr x)
+			(lambda (actuals k)
+			  (let ((new-env (extend-env-with-actuals (cadr x) actuals env)))
+			    (e-body '() (cddr x) new-env k))))))
+	  ((begin) (cond ((null? (cdr x)) (k (undefined)))
+			 ((null? (cddr x)) (e (cadr x) env k))
+			 (else (e (cadr x) env
+				  (push-continuation
+				   (lambda (v)
+				     (e (cons 'begin (cddr x)) env k)))))))
+	  ((if) (e (cadr x) env
+		   (push-continuation
+		    (lambda (v)
+		      (do-if v
+			     (lambda () (e (caddr x) env k))
+			     (lambda () (e (cadddr x) env k)))))))
+	  ((set!) (search-env env (cadr x)
+			      (lambda (annotation v cell)
+				(if (eq? annotation 'macro)
+				    (error 'macro-in-variable-position x)
+				    (e (caddr x) env
+				       (push-continuation
+					(lambda (v)
+					  (set-env-value! cell v)
+					  (k v))))))
+			      (lambda () (error 'unbound-variable x))))
+	  (else (e-operands 0 (cdr x) '() env
+			    (push-frame (length (cdr x))
+					(lambda (operands)
+					  (e (car x) env
+					     (push-continuation
+					      (lambda (operator)
+						(do-call operator operands k))))))))))))
     (lambda (x)
-      (e x '() (lambda (v) v)))))
+      (let ((expanded (expand x '())))
+	(e expanded '() (lambda (v) v))))))
 
 (define-global! 'eval
   (let ()
