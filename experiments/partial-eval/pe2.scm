@@ -55,7 +55,7 @@
 			      (cond
 			       ((not (pair? exp)) `(quote ,exp))
 			       ((eq? (car exp) 'quasiquote)
-				`(cons 'quasiquote (cons ,(qq (cadr exp) (+ depth 1)) '())))
+				`(cons ','quasiquote (cons ,(qq (cadr exp) (+ depth 1)) '())))
 			       ((eq? (car exp) 'unquote)
 				(if (= depth 1)
 				    (cadr exp)
