@@ -3,11 +3,13 @@
 toplevel = toplevel-item:v ~_ -> v;
 
 toplevel-item =
-	  {#paren #namespace :prefix ?(symbol? id) equal :urn ?(string? urn) ~_
-	  	  -> `(define-namespace ,id ,urn)}
-	| {#paren #define :q ?(qname? q) equal parse:exp ~_
+	  {#paren #namespace :prefix ?(symbol? prefix) equal :urn ?(string? urn) ~_
+	  	  -> `(define-namespace ,prefix ,urn)}
+	| {#paren #namespace :urn ?(string? urn) ~_
+	  	  -> `(declare-default-namespace ,urn)}
+	| {#paren #define :q ?(qname-or-symbol? q) equal expr:exp ~_
 		  -> `(define-value ,q ,exp)}
-	| {#paren #define :q ?(qname? q) normal-method:def ~_
+	| {#paren #define :q ?(qname-or-symbol? q) normal-method:def ~_
 	  	  -> `(define-function ,q ,def)}
 	| parse
 ;
@@ -16,7 +18,7 @@ parse =
 	  ~(comma | semi)
 	  :n
 	  ( -> (or (pair? n) (error 'expected 'grouping)) grouping(n)
-	  | ?(or (qname? n) (symbol? n)) -> `(ref ,n)
+	  | ?(qname-or-symbol? n) -> `(ref ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n) )
 	| -> (error 'comma-and-semi-are-illegal-expressions)
 ;
@@ -56,8 +58,8 @@ message = ~(arrow | equal) parse;
 methods =
 	  normal-method:m semis methods:ms -> (cons m ms)
 	| constant-method:m semis methods:ms -> (cons m ms)
-	| &_ expr:e ~_ -> (list `(normal-method (discard) ,e))
-	| ~_ -> '()
+	| &_ expr:e semis ~_ -> (list `(normal-method (discard) ,e))
+	| semis ~_ -> '()
 ;
 
 normal-method =
@@ -84,7 +86,7 @@ pattern-element =
 	  :n
 	  ( -> (or (pair? n) (error 'expected 'grouping)) pattern-grouping(n)
 	  | ?(eq? n DISCARD) -> 'discard
-	  | ?(or (qname? n) (symbol? n)) -> `(bind ,n)
+	  | ?(qname-or-symbol? n) -> `(bind ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n)
 	  )
 ;

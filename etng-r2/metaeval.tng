@@ -13,12 +13,12 @@ define :TExtendable = [
 ---------------------------------------------------------------------------
 namespace "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation#";
 
-define makeQName uri localName = [
+define makeQName uri localName -> [
   .uri = uri;
   .localName = localName;
 ];
 
-define emptyEnvironment = [|];
+define emptyEnvironment = [];
 
 define searchEnvironment env name ->
   1;

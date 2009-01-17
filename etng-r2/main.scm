@@ -36,6 +36,10 @@
   (or (eqv? c #\return)
       (eqv? c #\newline)))
 
+(define (qname-or-symbol? x)
+  (or (qname? x)
+      (symbol? x)))
+
 (define EMPTY-SYMBOL (string->symbol ""))
 (define QUOTE-QNAME (make-qname EMPTY-SYMBOL 'quote))
 (define UNQUOTE-QNAME (make-qname EMPTY-SYMBOL 'unquote))
@@ -110,6 +114,37 @@
 (define (!pp clue x . maybe-transformer)
   x)
 
+(define (dump-string-tree t)
+  (cons-tree-for-each (lambda (x) (or (null? x) (display x))) t)
+  (newline))
+
+(define (parse-and-print sexp)
+  ;; (pp 'raw-sexp sexp) (newline)
+  (dump-string-tree (etng-sexp->string-tree sexp))
+  (parse-etng* 'toplevel (list sexp)
+	       (lambda (ast dummy-next err)
+		 (if (null? (input-stream->list dummy-next))
+		     (pp 'ast ast)
+		     (pp 'parse-err2 err)))
+	       (lambda (err)
+		 (pp 'parse-err1 err))))
+
+(define (etng-parse-file filename)
+  (call-with-input-file filename
+    (lambda (handle)
+      (let loop ((input (->input-stream handle)))
+	(read-etng-toplevel
+	 input
+	 (lambda (sexp0 next err)
+	   (if (eq? sexp0 'eof)
+	       'eof-reached
+	       (let ((sexp (cons 'paren sexp0)))
+		 (parse-and-print sexp)
+		 (when (and next (not (eq? next input)))
+		   (loop next)))))
+	 (lambda (error-description)
+	   (pretty-print error-description)))))))
+
 (define (etng-repl)
   (let loop ((input (current-input-stream)))
     (display ">>ETNG>> ")
@@ -117,21 +152,12 @@
     (read-etng-toplevel
      input
      (lambda (sexp0 next err)
-       (let ((sexp (cons 'paren sexp0)))
-	 (pp 'raw-sexp sexp)
-	 (newline)
-	 (cons-tree-for-each (lambda (x) (or (null? x) (display x)))
-			     (etng-sexp->string-tree sexp))
-	 (newline)
-	 (parse-etng* 'toplevel (list sexp)
-		      (lambda (ast dummy-next err)
-			(if (null? (input-stream->list dummy-next))
-			    (pp 'ast ast)
-			    (pp 'parse-err2 err)))
-		      (lambda (err)
-			(pp 'parse-err1 err)))
-	 (when (and next (not (eq? next input)))
-	   (loop next))))
+       (if (eq? sexp0 'eof)
+	   'eof-reached
+	   (let ((sexp (cons 'paren sexp0)))
+	     (parse-and-print sexp)
+	     (when (and next (not (eq? next input)))
+	       (loop next)))))
      (lambda (error-description)
        (pretty-print error-description)
        (loop (current-input-stream))))))

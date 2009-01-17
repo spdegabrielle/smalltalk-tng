@@ -1,7 +1,9 @@
 -- -*- text -*-
 
-sexp-toplevel = (ws $;)* (~toplevel-stop sexp)*:ss toplevel-stop -> ss;
-toplevel-stop = ws $; $; ;
+sexp-toplevel = (ws $;)* ( (~toplevel-stop sexp)*:ss toplevel-stop -> ss
+	      	    	 | ws ~_ -> 'eof);
+
+toplevel-stop = ws $; ;
 
 sexp =
 	  ws (   $. sexp:s -> `(paren ,QUOTE-QNAME ,s)
