@@ -86,15 +86,18 @@
 (define (read-etng-toplevel input ks kf)
   (read-etng* 'sexp-toplevel input ks kf))
 
+(define pass-common (opt (parse-ometa-file "etng-pass-common.g")))
+
 (define (load-pass grammar-filename)
-  (let ((g (load-ometa grammar-filename)))
+  (let ((g (merge-ometa pass-common (parse-ometa-file grammar-filename))))
     (lambda (input)
-      (g 'pass
-	 (->input-stream (list input))
-	 (lambda (result next err) result)
-	 (lambda (err)
-	   (pretty-print `(,grammar-filename ,err))(newline)
-	   #f)))))
+      (simple-ometa-driver g
+			   'pass
+			   (->input-stream (list input))
+			   (lambda (result next err) result)
+			   (lambda (err)
+			     (pretty-print `(,grammar-filename ,err))(newline)
+			     #f)))))
 
 (define null-pass (load-pass "etng-null-pass.g"))
 
