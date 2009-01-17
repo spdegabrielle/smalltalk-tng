@@ -22,7 +22,7 @@ method =
 ;
 
 pattern =
-	  #discard -> 'discard
+	  {#discard} -> `(discard)
 	| {#bind :name ~_} -> `(bind ,name)
 	| {#lit :literal ~_} -> `(lit ,literal)
 	| {#tuple pattern*:elts ~_} -> `(tuple ,@elts)

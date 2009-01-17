@@ -38,7 +38,7 @@ special-segment =
 	  :head ?(equal? head QUOTE-QNAME) :n -> `(lit ,n)
 	| :head ?(equal? head UNQUOTE-QNAME) -> (error 'naked-unquote)
 	| #do expr:e1 semis expr:e2
-	  -> `(send (function (method (discard) ,e2)) ,e1)
+	  -> `(send (function (method ((discard)) ,e2)) ,e1)
 	| #let pattern:p equal expr:e semis expr:body
 	  -> `(send (function (method (,p) ,body)) ,e)
 ;
@@ -58,7 +58,7 @@ message = ~(arrow | equal) parse;
 methods =
 	  normal-method:m semis methods:ms -> (cons m ms)
 	| constant-method:m semis methods:ms -> (cons m ms)
-	| &_ expr:e semis ~_ -> (list `(method (discard) ,e))
+	| &_ expr:e semis ~_ -> (list `(method ((discard)) ,e))
 	| semis ~_ -> '()
 ;
 
@@ -85,7 +85,7 @@ pattern-element =
 	  ~(#do | #let)
 	  :n
 	  ( -> (or (pair? n) (error 'expected 'grouping)) pattern-grouping(n)
-	  | ?(eq? n DISCARD) -> 'discard
+	  | ?(eq? n DISCARD) -> `(discard)
 	  | ?(qname-or-symbol? n) -> `(bind ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n)
 	  )
