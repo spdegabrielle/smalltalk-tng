@@ -86,6 +86,18 @@
 (define (read-etng-toplevel input ks kf)
   (read-etng* 'sexp-toplevel input ks kf))
 
+(define (load-pass grammar-filename)
+  (let ((g (load-ometa grammar-filename)))
+    (lambda (input)
+      (g 'pass
+	 (->input-stream (list input))
+	 (lambda (result next err) result)
+	 (lambda (err)
+	   (pretty-print `(,grammar-filename ,err))(newline)
+	   #f)))))
+
+(define null-pass (load-pass "etng-null-pass.g"))
+
 (define (etng-sexp->string-tree e)
   (cond
    ((pair? e) ((case (car e)
@@ -118,18 +130,22 @@
   (cons-tree-for-each (lambda (x) (or (null? x) (display x))) t)
   (newline))
 
-(define (parse-and-print sexp)
+(define (parse-print-and-eval sexp evaluator)
   ;; (pp 'raw-sexp sexp) (newline)
   (dump-string-tree (etng-sexp->string-tree sexp))
   (parse-etng* 'toplevel (list sexp)
 	       (lambda (ast dummy-next err)
 		 (if (null? (input-stream->list dummy-next))
-		     (pp 'ast ast)
+		     (evaluator ast)
 		     (pp 'parse-err2 err)))
 	       (lambda (err)
 		 (pp 'parse-err1 err))))
 
-(define (etng-parse-file filename)
+(define (rude-evaluator input)
+  (pp 'ast input)
+  (pp 'null-pass (null-pass input)))
+
+(define (etng-parse-file* filename evaluator)
   (call-with-input-file filename
     (lambda (handle)
       (let loop ((input (->input-stream handle)))
@@ -139,13 +155,16 @@
 	   (if (eq? sexp0 'eof)
 	       'eof-reached
 	       (let ((sexp (cons 'paren sexp0)))
-		 (parse-and-print sexp)
+		 (parse-print-and-eval sexp evaluator)
 		 (when (and next (not (eq? next input)))
 		   (loop next)))))
 	 (lambda (error-description)
 	   (pretty-print error-description)))))))
 
-(define (etng-repl)
+(define (etng-parse-file filename)
+  (etng-parse-file* filename rude-evaluator))
+
+(define (etng-repl* evaluator)
   (let loop ((input (current-input-stream)))
     (display ">>ETNG>> ")
     (flush-output)
@@ -155,9 +174,12 @@
        (if (eq? sexp0 'eof)
 	   'eof-reached
 	   (let ((sexp (cons 'paren sexp0)))
-	     (parse-and-print sexp)
+	     (parse-print-and-eval sexp evaluator)
 	     (when (and next (not (eq? next input)))
 	       (loop next)))))
      (lambda (error-description)
        (pretty-print error-description)
        (loop (current-input-stream))))))
+
+(define (etng-repl)
+  (etng-repl* rude-evaluator))
