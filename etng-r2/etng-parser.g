@@ -38,9 +38,9 @@ special-segment =
 	  :head ?(equal? head QUOTE-QNAME) :n -> `(lit ,n)
 	| :head ?(equal? head UNQUOTE-QNAME) -> (error 'naked-unquote)
 	| #do expr:e1 semis expr:e2
-	  -> `(send (function (normal-method (discard) ,e2)) ,e1)
+	  -> `(send (function (method (discard) ,e2)) ,e1)
 	| #let pattern:p equal expr:e semis expr:body
-	  -> `(send (function (normal-method (,p) ,body)) ,e)
+	  -> `(send (function (method (,p) ,body)) ,e)
 ;
 
 tuple =
@@ -58,17 +58,17 @@ message = ~(arrow | equal) parse;
 methods =
 	  normal-method:m semis methods:ms -> (cons m ms)
 	| constant-method:m semis methods:ms -> (cons m ms)
-	| &_ expr:e semis ~_ -> (list `(normal-method (discard) ,e))
+	| &_ expr:e semis ~_ -> (list `(method (discard) ,e))
 	| semis ~_ -> '()
 ;
 
 normal-method =
-	(~&arrow pattern)+:patterns arrow expr:body
-	-> `(normal-method ,patterns ,body)
+	(~&(arrow | equal) pattern)+:patterns arrow expr:body
+	-> `(method ,patterns ,body)
 ;
 
 constant-method =
-	(~&equal pattern)+:patterns equal expr:body
+	(~&(arrow | equal) pattern)+:patterns equal expr:body
 	-> `(constant-method ,patterns ,body)
 ;
 

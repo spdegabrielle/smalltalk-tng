@@ -101,6 +101,40 @@
 
 (define null-pass (load-pass "etng-null-pass.g"))
 
+(define convert-constant-methods-pass (load-pass "etng-convert-constant-methods-pass.g"))
+
+(define (convert-constant-methods object-or-function methods)
+  (let loop ((methods methods)
+	     (reversed-temporaries '())
+	     (reversed-initializers '())
+	     (transformed-methods '()))
+    (if (null? methods)
+	(let ((new-methods (reverse transformed-methods))
+	      (temporaries (reverse reversed-temporaries))
+	      (initializers (reverse reversed-initializers)))
+	  (cond
+	   ((null? temporaries)
+	    `(,object-or-function ,@new-methods))
+	   ((null? (cdr temporaries))
+	    `(send (function (method ((bind ,(car temporaries)))
+				     (,object-or-function ,@new-methods)))
+		   ,(car initializers)))
+	   (else
+	    `(send (function (method ((tuple ,@(map (lambda (temp) `(bind ,temp)) temporaries)))
+				     (,object-or-function ,@new-methods)))
+		   (tuple ,@initializers)))))
+	(let ((method (car methods)))
+	  (if (eq? (car method) 'constant-method)
+	      (let ((temp (gensym)))
+		(loop (cdr methods)
+		      (cons temp reversed-temporaries)
+		      (cons (caddr method) reversed-initializers)
+		      (cons `(method ,(cadr method) (ref ,temp)) transformed-methods)))
+	      (loop (cdr methods)
+		    reversed-temporaries
+		    reversed-initializers
+		    (cons method transformed-methods)))))))
+
 (define (etng-sexp->string-tree e)
   (cond
    ((pair? e) ((case (car e)
@@ -145,8 +179,9 @@
 		 (pp 'parse-err1 err))))
 
 (define (rude-evaluator input)
-  (pp 'ast input)
-  (pp 'null-pass (null-pass input)))
+  (let* ((ast (pp 'ast input))
+	 (ast (pp 'convert-constant-methods-pass (convert-constant-methods-pass ast))))
+    ast))
 
 (define (etng-parse-file* filename evaluator)
   (call-with-input-file filename

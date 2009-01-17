@@ -18,8 +18,7 @@ expr =
 ;
 
 method =
-	  {#normal-method {pattern*}:patterns expr:body ~_} -> `(normal-method ,patterns ,body)
-	| {#constant-method {pattern*}:patterns expr:body ~_} -> `(constant-method ,patterns ,body)
+	  {#method {pattern*}:patterns expr:body ~_} -> `(method ,patterns ,body)
 ;
 
 pattern =
