@@ -230,11 +230,16 @@
 	       (lambda (err)
 		 (display-parse-error "Unsuccessful parse." err sexp))))
 
+(load "compile-to-scheme.scm")
+
 (define (rude-evaluator input)
   (let* ((ast (pp 'ast input))
 	 (ast (pp 'convert-constant-methods-pass (convert-constant-methods-pass ast)))
+	 (scheme-ast (pp 'compile-to-scheme (compile-to-scheme ast)))
+	 (thunk (!pp 'compile-scheme (eval `(lambda () ,scheme-ast))))
 	 )
-    ast))
+    (write (thunk))
+    (newline)))
 
 (define (etng-parse-file* filename evaluator)
   (call-with-input-file filename
@@ -274,3 +279,6 @@
 
 (define (etng-repl)
   (etng-repl* rude-evaluator))
+
+(etng-parse-file "boot.tng")
+(etng-repl)

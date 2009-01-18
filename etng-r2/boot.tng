@@ -1,0 +1,5 @@
+define + = .+;
+
+define numberProxy = [
+  .+ other -> '%assemble' (a = self, b = other) { .scheme -> (+ a b) };
+];
