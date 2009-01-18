@@ -166,12 +166,17 @@
 
 (define (etng-sexp->string-tree e)
   (cond
-   ((pair? e) ((case (car e)
-		 ((paren) (lambda (es) `("(" ,es ")")))
-		 ((brack) (lambda (es) `("[" ,es "]")))
-		 ((brace) (lambda (es) `("{" ,es "}")))
-		 (else (error 'illegal-sexp e)))
-	       (list-interleave " " (map etng-sexp->string-tree (cdr e)))))
+   ((pair? e) (cond
+	       ((and (eq? (car e) 'paren)
+		     (equal? (cadr e) QUOTE-QNAME))
+		`("." ,(etng-sexp->string-tree (caddr e))))
+	       (else
+		((case (car e)
+		   ((paren) (lambda (es) `("(" ,es ")")))
+		   ((brack) (lambda (es) `("[" ,es "]")))
+		   ((brace) (lambda (es) `("{" ,es "}")))
+		   (else (error 'illegal-sexp e)))
+		 (list-interleave " " (map etng-sexp->string-tree (cdr e)))))))
    ((string? e) e)
    (else (->string e))))
 
