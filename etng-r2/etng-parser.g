@@ -17,7 +17,7 @@ toplevel-item =
 parse =
 	  ~(comma | semi)
 	  :n
-	  ( -> (or (pair? n) (error 'expected 'grouping)) grouping(n)
+	  ( grouping(n)
 	  | ?(qname-or-symbol? n) -> `(ref ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n) )
 	| -> (error 'comma-and-semi-are-illegal-expressions)
@@ -84,7 +84,7 @@ pattern-tuple = pattern | -> `(tuple);
 pattern-element =
 	  ~(#do | #let)
 	  :n
-	  ( -> (or (pair? n) (error 'expected 'grouping)) pattern-grouping(n)
+	  ( pattern-grouping(n)
 	  | ?(eq? n DISCARD) -> `(discard)
 	  | ?(qname-or-symbol? n) -> `(bind ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n)
