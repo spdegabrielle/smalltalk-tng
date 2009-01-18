@@ -196,6 +196,12 @@
   (cons-tree-for-each (lambda (x) (or (null? x) (display x))) t)
   (newline))
 
+(define (display-parse-error clue err)
+  (display clue)
+  (newline)
+  (display (format-ometa-error err))
+  (newline))
+
 (define (parse-print-and-eval sexp evaluator)
   ;; (pp 'raw-sexp sexp) (newline)
   (dump-string-tree (etng-sexp->string-tree sexp))
@@ -203,9 +209,9 @@
 	       (lambda (ast dummy-next err)
 		 (if (null? (input-stream->list dummy-next))
 		     (evaluator ast)
-		     (pp 'parse-err2 err)))
+		     (display-parse-error "Partial parse." err)))
 	       (lambda (err)
-		 (pp 'parse-err1 err))))
+		 (display-parse-error "Unsuccessful parse." err))))
 
 (define (rude-evaluator input)
   (let* ((ast (pp 'ast input))
@@ -226,7 +232,7 @@
 		 (when (and next (not (eq? next input)))
 		   (loop next)))))
 	 (lambda (error-description)
-	   (pretty-print error-description)))))))
+	   (display-parse-error "Reader failure." error-description)))))))
 
 (define (etng-parse-file filename)
   (etng-parse-file* filename rude-evaluator))
@@ -245,7 +251,7 @@
 	     (when (and next (not (eq? next input)))
 	       (loop next)))))
      (lambda (error-description)
-       (pretty-print error-description)
+       (display-parse-error "Reader failure." error-description)
        (loop (current-input-stream))))))
 
 (define (etng-repl)
