@@ -39,6 +39,10 @@
 (define (etng-send receiver message)
   (etng-send* receiver receiver message))
 
+(define (etng-merge-functions f1 f2)
+  (make-etng-function (append (etng-function-sources f1) (etng-function-sources f2))
+		      (append (etng-function-clauses f1) (etng-function-clauses f2))))
+
 (define (compile-to-scheme ast)
 
   (define (schemeify tng-sexp)
