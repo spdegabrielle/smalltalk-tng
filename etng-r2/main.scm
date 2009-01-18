@@ -135,6 +135,35 @@
 		    reversed-initializers
 		    (cons method transformed-methods)))))))
 
+(define (alpha-convert-expr exp conversions)
+  (case (car exp)
+    ((ref) `(ref ,(cond ((assq (cadr exp) conversions) => cadr) (else (cadr exp)))))
+    ((lit) exp)
+    ((object function) `(,(car exp) ,@(map (lambda (method)
+					     `(,(car method)
+					       ,(map (lambda (p)
+						       (alpha-convert-pattern p conversions))
+						     (cadr method))
+					       ,(alpha-convert-expr (caddr method) conversions)))
+					   (cdr exp))))
+    ((tuple) `(tuple ,@(map (lambda (x) (alpha-convert-expr x conversions)) (cdr exp))))
+    ((send) `(send ,(alpha-convert-expr (cadr exp) conversions)
+		   ,(alpha-convert-expr (caddr exp) conversions)))))
+
+(define (alpha-convert-pattern pat conversions)
+  (case (car exp)
+    ((discard) exp)
+    ((bind) `(bind ,(cond ((assq (cadr exp) conversions) => cadr) (else (cadr exp)))))
+    ((lit) exp)
+    ((tuple) `(tuple ,@(map (lambda (p) (alpha-convert-pattern p conversions)) (cdr exp))))))
+
+(define (names-in-pattern p)
+  (case (car p)
+    ((discard) '())
+    ((bind) (list (cadr p)))
+    ((lit) '())
+    ((tuple) (append-map names-in-pattern (cdr p)))))
+
 (define (etng-sexp->string-tree e)
   (cond
    ((pair? e) ((case (car e)
