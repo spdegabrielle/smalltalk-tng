@@ -20,7 +20,8 @@ parse =
 	  ( grouping(n)
 	  | ?(qname-or-symbol? n) -> `(ref ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n) )
-	| (comma | semi) -> (error 'comma-and-semi-are-illegal-expressions)
+	| comma -> (error 'extra 'comma)
+	| semi -> (error 'extra 'semi)
 	| -> (error)
 ;
 
