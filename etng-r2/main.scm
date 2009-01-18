@@ -168,6 +168,7 @@
   (cond
    ((pair? e) (cond
 	       ((and (eq? (car e) 'paren)
+		     (pair? (cdr e))
 		     (equal? (cadr e) QUOTE-QNAME))
 		`("." ,(etng-sexp->string-tree (caddr e))))
 	       (else
