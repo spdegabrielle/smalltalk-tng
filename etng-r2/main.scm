@@ -201,9 +201,21 @@
   (cons-tree-for-each (lambda (x) (or (null? x) (display x))) t)
   (newline))
 
-(define (display-parse-error clue err)
+(define (mark-position pos-path t)
+  (if (null? pos-path)
+      t
+      (call-with-values (lambda () (split-at t (car pos-path)))
+	(lambda (left right)
+	  (if (null? (cdr pos-path))
+	      (append left (list "<@@@@@>") right)
+	      (append left (list (mark-position (cdr pos-path) (car right))) (cdr right)))))))
+
+(define (display-parse-error clue err . maybe-ast)
   (display clue)
   (newline)
+  (when (not (null? maybe-ast))
+    (dump-string-tree (etng-sexp->string-tree (car (mark-position (car err)
+								  (list (car maybe-ast)))))))
   (display (format-ometa-error err))
   (newline))
 
@@ -214,9 +226,9 @@
 	       (lambda (ast dummy-next err)
 		 (if (null? (input-stream->list dummy-next))
 		     (evaluator ast)
-		     (display-parse-error "Partial parse." err)))
+		     (display-parse-error "Partial parse." err sexp)))
 	       (lambda (err)
-		 (display-parse-error "Unsuccessful parse." err))))
+		 (display-parse-error "Unsuccessful parse." err sexp))))
 
 (define (rude-evaluator input)
   (let* ((ast (pp 'ast input))
