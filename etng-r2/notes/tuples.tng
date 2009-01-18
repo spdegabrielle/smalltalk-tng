@@ -1,0 +1,16 @@
+(a, b, c);
+
+combine {0 = a; 1 = b; 2 = c; .keys -> range(0, 3); .length = 3} TupleBase;
+
+combine (let v0 = a; let v1 = b; let v2 = c; {0 -> v0; 1 -> v1; 2 -> v2;
+	 .keys -> range(0, 3); .length -> 3}) TupleBase;
+
+A running closure has: code, literals, closed-over bindings, argument bindings.
+
+
+("a" = 1; "b" = 2);
+
+combine {"a" = 1; "b" = 2; .keys -> ("a", "b")} DictionaryBase;
+
+combine (let v0 = 1; let v1 = 2; {"a" -> v0; "b" -> v1;
+	 .keys -> ("a", "b")}) DictionaryBase;

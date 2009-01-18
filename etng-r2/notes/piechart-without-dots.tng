@@ -1,0 +1,67 @@
+-- Courtesy of http://intertwingly.net/blog/2008/10/16/Popping-Pie-Partial
+
+namespace xml_ = "http://eighty-twenty.org/etng/r2/ns/xml#";
+namespace math = "http://eighty-twenty.org/etng/r2/ns/math#";
+
+import xml_:Element as Xml;
+
+define makeChart(Chart, Radius) ->
+  let Total = Chart map <last()> sum();
+  let Point = {R -> [R sin() * 95, R cos() negated() * 95] map <tostring()> join(",");
+  let Angle = {Value -> math:Pi * 2 * Value / Total};
+  Xml svg("xmlns" = "http://www.w3.org/2000/svg"; "viewBox" = "-100 -100 200 200")
+    [Xml circle("r" = 96; "stroke" = "#000"; "fill", "#000")[]] ++
+    (Chart fold ([], 0) {
+      (Color, Title, Value), (Acc, R) ->
+	let NewR = R + (Angle Value);
+	(Acc ++ [Xml path("d" = "M"++(Point R)++" A95,95 0 0 1 "++(Point NewR)++" L0,0 Z";
+			  "fill" = Color;
+			  "title" = Title)[]],
+	 NewR)
+    });
+
+define makeChart(chart, radius) ->
+  let total = chart Map <Last()> Sum();
+  let point = {r -> [r Sin() * 95, r Cos() Negated() * 95] Map <Tostring()> Join(",");
+  let angle = {value -> math:pi * 2 * value / total};
+  xml Svg("xmlns" = "http://www.w3.org/2000/svg"; "viewBox" = "-100 -100 200 200")
+    [xml Circle("r" = 96; "stroke" = "#000"; "fill", "#000")[]] ++
+    (chart Fold ([], 0) {
+      (color, title, value), (acc, r) ->
+	let newR = r + (angle value);
+	(acc ++ [xml Path("d" = "M"++(point r)++" A95,95 0 0 1 "++(point newR)++" L0,0 Z";
+			  "fill" = color;
+			  "title" = title)[]],
+	 newR)
+    });
+
+
+define makeChart(Chart, Radius) ->
+  let Total = Chart map <last> sum;
+  let Point = {R -> [R sin * 95, R cos negated * 95] map <tostring> join(",");
+  let Angle = {Value -> math:Pi * 2 * Value / Total};
+  Xml svg("xmlns" = "http://www.w3.org/2000/svg"; "viewBox" = "-100 -100 200 200")
+    [Xml circle("r" = 96; "stroke" = "#000"; "fill", "#000")[]] ++
+    (Chart fold ([], 0) {
+      (Color, Title, Value), (Acc, R) ->
+	let NewR = R + (Angle Value);
+	(Acc ++ [Xml path("d" = "M"++(Point R)++" A95,95 0 0 1 "++(Point NewR)++" L0,0 Z";
+			  "fill" = Color;
+			  "title" = Title)[]],
+	 NewR)
+    });
+
+define makeChart(chart, radius) ->
+  let total = chart Map <Last> Sum;
+  let point = {r -> [r Sin * 95, r Cos Negated * 95] Map <Tostring> Join(",");
+  let angle = {value -> math:pi * 2 * value / total};
+  xml Svg("xmlns" = "http://www.w3.org/2000/svg"; "viewBox" = "-100 -100 200 200")
+    [xml Circle("r" = 96; "stroke" = "#000"; "fill", "#000")[]] ++
+    (chart Fold ([], 0) {
+      (color, title, value), (acc, r) ->
+	let newR = r + (angle value);
+	(acc ++ [xml Path("d" = "M"++(point r)++" A95,95 0 0 1 "++(point newR)++" L0,0 Z";
+			  "fill" = color;
+			  "title" = title)[]],
+	 newR)
+    });

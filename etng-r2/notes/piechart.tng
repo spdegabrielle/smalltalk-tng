@@ -1,0 +1,34 @@
+-- Courtesy of http://intertwingly.net/blog/2008/10/16/Popping-Pie-Partial
+
+namespace xml_ = "http://eighty-twenty.org/etng/r2/ns/xml#";
+namespace math = "http://eighty-twenty.org/etng/r2/ns/math#";
+
+import xml_:element as xml;
+
+define makeChart(chart, radius) ->
+  let total = chart.map<.last()>.sum();
+  let point = {r -> [r.sin() * 95, r.cos().negated() * 95].map<.tostring()>.join(",");
+  let angle = {value -> math:pi * 2 * value / total};
+  xml.svg("xmlns" = "http://www.w3.org/2000/svg"; "viewBox" = "-100 -100 200 200")
+    [xml.circle("r" = 96; "stroke" = "#000"; "fill", "#000")[]] ++
+    (chart.fold ([], 0) {
+      (color, title, value), (acc, r) ->
+	let newR = r + (angle value);
+	(acc ++ [xml.path("d" = "M"++(point r)++" A95,95 0 0 1 "++(point newR)++" L0,0 Z";
+			  "fill" = color;
+			  "title" = title)[]],
+	 newR)
+    });
+
+define makeChart2(chart) ->
+  let values = chart.map{_.last()};
+  let total = values.sum();
+  let angles = values.reduceMap(operator +).map{value -> math:pi * 2 * value / total};
+  let point = {r -> [r.sin() * 95, r.cos().negated() * 95].map{_.tostring()}.join(",")};
+  let sectorPaths =
+    (chart, [0] ++ angles, angles).eachMap{ (color, title, value), startAngle, stopAngle ->
+      xml.path("d" = "M"++(point startAngle)++" A95,95 0 0 1 "++(point stopAngle)++" L0,0 Z";
+	       "fill" = color;
+	       "title" = title)[]};
+  xml.svg("xmlns" = "http://www.w3.org/2000/svg"; "viewBox" = "-100 -100 200 200")
+    ([xml.circle("r" = 96; "stroke" = "#000"; "fill", "#000")[]] ++ sectorPaths);
