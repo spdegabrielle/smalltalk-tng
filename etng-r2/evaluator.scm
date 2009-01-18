@@ -9,18 +9,8 @@
 	(set! counter (+ counter 1))
 	v))))
 
-(define-global! 'map
-  (lambda (f l)
-    (if (null? l)
-	'()
-	(cons (f (car l))
-	      (map f (cdr l))))))
-
 (define-global! 'global-env
   (let ()
-    (define (prim0 f) (lambda (arguments k) (k (f))))
-    (define (prim1 f) (lambda (arguments k) (k (f (car arguments)))))
-    (define (prim2 f) (lambda (arguments k) (k (f (car arguments) (cadr arguments)))))
     (define (munge-entry entry) (cons (car entry) (cons (box (cadr entry)) (box (caddr entry)))))
     (map munge-entry
 	 `((quote macro ,(lambda (x env exp) x))
@@ -78,46 +68,25 @@
 			       (else `(cons ,(qq (car exp) depth)
 					    ,(qq (cdr exp) depth)))))
 			    (exp (qq (cadr x) 1))))
-	   (define-global! global ,(prim2
-				    (lambda (name value)
-				      ;; FIXME: should set if entry already exists!
-				      (set! global-env (cons (munge-entry
-							      (cons name
-								    (cons 'global
-									  (cons value '()))))
-							     global-env)))))
-
-	   (cdr global ,(prim1 cdr))
-	   (cddr global ,(prim1 cddr))
-	   (cddar global ,(prim1 cddar))
-	   (cdar global ,(prim1 cdar))
-	   (cdadr global ,(prim1 cdadr))
-	   (car global ,(prim1 car))
-	   (cadr global ,(prim1 cadr))
-	   (caddr global ,(prim1 caddr))
-	   (cadddr global ,(prim1 cadddr))
-	   (cadar global ,(prim1 cadar))
-	   (caar global ,(prim1 caar))
-	   (caadr global ,(prim1 caadr))
-
-	   (box global ,(prim1 box))
-	   (unbox global ,(prim1 unbox))
-	   (set-box! global ,(prim2 set-box!))
-    
-	   (length global ,(prim1 length))
-	   (append global ,(prim2 append))
-	   (reverse global ,(prim1 reverse))
-	   (cons global ,(prim2 cons))
-	   (eq? global ,(prim2 eq?))
-	   (= global ,(prim2 =))
-	   (not global ,(prim1 not))
-	   (null? global ,(prim1 null?))
-	   (pair? global ,(prim1 pair?))
-	   (symbol? global ,(prim1 symbol?))
-
-	   (gensym global ,(prim0 gensym))
-
-	   ))))
+	   (define-macro macro ,(lambda (x env exp)
+				  (let ((name (cadr x))
+					(transformer (eval (exp (caddr x)))))
+				    (set! global-env (cons (munge-entry
+							    (cons name
+								  (cons 'macro
+									(cons transformer '()))))
+							   global-env))
+				    `',name)))
+	   (define-global! global ,(lambda (arguments k)
+				     (let ((name (car arguments))
+					   (value (cadr arguments)))
+				       ;; FIXME: should set if entry already exists!
+				       (set! global-env (cons (munge-entry
+							       (cons name
+								     (cons 'global
+									   (cons value '()))))
+							      global-env))
+				       (k name))))))))
 
 (define-global! 'make-eval
   (lambda (
@@ -255,7 +224,7 @@
 					       (lambda (operands)
 						 (do-primitive (cadr x)
 							       operands
-							       (cddr x)
+							       (cdddr x)
 							       k)))))
 	  (else (e-operands 0 (cdr x) '() env
 			    (push-frame (length (cdr x))
@@ -269,7 +238,6 @@
 	(e expanded '() (lambda (v) v))))))
 
 (define primitive-eval eval)
-(define-global! 'primitive-eval primitive-eval)
 
 (define-global! 'eval
   (let ()
@@ -286,6 +254,7 @@
     (define (update-frame index v) v)
     (define (do-primitive names vals expressions k)
       (define (search expressions)
+	;;(write `(do-primitive:search ,names ,vals ,expressions)) (newline)
 	(cond
 	 ((null? expressions)
 	  (error 'missing-scheme-assembly-expression `(%assemble ,names ,vals ,@expressions)))
@@ -363,6 +332,25 @@
 		  do-primitive do-call push-continuation)
        exp))))
 
+(define (read-file filename)
+  (call-with-input-file filename
+    (lambda (handle)
+      (let loop ()
+	(let ((sexp (read handle)))
+	  (if (eof-object? sexp)
+	      '()
+	      (cons sexp (loop))))))))
+
+(define-global! 'base-load*
+  (lambda (filename evaluator)
+    (for-each evaluator (read-file filename))))
+
+(define-global! 'base-load
+  (lambda (filename)
+    (base-load* filename eval)))
+
+(base-load "evaluator-base-library.scm")
+
 (define (syms x)
   (cond
    ((pair? x) (syms (car x)) (syms (cdr x)))
@@ -380,7 +368,7 @@
 
 (define (r) (r* eval))
 
-(eval `(define-global! 'global-env ',global-env))
+;;(eval `(define-global! 'global-env ',global-env))
 (r)
 
 ;;; Local Variables:
