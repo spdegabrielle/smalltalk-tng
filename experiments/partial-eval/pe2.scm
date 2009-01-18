@@ -29,6 +29,8 @@
 	   (begin macro ,(lambda (x env exp) `(begin ,@(map exp (cdr x)))))
 	   (if macro ,(lambda (x env exp) `(if ,@(map exp (cdr x)))))
 	   (set! macro ,(lambda (x env exp) `(set! ,(cadr x) ,(exp (caddr x)))))
+	   (%assemble macro ,(lambda (x env exp) `(%assemble ,(cadr x) ,(map exp (caddr x))
+						    ,@(cdddr x))))
 
 	   (let macro ,(lambda (x env exp)
 			 (let ((names (map car (cadr x)))
@@ -130,6 +132,7 @@
 	   do-if
 	   push-frame
 	   update-frame
+	   do-primitive
 	   do-call
 	   push-continuation
 	   )
@@ -247,6 +250,13 @@
 					  (set-env-value! cell v)
 					  (k v))))))
 			      (lambda () (error 'unbound-variable x))))
+	  ((%assemble) (e-operands 0 (caddr x) '() env
+				   (push-frame (length (caddr x))
+					       (lambda (operands)
+						 (do-primitive (cadr x)
+							       operands
+							       (cddr x)
+							       k)))))
 	  (else (e-operands 0 (cdr x) '() env
 			    (push-frame (length (cdr x))
 					(lambda (operands)
@@ -257,6 +267,9 @@
     (lambda (x)
       (let ((expanded (expand x '())))
 	(e expanded '() (lambda (v) v))))))
+
+(define primitive-eval eval)
+(define-global! 'primitive-eval primitive-eval)
 
 (define-global! 'eval
   (let ()
@@ -271,10 +284,22 @@
     (define (do-if v tk fk) (if v (tk) (fk)))
     (define (push-frame count k) k)
     (define (update-frame index v) v)
+    (define (do-primitive names vals expressions k)
+      (define (search expressions)
+	(cond
+	 ((null? expressions)
+	  (error 'missing-scheme-assembly-expression `(%assemble ,names ,vals ,@expressions)))
+	 ((eq? (caar expressions) 'scheme)
+	  (k ((primitive-eval `(lambda (actuals) (apply (lambda ,names ,@(cdar expressions))
+							actuals)))
+	      vals)))
+	 (else (search (cdr expressions)))))
+      (search expressions))
     (define (do-call operator operands k) (operator operands k))
     (define (push-continuation k) k)
     (make-eval error undefined allocate-env update-env load-env unbound-variable-read
-	       load-literal load-closure do-if push-frame update-frame do-call push-continuation)))
+	       load-literal load-closure do-if push-frame update-frame
+	       do-primitive do-call push-continuation)))
 
 (define-global! 'compile
   (lambda (exp)
@@ -317,6 +342,9 @@
       (define (update-frame index v)
 	(write `(update-frame ,index ,v)) (newline)
 	v)
+      (define (do-primitive names vals expressions k)
+	(write `(%assemble ,names ,vals ,expressions))
+	(k 'primitive-result))
       (define (do-call operator operands k)
 	(write `(do-call ,(if (= (continuation-depth) 0)
 			      'tailcall
@@ -331,7 +359,8 @@
 	  (continuation-depth (- (continuation-depth) 1))
 	  (k v)))
       ((make-eval error undefined allocate-env update-env load-env unbound-variable-read
-		  load-literal load-closure do-if push-frame update-frame do-call push-continuation)
+		  load-literal load-closure do-if push-frame update-frame
+		  do-primitive do-call push-continuation)
        exp))))
 
 (define (syms x)
@@ -353,3 +382,7 @@
 
 (eval `(define-global! 'global-env ',global-env))
 (r)
+
+;;; Local Variables:
+;;; eval: (put '%assemble 'scheme-indent-function 2)
+;;; End:
