@@ -15,13 +15,15 @@ toplevel-item =
 ;
 
 parse =
-	  ~(comma | semi)
+	  ~(comma | semi | arrow | equal)
 	  :n
 	  ( grouping(n)
 	  | ?(qname-or-symbol? n) -> `(ref ,n)
 	  | ?(or (string? n) (number? n)) -> `(lit ,n) )
 	| comma -> (error 'extra 'comma)
 	| semi -> (error 'extra 'semi)
+	| arrow -> (error 'extra 'arrow)
+	| equal -> (error 'extra 'equal)
 	| -> (error)
 ;
 
@@ -71,7 +73,7 @@ send =
 	->  (fold (lambda (msg rcvr) `(send ,rcvr ,msg)) receiver messages)
 ;
 
-message = ~(arrow | equal) parse;
+message = parse;
 
 methods =
 	  normal-method:m semis methods:ms -> (cons m ms)
