@@ -41,6 +41,22 @@ special-segment =
 	  -> `(send (function (method ((discard)) ,e2)) ,e1)
 	| #let pattern:p equal expr:e semis expr:body
 	  -> `(send (function (method (,p) ,body)) ,e)
+	| #'%assemble' {#paren assemble-bindings:bindings ~_} {#brace assemble-clauses:clauses ~_}
+	  -> `(assemble ,bindings ,clauses)
+;
+
+assemble-bindings =
+	  assemble-binding:b (comma assemble-binding)*:bs -> (cons b bs)
+	| ~_ -> '()
+;
+
+assemble-binding = :n ?(qname-or-symbol? n) equal send:e -> (list n e);
+
+assemble-clauses =
+	  ({#paren quote :n ?(qname-or-symbol? n)} | -> (error 'expected 'quoted-language-name))
+	  arrow :item &(semi | ~_)
+	  semis assemble-clauses:more -> (cons (list n item) more)
+	| ~_ -> '()
 ;
 
 tuple =

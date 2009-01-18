@@ -15,7 +15,12 @@ expr =
 	| {#function method*:methods ~_} -> `(function ,@methods)
 	| {#tuple expr*:elts ~_} -> `(tuple ,@elts)
 	| {#send expr:receiver expr:message ~_} -> `(send ,receiver ,message)
+	| {#assemble {assemble-binding*}:bindings {assemble-clause*}:clauses}
+	  -> `(assemble ,bindings ,clauses)
 ;
+
+assemble-binding = {:name expr:init} -> `(,name ,init);
+assemble-clause = {:language :item} -> `(,language ,item);
 
 method =
 	  {#method {pattern*}:patterns expr:body ~_} -> `(method ,patterns ,body)

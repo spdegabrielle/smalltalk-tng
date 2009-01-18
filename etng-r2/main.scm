@@ -64,7 +64,7 @@
 (define (special-segment-head? token)
   (or (equal? token QUOTE-QNAME)
       (equal? token UNQUOTE-QNAME)
-      (memq token '(namespace do let))))
+      (memq token '(namespace do let %assemble))))
 
 (define (->string x)
   (cond
