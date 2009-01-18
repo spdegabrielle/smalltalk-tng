@@ -1,5 +1,111 @@
-define + = .+;
+namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
 
-define numberProxy = [
-  .+ other -> '%assemble' (a = self, b = other) { .scheme -> (+ a b) };
+define raw_callcc fn ->
+  '%assemble' (fn = fn) { .scheme -> ('call-with-current-continuation'
+					(lambda (k) ('etng-send' fn k))) };
+define callcc fn ->
+  raw_callcc { k -> fn {v -> '%assemble' (v = v, k = k) { .scheme -> (k v) } } };
+
+define extend1 base extension ->
+  '%assemble' (base = base, extension = extension) {
+    .scheme -> ('etng-merge-functions' extension base);
+  };
+
+define :booleanBehaviour = [
+  .not -> '%assemble' (x = self) { .scheme -> (not x) };
 ];
+
+define :falseProxy = extend1 [v -> v.:false] :booleanBehaviour;
+define :trueProxy = extend1 [v -> v.:true] :booleanBehaviour;
+
+define < = .<;
+define > = .>;
+
+define :symbolProxy = [
+  msg -> case self {
+	   .< -> :messageAccumulator {receiver -> receiver msg};
+	   _ -> error("Cannot send message to symbol", msg);
+	 };
+];
+
+define :messageAccumulator firstSender -> [
+  .> receiver -> firstSender receiver;
+  secondMsg -> :messageAccumulator {receiver -> firstSender receiver secondMsg};
+];
+
+define false = '%assemble' () { .scheme -> (not (quote nonfalse)) };
+define true = false.not;
+
+define + = .+;
+define * = .*;
+define == = .==;
+
+define eq x y -> '%assemble' (x = x, y = y) { .scheme -> ('eq?' x y) };
+
+define write x -> '%assemble' (x = x) { .scheme -> (begin (write x) (newline)) };
+
+define :eq = [
+  .== other -> '%assemble' (a = self, b = other) { .scheme -> ('eqv?' a b) };
+];
+
+define case x options -> options x;
+
+define :numberProxy = [
+  .+ other -> '%assemble' (a = self, b = other) { .scheme -> (+ a b) };
+  .* other -> '%assemble' (a = self, b = other) { .scheme -> (* a b) };
+  .< other -> '%assemble' (a = self, b = other) { .scheme -> (< a b) };
+];
+
+define s:empty = [ .s:case v -> v.s:empty ];
+define s:cons(head, tail) -> [ .s:case v -> v.s:next(head, tail) ];
+
+define :tupleProxy = [
+  .length -> '%assemble' (v = self) { .scheme -> ('vector-length' v) };
+  .get(n) -> '%assemble' (v = self, n = n) { .scheme -> ('vector-ref' v n) };
+  .s:case v -> :tupleIterator(self, 0).s:case v;
+];
+
+define :tupleIterator(tuple, index) ->
+  (index < (tuple.length)) {
+    .:true -> [.s:case v -> v.s:next(tuple.get(index), :tupleIterator(tuple, index + 1))];
+    .:false -> [.s:case v -> v.s:empty];
+  };
+
+define s:do stream fn ->
+  stream .s:case {
+    .s:empty -> .ok;
+    .s:next(head, tail) -> do fn(head); s:do tail fn;
+  };
+
+define s:foldl stream knil kons ->
+  stream .s:case {
+    .s:empty -> knil;
+    .s:next(head, tail) -> s:foldl tail (kons(head, knil)) kons;
+  };
+
+define s:foldr stream knil kons ->
+  stream .s:case {
+    .s:empty -> knil;
+    .s:next(head, tail) -> kons(head, s:foldr tail knil kons);
+  };
+
+define s:reverse stream -> s:foldl (s:cons, s:empty) stream;
+define s:append(s1, s2) -> s:foldr (s:cons, s2) s1;
+
+define s:foldlK stream knil kons k ->
+  stream .s:case {
+    .s:empty -> k(knil);
+    .s:next(head, tail) -> kons (head, knil) {newSeed -> s:foldlK tail newSeed kons k};
+  };
+
+define s:foldrK stream knil kons k ->
+  stream .s:case {
+    .s:empty -> k(knil);
+    .s:next(head, tail) -> s:foldr tail knil kons {newSeed -> kons (head, newSeed) k};
+  };
+
+define s:concatenate stream -> s:foldr stream s:empty s:append;
+
+define s:map stream fn -> s:foldr stream s:empty {elt, acc -> s:cons(fn(elt), acc)};
+
+-- s:map (1, 2, 3) {x -> x};

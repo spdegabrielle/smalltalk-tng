@@ -11,29 +11,63 @@
 
 ;---------------------------------------------------------------------------
 
+(define etng-namespaces '())
+(define implicit-etng-namespace #f)
+
+(define builtin-namespace-url "http://www.eighty-twenty.org/etng/r2/builtin#")
+
+(define (set-etng-namespace! prefix url)
+  (cond
+   ((assq prefix etng-namespaces) =>
+    (lambda (cell) (set-box! (cdr cell) url)))
+   (else
+    (set! etng-namespaces (cons (cons prefix (box url)) etng-namespaces)))))
+
+(set-etng-namespace! '|| builtin-namespace-url)
+
+(define (mangle-etng-id* url localname)
+  (string->symbol (string-append "etng___" url (symbol->string localname))))
+
 (define (mangle-etng-id id)
   (cond
-   ((qname? id) (error 'implement-qnames-please))
-   ((symbol? id) (string->symbol (string-append "etng___" (symbol->string id))))
+   ((qname? id)
+    (cond
+     ((assq (qname-uri id) etng-namespaces) =>
+      (lambda (entry)
+	(mangle-etng-id* (unbox (cdr entry)) (qname-localname id))))
+     (else
+      (error 'unknown-qname-prefix id))))
+   ((symbol? id)
+    (if implicit-etng-namespace
+	(mangle-etng-id* implicit-etng-namespace id)
+	(mangle-etng-id* "" id)))
    (else (error 'invalid-etng-id id))))
 
-(define (etng-send-via-named-proxy receiver name message)
-  (etng-send* receiver (namespace-variable-value (mangle-etng-id name)) message))
+(define (etng-send-via-named-proxy receiver localname message)
+  (etng-send* receiver
+	      (namespace-variable-value (mangle-etng-id* builtin-namespace-url localname))
+	      message))
+
+(define (etng-lookup receiver via message)
+  (let lookup ((clauses (etng-function-clauses via)))
+    (if (null? clauses)
+	#f
+	((car clauses) message
+		       (lambda (thunk) thunk)
+		       (lambda () (lookup (cdr clauses)))))))
 
 (define (etng-send* receiver via message)
   (cond
    ((etng-function? via)
-    (let lookup ((clauses (etng-function-clauses via)))
-      (if (null? clauses)
-	  (error 'does-not-understand receiver via message)
-	  ((car clauses)
-	   message
-	   (lambda (thunk)
-	     (thunk receiver))
-	   (lambda ()
-	     (lookup (cdr clauses)))))))
+    (let ((thunk (or (etng-lookup receiver via message)
+		     (error 'does-not-understand receiver via message))))
+      (thunk receiver)))
    ((number? via) (etng-send-via-named-proxy receiver 'numberProxy message))
    ((string? via) (etng-send-via-named-proxy receiver 'stringProxy message))
+   ((symbol? via) (etng-send-via-named-proxy receiver 'symbolProxy message))
+   ((vector? via) (etng-send-via-named-proxy receiver 'tupleProxy message))
+   ((not via) (etng-send-via-named-proxy receiver 'falseProxy message))
+   ((eq? via #t) (etng-send-via-named-proxy receiver 'trueProxy message))
    (else (error 'illegal-primitive-object receiver via message))))
 
 (define (etng-send receiver message)
@@ -57,6 +91,8 @@
 
   (define (toplevel ast)
     (case (car ast)
+      ((define-namespace) `(set-etng-namespace! ',(cadr ast) ',(caddr ast)))
+      ((declare-default-namespace) `(set! implicit-etng-namespace ',(cadr ast)))
       ((define-value) (make-definition (cadr ast) (expr (caddr ast))))
       ((define-function) (make-definition (cadr ast) (expr `(function ,(caddr ast)))))
       (else (expr ast))))
@@ -87,7 +123,7 @@
 	      (case (car p)
 		((discard) on-success)
 		((bind) `(let ((,(mangle-etng-id (cadr p)) _arg)) ,on-success))
-		((lit) `(if (eqv? ',(cadr p) _arg)
+		((lit) `(if (equal? ',(cadr p) _arg)
 			    ,on-success
 			    ,on-failure))
 		((tuple) `(if (and (vector? _arg)
