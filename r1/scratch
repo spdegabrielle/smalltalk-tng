@@ -1,0 +1,29 @@
+1 to: 100 do: [:i|].
+
+** Pure interpretation:
+Hits: 407 Misses: 214
+Hits: 411 Misses: 210
+Hits: 409 Misses: 212
+
+** After compilation to vector-instructions:
+Hits: 610 Misses: 11
+Hits: 618 Misses: 3
+Hits: 618 Misses: 3
+
+
+
+n@(Number traits) fib [
+  (n < 2)
+    ifTrue: [ n ]
+    ifFalse: [ (n - 1) fib + (n - 2) fib ]
+].
+
+
+csi> (time (do ((i 0 (+ i 1))) ((= i 10)) (fib 20)))
+    0.59 seconds elapsed
+    0.09 seconds in (major) GC
+       1 mutations
+     111 minor GCs
+      21 major GCs
+
+.... ThiNG took 112 seconds for a (20 fib).
