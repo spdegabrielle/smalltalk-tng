@@ -3,6 +3,71 @@ define-method (d=[Directory: _] nonUnderscoreFolders) (
   filter: d folders by: [x=_: (x name beginsWith: '_') not]
 );;
 
-filter: folders d by: [$x: not (name x beginsWith: '_')]
+"filter: folders d by: [$x: not (name x beginsWith: '_')]"
 
-define Log = [
+define [
+  Log: [indentLevel: 0 ref]
+
+  ([indentLevel: i] indentDuring: blk):
+    ( i set: i get + 1,
+      blk $ (),
+      i set: i get - 1 )
+
+  (write $x)
+];;
+
+"
+Syntactic sugar:
+
+   a + b   ==>   (0: a #(+): b)
+   a b     ==>   (#b: a)
+   a: b    ==>   (a: b)
+
+   [a + b] ==>   [0: a #(+): b]
+   [a b]   ==>   [#b: a]
+   [a: b]  ==>   [a: b]
+"
+
+"
+Read '<==>' as 'matched against' (with pattern on left, value on right)
+
+As a pattern:		((indentLevel: i) indentDuring: blk) <==> msg
+Expands to:		(0: (indentLevel: i) indentDuring: blk) <==> msg
+Which results in        (indentLevel: i) <==> (msg $ #0)
+                    and blk <==> (msg $ #indentDuring)
+Which results in    	i <==> (msg $ #0) $ #indentLevel
+                    and blk <==> (msg $ #indentDuring)
+
+
+    (foo: bar): ...      ->    bar bound to (msg $ #foo)
+    (foo bar): ...       ->    foo bound to (msg $ #bar)
+    (foo $ bar): ...     ->    illegal pattern
+    foo: ...             ->    foo bound to msg
+    123: ...             ->    123 matched with msg
+    #foo: ...            ->    #foo matched with msg
+
+Essentially, on the left of the colon (i.e. in pattern context), it is
+a form entirely analogous to an expression, although obviously
+application can't be matched since it's already been reduced. On the
+right of the colon is another pattern. (??????????????????????????)
+
+[
+  (foo: bar): zot
+
+  [foo: bar]: zot
+] $ msg
+
+2 = [lowBit: false high: [lowBit: true high: zero]]
+
+[lowBit: false high: [lowBit: true high: zero]] <>
+[lowBit: false high: [lowBit: true high: zero]]
+  --> (false <> ([lowBit: false high: [lowBit: true high: zero]] $ #lowBit)) ^
+      ([lowBit: true high: zero] <> ([lowBit: false high: [lowBit: true high: zero]] $ #high))
+
+([lowBit: false high: [lowBit: true high: zero]] $ #lowBit)
+  --> {presume matching against #high fails}
+      results in false
+
+What's the base case of the recursion??
+Need a distinction somewhere!
+"
