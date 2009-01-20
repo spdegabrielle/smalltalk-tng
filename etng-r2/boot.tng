@@ -23,7 +23,7 @@ define > = .>;
 
 define :symbolProxy = [
   msg -> case self {
-	   .< -> :messageAccumulator {receiver -> receiver msg};
+	   .< -> :messageAccumulator {receiver -> receiver} msg;
 	   _ -> error("Cannot send message to symbol", msg);
 	 };
 ];
