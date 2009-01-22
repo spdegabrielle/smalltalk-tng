@@ -6,8 +6,8 @@ define raw_callcc fn ->
 define callcc fn ->
   raw_callcc { k -> fn {v -> '%assemble' (v = v, k = k) { .scheme -> (k v) } } };
 
-define extend1 base extension ->
-  '%assemble' (base = base, extension = extension) {
+define extends extension base ->
+  '%assemble' (extension = extension, base = base) {
     .scheme -> ('etng-merge-functions' extension base);
   };
 
@@ -15,8 +15,8 @@ define :booleanBehaviour = [
   .not -> '%assemble' (x = self) { .scheme -> (not x) };
 ];
 
-define :falseProxy = extend1 [v -> v.:false] :booleanBehaviour;
-define :trueProxy = extend1 [v -> v.:true] :booleanBehaviour;
+define :falseProxy = :booleanBehaviour |extends [v -> v.:false];
+define :trueProxy = :booleanBehaviour |extends [v -> v.:true];
 
 define case x options -> options x;
 
