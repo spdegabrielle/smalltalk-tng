@@ -64,7 +64,7 @@
       (thunk receiver)))
    ((number? via) (etng-send-via-named-proxy receiver 'numberProxy message))
    ((string? via) (etng-send-via-named-proxy receiver 'stringProxy message))
-   ((symbol? via) (etng-send-via-named-proxy receiver 'symbolProxy message))
+   ((qname-or-symbol? via) (etng-send-via-named-proxy receiver 'symbolProxy message))
    ((vector? via) (etng-send-via-named-proxy receiver 'tupleProxy message))
    ((not via) (etng-send-via-named-proxy receiver 'falseProxy message))
    ((eq? via #t) (etng-send-via-named-proxy receiver 'trueProxy message))
