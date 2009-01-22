@@ -35,6 +35,8 @@ define :messageAccumulator firstSender -> [
   secondMsg -> :messageAccumulator {receiver -> firstSender receiver secondMsg};
 ];
 
+define <> = < >;
+
 define false = '%assemble' () { .scheme -> (not (quote nonfalse)) };
 define true = false.not;
 
