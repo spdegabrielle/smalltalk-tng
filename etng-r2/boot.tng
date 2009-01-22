@@ -18,6 +18,8 @@ define :booleanBehaviour = [
 define :falseProxy = extend1 [v -> v.:false] :booleanBehaviour;
 define :trueProxy = extend1 [v -> v.:true] :booleanBehaviour;
 
+define case x options -> options x;
+
 define < = .<;
 define > = .>;
 
@@ -47,8 +49,6 @@ define write x -> '%assemble' (x = x) { .scheme -> (begin (write x) (newline)) }
 define :eq = [
   .== other -> '%assemble' (a = self, b = other) { .scheme -> ('eqv?' a b) };
 ];
-
-define case x options -> options x;
 
 define :numberProxy = [
   .+ other -> '%assemble' (a = self, b = other) { .scheme -> (+ a b) };
