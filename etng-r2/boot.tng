@@ -91,8 +91,8 @@ define s:foldr stream knil kons ->
     .s:next(head, tail) -> kons(head, s:foldr tail knil kons);
   };
 
-define s:reverse stream -> s:foldl (s:cons, s:empty) stream;
-define s:append(s1, s2) -> s:foldr (s:cons, s2) s1;
+define s:reverse stream -> s:foldl stream s:empty s:cons;
+define s:append s1 s2 -> s:foldr s1 s2 s:cons;
 
 define s:foldlK stream knil kons k ->
   stream .s:case {
@@ -103,7 +103,7 @@ define s:foldlK stream knil kons k ->
 define s:foldrK stream knil kons k ->
   stream .s:case {
     .s:empty -> k(knil);
-    .s:next(head, tail) -> s:foldr tail knil kons {newSeed -> kons (head, newSeed) k};
+    .s:next(head, tail) -> s:foldrK tail knil kons {newSeed -> kons (head, newSeed) k};
   };
 
 define s:concatenate stream -> s:foldr stream s:empty s:append;
