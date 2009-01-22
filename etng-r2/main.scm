@@ -47,6 +47,7 @@
 (define COMMA (string->symbol ","))
 (define ARROW '->)
 (define DISCARD '_)
+(define PIPE (string->symbol "|"))
 
 (define (list-interleave x xs)
   (cond

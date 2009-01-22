@@ -15,7 +15,7 @@ toplevel-item =
 ;
 
 parse =
-	  ~(comma | semi | arrow | equal)
+	  ~(comma | semi | arrow | equal | pipe)
 	  :n
 	  ( grouping(n)
 	  | ?(qname-or-symbol? n) -> `(ref ,n)
@@ -24,6 +24,7 @@ parse =
 	| semi -> (error 'extra 'semi)
 	| arrow -> (error 'extra 'arrow)
 	| equal -> (error 'extra 'equal)
+	| pipe -> (error 'extra 'pipe)
 	| -> (error)
 ;
 
@@ -66,6 +67,21 @@ assemble-clauses =
 tuple =
 	  send:s (comma send)*:ss -> (cons s ss)
 	| ~_ -> '()
+;
+
+send =
+	  parse:receiver message*:messages
+	    -> (fold (lambda (msg rcvr) (msg rcvr)) receiver messages)
+	| message+:messages
+	    -> (let ((g (gensym 'pipe)))
+	         `(function (method ((bind ,g)) ,(fold (lambda (msg rcvr) (msg rcvr))
+		 	    	    	   	       `(ref ,g)
+						       messages))))
+;
+
+message =
+	  parse:p -> (lambda (rcvr) `(send ,rcvr ,p))
+	| pipe parse:p -> (lambda (msg) `(send ,p ,msg))
 ;
 
 send =
@@ -125,3 +141,4 @@ quote = :x ?(equal? x QUOTE-QNAME) -> x;
 comma = :x ?(eq? x COMMA) -> x;
 arrow = :x ?(eq? x ARROW) -> x;
 equal = :x ?(eq? x '=) -> x;
+pipe = :x ?(eq? x PIPE) -> x;
