@@ -3,8 +3,10 @@
 pass = toplevel;
 
 expr =
-	  {#object method*:methods ~_} -> (convert-constant-methods 'object methods)
-	| {#function method*:methods ~_} -> (convert-constant-methods 'function methods)
+	  {#object :selfid method*:methods ~_} ->
+		(convert-constant-methods `(object ,selfid) methods)
+	| {#function method*:methods ~_} ->
+		(convert-constant-methods '(function) methods)
 ;
 
 method =

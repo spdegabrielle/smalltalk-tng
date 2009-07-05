@@ -30,7 +30,8 @@ parse =
 
 grouping =
 	  {#paren expr:e ~_ -> e}
-	| {#brack methods:ms -> `(object ,@ms)}
+	| #rec {#brace methods:ms -> `(object self ,@ms)}
+	| #rec :selfid {#brace methods:ms -> `(object ,selfid ,@ms)}
 	| {#brace methods:ms -> `(function ,@ms)}
 ;
 
@@ -131,7 +132,7 @@ pattern-grouping =
 	  {#paren quote :n -> `(lit ,n)}
 	| {#paren pattern-tuple:p ~_ -> p}
 	| {#brace -> (error 'object-matching-not-supported)}
-	| {#brack -> (error 'function-matching-not-supported)}
+	| {#brack -> (error 'list-matching-not-supported)}
 ;
 
 semis = (:x ?(eq? x SEMI))*;

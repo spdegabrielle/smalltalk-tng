@@ -11,7 +11,7 @@ toplevel =
 expr =
 	  {#ref :name ~_} -> `(ref ,name)
 	| {#lit :literal ~_} -> `(lit ,literal)
-	| {#object method*:methods ~_} -> `(object ,@methods)
+	| {#object :selfid method*:methods ~_} -> `(object ,selfid ,@methods)
 	| {#function method*:methods ~_} -> `(function ,@methods)
 	| {#tuple expr*:elts ~_} -> `(tuple ,@elts)
 	| {#send expr:receiver expr:message ~_} -> `(send ,receiver ,message)

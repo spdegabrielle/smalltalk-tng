@@ -72,6 +72,7 @@
 	"super"
 	"nextMethod"
 	;;"letrec"
+	"rec"
 	"namespace"
 	;;"new"
 	"return"

@@ -11,29 +11,29 @@ define extends extension base ->
     .scheme -> ('etng-merge-functions' extension base);
   };
 
-define :booleanBehaviour = [
+define :booleanBehaviour = rec {
   .not -> '%assemble' (x = self) { .scheme -> (not x) };
-];
+};
 
-define :falseProxy = :booleanBehaviour |extends [v -> v.:false];
-define :trueProxy = :booleanBehaviour |extends [v -> v.:true];
+define :falseProxy = :booleanBehaviour |extends {v -> v.:false};
+define :trueProxy = :booleanBehaviour |extends {v -> v.:true};
 
 define case x options -> options x;
 
 define < = .<;
 define > = .>;
 
-define :symbolProxy = [
+define :symbolProxy = rec {
   msg -> case self {
 	   .< -> :messageAccumulator {receiver -> receiver} msg;
 	   _ -> error("Cannot send message to symbol", msg);
 	 };
-];
+};
 
-define :messageAccumulator firstSender -> [
+define :messageAccumulator firstSender -> {
   .> receiver -> firstSender receiver;
   secondMsg -> :messageAccumulator {receiver -> firstSender receiver secondMsg};
-];
+};
 
 define <> = < >;
 
@@ -48,29 +48,29 @@ define eq x y -> '%assemble' (x = x, y = y) { .scheme -> ('eq?' x y) };
 
 define write x -> '%assemble' (x = x) { .scheme -> (begin (write x) (newline)) };
 
-define :eq = [
+define :eq = rec {
   .== other -> '%assemble' (a = self, b = other) { .scheme -> ('eqv?' a b) };
-];
+};
 
-define :numberProxy = [
+define :numberProxy = rec {
   .+ other -> '%assemble' (a = self, b = other) { .scheme -> (+ a b) };
   .* other -> '%assemble' (a = self, b = other) { .scheme -> (* a b) };
   .< other -> '%assemble' (a = self, b = other) { .scheme -> (< a b) };
-];
+};
 
-define s:empty = [ .s:case v -> v.s:empty ];
-define s:cons(head, tail) -> [ .s:case v -> v.s:next(head, tail) ];
+define s:empty = { .s:case v -> v.s:empty };
+define s:cons(head, tail) -> { .s:case v -> v.s:next(head, tail) };
 
-define :tupleProxy = [
+define :tupleProxy = rec {
   .length -> '%assemble' (v = self) { .scheme -> ('vector-length' v) };
   .get(n) -> '%assemble' (v = self, n = n) { .scheme -> ('vector-ref' v n) };
   .s:case v -> :tupleIterator(self, 0).s:case v;
-];
+};
 
 define :tupleIterator(tuple, index) ->
   (index < (tuple.length)) {
-    .:true -> [.s:case v -> v.s:next(tuple.get(index), :tupleIterator(tuple, index + 1))];
-    .:false -> [.s:case v -> v.s:empty];
+    .:true -> {.s:case v -> v.s:next(tuple.get(index), :tupleIterator(tuple, index + 1))};
+    .:false -> {.s:case v -> v.s:empty};
   };
 
 define s:do stream fn ->

@@ -5,20 +5,20 @@ namespace interpreter = "http://eighty-twenty.org/etng/r1/ns/interpreter#";
 
 ---------------------------------------------------------------------------
 
-define :TExtendable = [
+define :TExtendable = rec {
   .:with extension ->
     reflection:reflect(self).reflection:extendWith(reflection:reflect(extension)).reflection:reify;
-];
+};
 
 ---------------------------------------------------------------------------
 namespace "http://eighty-twenty.org/etng/r1/ns/interpreter/meta-representation#";
 
-define makeQName uri localName -> [
+define makeQName uri localName -> {
   .uri = uri;
   .localName = localName;
-];
+};
 
-define emptyEnvironment = [];
+define emptyEnvironment = {};
 
 define searchEnvironment env name ->
   1;
@@ -29,18 +29,18 @@ define extendEnvironment env1 env2 ->
 define match pattern value env ->
   1;
 
-define Object = [
+define Object = {
   .lookup message k ->
     1;
-];
+};
 
 define makeObject methods ->
   1;
 
-define Function = [
+define Function = {
   .lookup message k ->
     1;
-];
+};
 
 define makeFunction methods ->
   1;
@@ -48,8 +48,8 @@ define makeFunction methods ->
 define makeMessage parts ->
   1;
 
-define Tuple = [
-];
+define Tuple = {
+};
 
 define makeTuple values ->
   1;
@@ -57,14 +57,14 @@ define makeTuple values ->
 ---------------------------------------------------------------------------
 namespace "http://eighty-twenty.org/etng/r1/ns/interpreter#";
 
-define InterpreterState = :TExtendable.:with [
+define InterpreterState = :TExtendable.:with {
   .env = reflection:emptyEnvironment;
   .k = < >;
-  .self_ = [];
+  .self_ = {};
   .nextMethod_ = {exit(<.internalError>);} -- ??
-];
+};
 
-define Interpreter = [
+define Interpreter = rec {
   .globals = 1;
 
   .unboundVariable state name ->
@@ -87,7 +87,7 @@ define Interpreter = [
 
   .apply state (closure, bindings, newSelf, newNextMethod) k ->
     let env = reflection:extendEnvironment (closure.reflection:env) bindings;
-    self.eval (state.:with [.env = env; .nextMethod_ = newNextMethod; .self_ = newSelf;])
+    self.eval (state.:with {.env = env; .nextMethod_ = newNextMethod; .self_ = newSelf;})
 	      (closure.reflection:exp)
 	      k;
 
@@ -100,7 +100,7 @@ define Interpreter = [
 
   .evlis state elements k ->
     let e = {(element, acc) continue -> self.eval state element {v -> continue [v | acc]}};
-    s:foldlK elements [|] e {acc -> k (s:reverse acc)};
+    s:foldlK elements [] e {acc -> k (s:reverse acc)};
 
   .eval state exp k ->
     (<exp.core:kind>) {
@@ -118,7 +118,7 @@ define Interpreter = [
       .core:Let ->
 	self.eval state (exp.core:value) {v ->
 	  let newEnv = reflection:match (exp.core:pattern) v (state.env);
-	  self.eval (state.:with [.env = newEnv]) (exp.core:body) k};
+	  self.eval (state.:with {.env = newEnv}) (exp.core:body) k};
       .core:Ref -> self.lookup state (exp.core:name) k;
       .core:Tuple -> self.evlis state (exp.core:elements) {vals -> k (reflection:makeTuple vals)};
       .core:Lit -> exp.core:value;
@@ -130,4 +130,4 @@ define Interpreter = [
 	};
       .core:Meta -> 1;
     };
-];
+};

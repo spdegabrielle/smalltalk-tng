@@ -101,7 +101,7 @@
     (case (car ast)
       ((ref) (mangle-etng-id (cadr ast)))
       ((lit) `',(cadr ast))
-      ((object) `(make-etng-function ',(cdr ast) (list ,@(map (method #t) (cdr ast)))))
+      ((object) `(make-etng-function ',(cddr ast) (list ,@(map (method (cadr ast)) (cddr ast)))))
       ((function) `(make-etng-function ',(cdr ast) (list ,@(map (method #f) (cdr ast)))))
       ((tuple) `(vector ,@(map expr (cdr ast))))
       ((send) `(etng-send ,(expr (cadr ast)) ,(expr (caddr ast))))
@@ -110,7 +110,7 @@
 			      (cadr ast))
 		     ,(schemeify (cadr (assq 'scheme (caddr ast))))))))
 
-  (define (method should-capture-self)
+  (define (method self-id)
     (lambda (ast)
       `(lambda (_arg _kt _kf)
 	 ,(let* ((patterns (cadr ast))
@@ -140,7 +140,7 @@
 							on-failure))))))
 			      ,on-failure))))
 	    (pattern (car patterns)
-		     `(_kt (lambda (,(if should-capture-self (mangle-etng-id 'self) '_self))
+		     `(_kt (lambda (,(if self-id (mangle-etng-id self-id) '_self))
 			     ,continuation))
 		     `(_kf))))))
 
