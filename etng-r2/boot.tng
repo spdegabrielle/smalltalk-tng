@@ -11,6 +11,12 @@ define extends extension base ->
     .scheme -> ('etng-merge-functions' extension base);
   };
 
+-- (someproxy |as somedelegate) somemessage
+define as receiver via message ->
+  '%assemble' (receiver = receiver, via = via, message = message) {
+    .scheme -> ('etng-send*' receiver via message)
+  };
+
 define :booleanBehaviour = rec {
   .not -> '%assemble' (x = self) { .scheme -> (not x) };
 };
