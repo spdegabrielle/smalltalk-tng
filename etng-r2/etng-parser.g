@@ -85,13 +85,6 @@ message =
 	| pipe parse:p -> (lambda (msg) `(send ,p ,msg))
 ;
 
-send =
-	parse:receiver message*:messages
-	->  (fold (lambda (msg rcvr) `(send ,rcvr ,msg)) receiver messages)
-;
-
-message = parse;
-
 methods =
 	  normal-method:m semis methods:ms -> (cons m ms)
 	| constant-method:m semis methods:ms -> (cons m ms)
