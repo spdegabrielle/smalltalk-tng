@@ -1,0 +1,2 @@
+http://twitter.com/annwitbrock/statuses/2687952205:
+Something to consider? RT @mfeathers [...] system recoverability as a goal of prog. lang. design.
