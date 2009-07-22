@@ -18,7 +18,7 @@
 #AR= echo
 
 # Unix, generally 
-CC = gcc -fpic 
+CC = gcc -fPIC 
 DEBUG=-g -Wall -Wno-char-subscripts -O 
 Osuf=o 
 SOsuf=so 
@@ -34,7 +34,8 @@ LD = gcc
 LDFLAGS = -shared 
 DEBUG=-g -Wno-char-subscripts -O
 SYS_LIBS= -ldl
-PLATFORM_FEATURES= -DSUN_DL=1
+#PLATFORM_FEATURES= -DSUN_DL=1
+PLATFORM_FEATURES=
 
 # Cygwin
 #PLATFORM_FEATURES = -DUSE_STRLWR=0
