@@ -1,0 +1,7 @@
+syntax: glob
+*.o
+*.a
+*.so
+
+syntax: regexp
+^experiments/codegen/tinyscheme[^/]*/scheme$
