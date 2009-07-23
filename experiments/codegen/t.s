@@ -307,4 +307,37 @@ _foo:
 	addl	$131071, %eax
 	addl	$131071, %ebx
 
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+
+//	movb	%bl, %al
+//	movw	%bx, %ax
+//	movl	%ebx, %eax
+
+/*
+	movl	0x34343434, %eax
+	movb	0x34343434, %eax
+	movl	x, %eax
+	movb	x, %eax
+x:
+	*/
+
+	subl	$12, %edx	// 83 ea 0c
+	subb	$12, %edx	// 80 ea 0c
+	subl	$131071, %edx	// 81 ea ff ff 01 00
+
+	addl	$25, %edx
+	addb	$25, %edx
+	addl	$131071, %edx
+
+	addl	$250, %edx
+	addb	$250, %edx
+	addl	$131071, %edx
+	
 	.subsections_via_symbols
