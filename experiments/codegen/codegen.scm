@@ -39,7 +39,7 @@
 	(lambda (acc pos relocs)
 	  (k (reverse acc) (reverse relocs)))))
 
-(define (_RET) #xC3)
+(define (*ret) #xC3)
 
 (define regs '((eax 0)
 	       (ecx 1)
@@ -300,7 +300,7 @@
 	   ;;#x8b #x44 #x24 #x08		;; movl 8(%esp), %eax
 	   (*mov (@ %esp 8) %eax)
 	   (_CAR)
-	   (_RET)))
+	   (*ret)))
 
 (define real-code (list #x55 #x89 #xe5 #x83 #xec #x08 #x8b #x45 #x0c #xc9 #xc3))
 
@@ -312,7 +312,25 @@
 	   (_CAR)
 	   (*mov %ebp %esp)
 	   (pop32 %ebp)
-	   (_RET)))
+	   (*ret)))
+
+(define mk_integer-addr (lookup-native-symbol "mk_integer"))
+(define get-native-function-addr
+  (simple-function
+   (push32 %ebp)
+   (*mov %esp %ebp)
+   (*op 'and #xfffffff0 %esp)
+   (*op 'sub 16 %esp)
+   (*mov (@ %ebp 8) %ecx)
+   (*mov (@ %ebp 12) %eax)
+   (_CAR)
+   (_CAR) ;; function pointer is in car slot
+   (*mov %ecx (@ %esp 0))
+   (*mov %eax (@ %esp 4))
+   (*call (position-independent mk_integer-addr))
+   (*mov %ebp %esp)
+   (pop32 %ebp)
+   (*ret)))
 
 (define puts-addr (lookup-native-symbol "puts"))
 (define puts (simple-function
@@ -334,6 +352,6 @@
 
 	      (*mov %ebp %esp)
 	      (pop32 %ebp)
-	      (_RET)))
+	      (*ret)))
 
 (puts "Hello world")
