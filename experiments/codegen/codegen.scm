@@ -129,12 +129,6 @@
 
 ;; In 32-bit mode, #x66 is the 16-bit-operand override prefix
 
-;; Mod values:
-;;  00 - no displacement, [reg]
-;;  01 - 8bit displacement, [reg + n]
-;;  10 - 32bit displacement, [reg + n]
-;;  11 - direct, reg
-
 (define (mod-r-m* mod reg rm)
   (bitfield 2 mod 3 reg 3 rm))
 
@@ -159,6 +153,11 @@
 (define (imm32-if test-result i)
   (if test-result (imm32 i) (imm8 i)))
 
+;; Mod values:
+;;  00 - no displacement, [reg]
+;;  01 - 8bit displacement, [reg + n]
+;;  10 - 32bit displacement, [reg + n]
+;;  11 - direct, reg
 (define (mod-r-m reg modrm)
   (let ((reg (cond
 	      ((number? reg) reg)
@@ -307,14 +306,7 @@
 		     (pop32 %ebp)
 		     (*ret))))
 
-;; for 32bit offset, eax <- [eax + ofs] is 8B 80 XX XX XX XX
-
-	   ;; #x8b #x04 #x24			;; movl (%esp), %eax
-	   ;; #x8b #x44 #x24 #x04		;; movl 4(%esp), %eax
-	   ;; #x8b #x44 #x24 #x08		;; movl 8(%esp), %eax
-
 (define x (simple-function
-	   ;;#x8b #x44 #x24 #x08		;; movl 8(%esp), %eax
 	   (*mov (@ %esp 8) %eax)
 	   (_CAR)
 	   (*ret)))
