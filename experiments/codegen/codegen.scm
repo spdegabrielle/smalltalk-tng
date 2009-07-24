@@ -27,6 +27,18 @@
    ((assq reg regs) => cadr)
    (else (error "Invalid register" reg))))
 
+(define %eax 'eax)
+(define %ecx 'ecx)
+(define %edx 'edx)
+(define %ebx 'ebx)
+(define %esp 'esp)
+(define %ebp 'ebp)
+(define %esi 'esi)
+(define %edi 'edi)
+
+(define (register=? x y)
+  (eq? x y))
+
 (define (register? x)
   (symbol? x))
 
@@ -37,6 +49,15 @@
   (and (pair? x)
        (eq? (car x) '@)
        (pair? (cdr x))))
+
+(define (@ base-reg . maybe-offset)
+  (cond
+   ((and (number? base-reg) (null? maybe-offset))
+    (list '@ base-reg))
+   ((and (register? base-reg) (pair? maybe-offset) (number? (car maybe-offset)))
+    (list '@ base-reg (car maybe-offset)))
+   (else
+    (error "Invalid/unsupported memory reference" `(@ ,base-reg ,@maybe-offset)))))
 
 (define (memory-base-reg-or-absolute x)
   (cadr x))
@@ -112,7 +133,7 @@
 				 ((zero? offset) '())
 				 ((onebyte? offset) offset)
 				 (else (imm32 offset)))))
-	      (if (eq? base-reg 'esp)
+	      (if (register=? base-reg %esp)
 		  ;; can't directly use base reg, must use scaled indexing
 		  (list (mod-r-m* mod reg 4) #x24 offset-bytes)
 		  ;; normal
@@ -124,13 +145,13 @@
    ((assq opcode '((add 0) (or 1) (adc 2) (sbb 3) (and 4) (sub 5) (xor 6) (cmp 7))) => cadr)
    (else (error "arithmetic-opcode: Invalid opcode" opcode))))
 
-(define (arithmetic-instruction opcode target source . maybe-8bit)
+(define (*op opcode target source . maybe-8bit)
   (let ((opcode (arithmetic-opcode opcode))
 	(w-bit (if (null? maybe-8bit) 1 (if (car maybe-8bit) 0 1))))
     (cond
      ((immediate? source)
       (let ((s-bit (if (and (= w-bit 1) (onebyte? source)) 1 0)))
-	(if (eq? target 'eax)
+	(if (register=? target %eax)
 	    (list (bitfield 2 0 3 opcode 2 2 1 w-bit)
 		  (imm32-if (= w-bit 1) source))
 	    (list (bitfield 2 2 3 0 1 0 1 s-bit 1 w-bit)
@@ -139,7 +160,7 @@
      ((memory? source)
       (cond
        ((not (register? target))
-	(error "arithmetic-instruction: Cannot have memory source and non-register target"
+	(error "*op: Cannot have memory source and non-register target"
 	       (list opcode target source)))
        (else
 	(list (bitfield 2 0 3 opcode 2 1 1 w-bit) (mod-r-m target source)))))
@@ -148,10 +169,10 @@
        ((or (memory? target) (register? target))
 	(list (bitfield 2 0 3 opcode 2 0 1 w-bit) (mod-r-m source target)))
        (else
-	(error "arithmetic-instruction: Cannot have register source and non-mem, non-reg target"
+	(error "*op: Cannot have register source and non-mem, non-reg target"
 	       (list opcode target source)))))
      (else
-      (error "arithmetic-instruction: Invalid source"
+      (error "*op: Invalid source"
 	     (list opcode target source))))))
 
 (define (*mov target source . maybe-8bit)
@@ -167,7 +188,7 @@
 		(imm32-if (= w-bit 1) source))))
      ((memory? source)
       (cond
-       ((and (absolute-memory? source) (eq? target 'eax))
+       ((and (absolute-memory? source) (register=? target %eax))
 	;; special alternate encoding
 	(list (bitfield 7 #b1010000 1 w-bit) (imm32 (memory-base-reg-or-absolute source))))
        ((not (register? target))
@@ -176,7 +197,7 @@
 	(list (bitfield 2 2 3 1 2 1 1 w-bit) (mod-r-m target source)))))
      ((register? source)
       (cond
-       ((and (absolute-memory? target) (eq? source 'eax))
+       ((and (absolute-memory? target) (register=? source %eax))
 	;; special alternate encoding
 	(list (bitfield 7 #b1010001 1 w-bit) (imm32 (memory-base-reg-or-absolute target))))
        ((or (memory? target) (register? target))
@@ -193,8 +214,8 @@
 (define (pop32 reg)
   (mod-r-m* 1 3 (reg-num reg)))
 
-(define (_CAR) (*mov 'eax '(@ eax 4)))
-(define (_CDR) (*mov 'eax '(@ eax 8)))
+(define (_CAR) (*mov %eax (@ %eax 4)))
+(define (_CDR) (*mov %eax (@ %eax 8)))
 
 (define (code->binary codevec)
   (list->string (map integer->char (reverse codevec))))
@@ -213,21 +234,18 @@
 
 (define x (simple-function
 	   ;;#x8b #x44 #x24 #x08		;; movl 8(%esp), %eax
-	   (*mov 'eax '(@ esp 8))
+	   (*mov %eax (@ %esp 8))
 	   (_CAR)
 	   (_RET)))
 
 (define real-code (list #x55 #x89 #xe5 #x83 #xec #x08 #x8b #x45 #x0c #xc9 #xc3))
 
-(define (*sub target source) (arithmetic-instruction 'sub target source))
-(define (*add target source) (arithmetic-instruction 'add target source))
-
 (define y (simple-function
-	   (push32 'ebp)
-	   (*mov 'ebp 'esp)
-	   (*sub 'esp 8)
-	   (*mov 'eax '(@ ebp 12))
+	   (push32 %ebp)
+	   (*mov %ebp %esp)
+	   (*op 'sub %esp 8)
+	   (*mov %eax (@ %ebp 12))
 	   (_CAR)
-	   (*mov 'esp 'ebp)
-	   (pop32 'ebp)
+	   (*mov %esp %ebp)
+	   (pop32 %ebp)
 	   (_RET)))
