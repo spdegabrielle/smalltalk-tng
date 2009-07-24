@@ -290,6 +290,23 @@
        (disassemble bin)
        (build-native-function bin relocs)))))
 
+(define (round-up-to-nearest n val)
+  (let ((temp (+ val n -1)))
+    (- temp (remainder temp n))))
+
+(define (prelude-function locals-frame-size . instrs)
+  (let* ((existing-unaccounted-for-padding 8) ;; eip and ebp, just before stack adjustment
+	 (total-required-space (+ existing-unaccounted-for-padding locals-frame-size))
+	 (total-adjustment (- (round-up-to-nearest 16 total-required-space)
+			      existing-unaccounted-for-padding)))
+    (simple-function (push32 %ebp)
+		     (*mov %esp %ebp)
+		     (*op 'sub total-adjustment %esp)
+		     instrs
+		     (*mov %ebp %esp)
+		     (pop32 %ebp)
+		     (*ret))))
+
 ;; for 32bit offset, eax <- [eax + ofs] is 8B 80 XX XX XX XX
 
 	   ;; #x8b #x04 #x24			;; movl (%esp), %eax
@@ -304,41 +321,23 @@
 
 (define real-code (list #x55 #x89 #xe5 #x83 #xec #x08 #x8b #x45 #x0c #xc9 #xc3))
 
-(define y (simple-function
-	   (push32 %ebp)
-	   (*mov %esp %ebp)
-	   (*op 'sub 8 %esp)
+(define y (prelude-function 0
 	   (*mov (@ %ebp 12) %eax)
-	   (_CAR)
-	   (*mov %ebp %esp)
-	   (pop32 %ebp)
-	   (*ret)))
+	   (_CAR)))
 
 (define mk_integer-addr (lookup-native-symbol "mk_integer"))
 (define get-native-function-addr
-  (simple-function
-   (push32 %ebp)
-   (*mov %esp %ebp)
-   (*op 'and #xfffffff0 %esp)
-   (*op 'sub 16 %esp)
+  (prelude-function 8
    (*mov (@ %ebp 8) %ecx)
    (*mov (@ %ebp 12) %eax)
    (_CAR)
    (_CAR) ;; function pointer is in car slot
    (*mov %ecx (@ %esp 0))
    (*mov %eax (@ %esp 4))
-   (*call (position-independent mk_integer-addr))
-   (*mov %ebp %esp)
-   (pop32 %ebp)
-   (*ret)))
+   (*call (position-independent mk_integer-addr))))
 
 (define puts-addr (lookup-native-symbol "puts"))
-(define puts (simple-function
-	      (push32 %ebp)
-	      (*mov %esp %ebp)
-	      (*op 'and #xfffffff0 %esp)
-	      (*op 'sub 16 %esp)
-
+(define puts (prelude-function 4
 	      (*mov (@ %ebp 12) %eax)
 	      (_CAR)
 	      (*mov (@ %eax 4) %eax)
@@ -348,10 +347,6 @@
 	      ;(*call %eax)
 	      (*call (position-independent puts-addr))
 
-	      (*mov (@ %ebp 12) %eax)
-
-	      (*mov %ebp %esp)
-	      (pop32 %ebp)
-	      (*ret)))
+	      (*mov (@ %ebp 12) %eax)))
 
 (puts "Hello world")
