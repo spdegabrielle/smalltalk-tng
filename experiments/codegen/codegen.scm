@@ -425,6 +425,6 @@
 		  do-primitive do-call push-continuation)
        exp))))
 
-(jit-compile '(lambda (n)
+(jit-compile '(lambda (num)
 		(define (f n) (if (zero? n) 1 (* n (f (- n 1)))))
-		(f n)))
+		(f num)))
