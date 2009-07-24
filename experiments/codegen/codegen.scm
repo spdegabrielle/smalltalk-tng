@@ -10,13 +10,34 @@
 (define (check-arg pred val caller) #t)
 (load "srfi-1.scm")
 
-(define (assemble base . instrs)
-  (define (prepend instr base)
-    (cond
-     ((list? instr) (fold prepend base instr))
-     ((number? instr) (cons instr base))
-     (else (error "Expected instruction either list or number" instr))))
-  (fold prepend base instrs))
+(define (relocation? x)
+  (and (pair? x)
+       (eq? (car x) 'relocation)))
+
+(define (relocation-target x)
+  (cadr x))
+
+(define (assemble instrs k)
+  (define (walk instrs acc pos relocs k)
+    (if (null? instrs)
+	(k acc pos relocs)
+	(let ((instr (car instrs))
+	      (rest (cdr instrs)))
+	  (cond
+	   ((relocation? instr) (walk rest acc pos (cons (cons instr pos) relocs) k))
+	   ((list? instr) (walk instr acc pos relocs
+				(lambda (acc pos relocs)
+				  (walk rest acc pos relocs k))))
+	   ((number? instr) (walk rest (cons instr acc) (+ pos 1) relocs k))
+	   ((string? instr) (walk rest
+				  (append (reverse (map char->integer (string->list instr))) acc)
+				  (+ pos (string-length instr))
+				  relocs
+				  k))
+	   (else (error "Invalid instruction in stream" instr))))))
+  (walk instrs '() 0 '()
+	(lambda (acc pos relocs)
+	  (k (reverse acc) (reverse relocs)))))
 
 (define (_RET) #xC3)
 
@@ -50,7 +71,18 @@
   (symbol? x))
 
 (define (immediate? x)
-  (number? x))
+  (or (number? x)
+      (position-independent-immediate? x)))
+
+(define (position-independent-immediate? x)
+  (and (pair? x)
+       (eq? (car x) 'position-independent)))
+
+(define (position-independent x)
+  (list 'position-independent x))
+
+(define (position-independent-address x)
+  (cadr x))
 
 (define (memory? x)
   (and (pair? x)
@@ -106,17 +138,26 @@
 (define (mod-r-m* mod reg rm)
   (bitfield 2 mod 3 reg 3 rm))
 
-(define (onebyte? n)
-  (and (< n 128) (>= n -128)))
+(define (onebyte-immediate? n)
+  (and (number? n) (< n 128) (>= n -128)))
+
+(define (imm8 i)
+  (modulo i 256))
+
+(define (imm32* i)
+  (list (modulo i 256)
+	(modulo (shr i 8) 256)
+	(modulo (shr i 16) 256)
+	(modulo (shr i 24) 256)))
 
 (define (imm32 i)
-  (list (modulo i 256)
-	(modulo (quotient i 256) 256)
-	(modulo (quotient i 65536) 256)
-	(modulo (quotient i 16777216) 256)))
+  (if (position-independent-immediate? i)
+      (let ((address (position-independent-address i)))
+	(cons `(relocation ,address) (imm32* address)))
+      (imm32* i)))
 
 (define (imm32-if test-result i)
-  (if test-result (imm32 i) i))
+  (if test-result (imm32 i) (imm8 i)))
 
 (define (mod-r-m reg modrm)
   (let ((reg (cond
@@ -134,11 +175,11 @@
 	    (list (mod-r-m* 0 reg 5) (imm32 base-reg))
 	    (let ((mod (cond
 			((zero? offset) 0)
-			((onebyte? offset) 1)
+			((onebyte-immediate? offset) 1)
 			(else 2)))
 		  (offset-bytes (cond
 				 ((zero? offset) '())
-				 ((onebyte? offset) offset)
+				 ((onebyte-immediate? offset) (imm8 offset))
 				 (else (imm32 offset)))))
 	      (if (register=? base-reg %esp)
 		  ;; can't directly use base reg, must use scaled indexing
@@ -146,7 +187,7 @@
 		  ;; normal
 		  (list (mod-r-m* mod reg (reg-num base-reg)) offset-bytes))))))
      (else (error "mod-r-m needs a register or memory for modrm" modrm)))))
-	    
+
 (define (arithmetic-opcode opcode)
   (cond
    ((assq opcode '((add 0) (or 1) (adc 2) (sbb 3) (and 4) (sub 5) (xor 6) (cmp 7))) => cadr)
@@ -157,13 +198,13 @@
 	(w-bit (if (null? maybe-8bit) 1 (if (car maybe-8bit) 0 1))))
     (cond
      ((immediate? source)
-      (let ((s-bit (if (and (= w-bit 1) (onebyte? source)) 1 0)))
+      (let ((s-bit (if (and (= w-bit 1) (onebyte-immediate? source)) 1 0)))
 	(if (register=? target %eax)
 	    (list (bitfield 2 0 3 opcode 2 2 1 w-bit)
 		  (imm32-if (= w-bit 1) source))
 	    (list (bitfield 2 2 3 0 1 0 1 s-bit 1 w-bit)
 		  (mod-r-m opcode target)
-		  (imm32-if (and (= w-bit 1) (not (onebyte? source))) source)))))
+		  (imm32-if (and (= w-bit 1) (not (onebyte-immediate? source))) source)))))
      ((memory? source)
       (cond
        ((not (register? target))
@@ -215,6 +256,15 @@
      (else
       (error "*mov: Invalid source" (list source target))))))
 
+(define (*call loc)
+  (cond
+   ((immediate? loc)
+    (list #xE8 (imm32 loc)))
+   ((or (register? loc) (memory? loc))
+    (list #xFF (mod-r-m 2 loc)))
+   (else
+    (error "*call: Invalid location" loc))))
+
 (define (push32 reg)
   (mod-r-m* 1 2 (reg-num reg)))
 
@@ -224,16 +274,20 @@
 (define (_CAR) (*mov (@ %eax 4) %eax))
 (define (_CDR) (*mov (@ %eax 8) %eax))
 
+(define (*getip reg)
+  (list (*call 0)
+	(pop32 reg)))
+
 (define (code->binary codevec)
-  (list->string (map integer->char (reverse codevec))))
+  (list->string (map integer->char codevec)))
 
 (define (simple-function . instrs)
-  (let ((code (apply assemble '() instrs)))
-    (write `(instrs ,instrs)) (newline)
-    (write `(finished-code ,(reverse code))) (newline)
-    (let ((bin (code->binary code)))
-      (disassemble bin)
-      (build-native-function bin))))
+  (assemble instrs
+	    (lambda (code relocs)
+	      (write `((code ,code) (relocs ,relocs))) (newline)
+	      (let ((bin (code->binary code)))
+		(disassemble bin)
+		(build-native-function bin relocs)))))
 
 ;; for 32bit offset, eax <- [eax + ofs] is 8B 80 XX XX XX XX
 
@@ -258,3 +312,27 @@
 	   (*mov %ebp %esp)
 	   (pop32 %ebp)
 	   (_RET)))
+
+(define puts-addr (lookup-native-symbol "puts"))
+(define puts (simple-function
+	      (push32 %ebp)
+	      (*mov %esp %ebp)
+	      (*op 'and #xfffffff0 %esp)
+	      (*op 'sub 16 %esp)
+
+	      (*mov (@ %ebp 12) %eax)
+	      (_CAR)
+	      (*mov (@ %eax 4) %eax)
+	      (*mov %eax (@ %esp 0))
+
+	      ;(*mov puts-addr %eax)
+	      ;(*call %eax)
+	      (*call (position-independent puts-addr))
+
+	      (*mov (@ %ebp 12) %eax)
+
+	      (*mov %ebp %esp)
+	      (pop32 %ebp)
+	      (_RET)))
+
+(puts "Hello world")

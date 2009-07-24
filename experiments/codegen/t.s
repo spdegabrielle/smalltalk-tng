@@ -339,5 +339,5 @@ x:
 	addl	$250, %edx
 	addb	$250, %edx
 	addl	$131071, %edx
-	
+
 	.subsections_via_symbols
