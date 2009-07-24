@@ -1,5 +1,12 @@
 (load "tinyscheme+cvs20090722/init.scm")
 
+(define reverse
+  (let ((reverse reverse))
+    (lambda (x)
+      (if (null? x)
+	  x
+	  (reverse x)))))
+
 (define (check-arg pred val caller) #t)
 (load "srfi-1.scm")
 
