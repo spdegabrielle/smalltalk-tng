@@ -2,9 +2,10 @@
 (current-inspector (make-inspector))
 
 (define-record-type etng-function
-  (make-etng-function sources clauses)
+  (make-etng-function ;;sources
+		      clauses)
   etng-function?
-  (sources etng-function-sources)
+  ;;(sources etng-function-sources)
   (clauses etng-function-clauses))
 
 (current-inspector previous-inspector)
@@ -52,9 +53,19 @@
   (let lookup ((clauses (etng-function-clauses via)))
     (if (null? clauses)
 	#f
-	((car clauses) message
-		       (lambda (thunk) thunk)
-		       (lambda () (lookup (cdr clauses)))))))
+	(let apply-loop ((matcher (car clauses))
+			 (args message))
+	  (if (null? args)
+	      (make-etng-function ;;... some source code ...?
+	       (list matcher
+		     (lambda (arg kcomplete kmore kfail)
+		       (
+	      (let ((arg (car args))
+		    (remaining-args (cdr args)))
+		(matcher arg
+			 (lambda (thunk) thunk)
+			 (lambda (next-matcher) (apply-loop next-matcher remaining-args))
+			 (lambda () (lookup (cdr clauses)))))))
 
 (define (etng-send* receiver via message)
   (cond
@@ -74,7 +85,7 @@
   (etng-send* receiver receiver message))
 
 (define (etng-merge-functions f1 f2)
-  (make-etng-function (append (etng-function-sources f1) (etng-function-sources f2))
+  (make-etng-function ;;(append (etng-function-sources f1) (etng-function-sources f2))
 		      (append (etng-function-clauses f1) (etng-function-clauses f2))))
 
 (define (compile-to-scheme ast)
@@ -101,47 +112,49 @@
     (case (car ast)
       ((ref) (mangle-etng-id (cadr ast)))
       ((lit) `',(cadr ast))
-      ((object) `(make-etng-function ',(cddr ast) (list ,@(map (method (cadr ast)) (cddr ast)))))
-      ((function) `(make-etng-function ',(cdr ast) (list ,@(map (method #f) (cdr ast)))))
+      ((object) `(make-etng-function ;;',(cddr ast)
+				     (list ,@(map (method (cadr ast)) (cddr ast)))))
+      ((function) `(make-etng-function ;;',(cdr ast)
+				       (list ,@(map (method #f) (cdr ast)))))
       ((tuple) `(vector ,@(map expr (cdr ast))))
-      ((send) `(etng-send ,(expr (cadr ast)) ,(expr (caddr ast))))
+      ((send) `(etng-send ,(expr (cadr ast)) (list ,@(map expr (cddr ast)))))
       ((assemble) `(let ,(map (lambda (binding)
 				`(,(car binding) ,(expr (cadr binding))))
 			      (cadr ast))
 		     ,(schemeify (cadr (assq 'scheme (caddr ast))))))))
 
+  (define (pattern p on-success on-failure)
+    (case (car p)
+      ((discard) on-success)
+      ((bind) `(let ((,(mangle-etng-id (cadr p)) _arg)) ,on-success))
+      ((lit) `(if (equal? ',(cadr p) _arg)
+		  ,on-success
+		  ,on-failure))
+      ((tuple) `(if (and (vector? _arg)
+			 (= (vector-length _arg) ,(length (cdr p))))
+		    ,(let ((tuple-name (gensym '_argtuple)))
+		       `(let ((,tuple-name _arg))
+			  ,(let match-elts ((elts (cdr p))
+					    (index 0))
+			     (if (null? elts)
+				 on-success
+				 `(let ((_arg (vector-ref ,tuple-name ,index)))
+				    ,(pattern (car elts)
+					      (match-elts (cdr elts) (+ index 1))
+					      on-failure))))))
+		    ,on-failure))))
+
   (define (method self-id)
     (lambda (ast)
-      `(lambda (_arg _kt _kf)
+      `(lambda (_arg _kcomplete _kmore _kfail)
 	 ,(let* ((patterns (cadr ast))
 		 (body (caddr ast))
-		 (remaining-patterns (cdr patterns))
-		 (continuation (if (null? remaining-patterns)
-				   (expr body)
-				   (expr `(function (method ,remaining-patterns ,body))))))
-	    (define (pattern p on-success on-failure)
-	      (case (car p)
-		((discard) on-success)
-		((bind) `(let ((,(mangle-etng-id (cadr p)) _arg)) ,on-success))
-		((lit) `(if (equal? ',(cadr p) _arg)
-			    ,on-success
-			    ,on-failure))
-		((tuple) `(if (and (vector? _arg)
-				   (= (vector-length _arg) ,(length (cdr p))))
-			      ,(let ((tuple-name (gensym '_argtuple)))
-				 `(let ((,tuple-name _arg))
-				    ,(let match-elts ((elts (cdr p))
-						      (index 0))
-				       (if (null? elts)
-					   on-success
-					   `(let ((_arg (vector-ref ,tuple-name ,index)))
-					      ,(pattern (car elts)
-							(match-elts (cdr elts) (+ index 1))
-							on-failure))))))
-			      ,on-failure))))
+		 (remaining-patterns (cdr patterns)))
 	    (pattern (car patterns)
-		     `(_kt (lambda (,(if self-id (mangle-etng-id self-id) '_self))
-			     ,continuation))
-		     `(_kf))))))
+		     (if (null? remaining-patterns)
+			 `(_kcomplete (lambda (,(if self-id (mangle-etng-id self-id) '_self))
+					,(expr body)))
+			 `(_kmore ,((method #f) `(method ,remaining-patterns ,body))))
+		     `(_kfail))))))
 
   (toplevel ast))

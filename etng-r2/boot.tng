@@ -2,7 +2,7 @@ namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
 
 define raw_callcc fn ->
   '%assemble' (fn = fn) { .scheme -> ('call-with-current-continuation'
-					(lambda (k) ('etng-send' fn k))) };
+					(lambda (k) ('etng-send' fn (list k)))) };
 define callcc fn ->
   raw_callcc { k -> fn {v -> '%assemble' (v = v, k = k) { .scheme -> (k v) } } };
 
@@ -14,7 +14,8 @@ define extends extension base ->
 -- (someproxy |as somedelegate) somemessage
 define as receiver via message ->
   '%assemble' (receiver = receiver, via = via, message = message) {
-    .scheme -> ('etng-send*' receiver via message)
+    -- FIXME: need some form of apply here, now we are n-ary instead of unary!
+    .scheme -> ('etng-send*' receiver via (list message))
   };
 
 define :booleanBehaviour = rec {

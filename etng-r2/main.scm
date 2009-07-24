@@ -147,8 +147,7 @@
     ((object) `(,(car exp) ,(cadr exp) ,@(map convert-method (cddr exp))))
     ((function) `(,(car exp) ,@(map convert-method (cdr exp))))
     ((tuple) `(tuple ,@(map (lambda (x) (alpha-convert-expr x conversions)) (cdr exp))))
-    ((send) `(send ,(alpha-convert-expr (cadr exp) conversions)
-		   ,(alpha-convert-expr (caddr exp) conversions)))))
+    ((send) `(send ,@(map (lambda (x) (alpha-convert-expr x conversions)) (cdr exp))))))
 
 (define (alpha-convert-pattern pat conversions)
   (case (car exp)
@@ -234,9 +233,9 @@
 (load "compile-to-scheme.scm")
 
 (define (rude-evaluator input)
-  (let* ((ast (!pp 'ast input))
+  (let* ((ast (pp 'ast input))
 	 (ast (!pp 'convert-constant-methods-pass (convert-constant-methods-pass ast)))
-	 (scheme-ast (!pp 'compile-to-scheme (compile-to-scheme ast)))
+	 (scheme-ast (pp 'compile-to-scheme (compile-to-scheme ast)))
 	 (thunk (!pp 'compile-scheme (eval `(lambda () ,scheme-ast))))
 	 )
     (write (thunk))
