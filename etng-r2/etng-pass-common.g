@@ -14,7 +14,7 @@ expr =
 	| {#object :selfid method*:methods ~_} -> `(object ,selfid ,@methods)
 	| {#function method*:methods ~_} -> `(function ,@methods)
 	| {#tuple expr*:elts ~_} -> `(tuple ,@elts)
-	| {#send expr:receiver expr:message ~_} -> `(send ,receiver ,message)
+	| {#send expr:receiver expr*:message ~_} -> `(send ,receiver ,@message)
 	| {#assemble {assemble-binding*}:bindings {assemble-clause*}:clauses}
 	  -> `(assemble ,bindings ,clauses)
 ;

@@ -71,18 +71,19 @@ tuple =
 ;
 
 send =
-	  parse:receiver message*:messages
-	    -> (fold (lambda (msg rcvr) (msg rcvr)) receiver messages)
-	| message+:messages
+	  parse:receiver parse*:arguments pipeline:continuation
+	    -> (continuation (if (null? arguments) receiver `(send ,receiver ,@arguments)))
+	| &pipe pipeline
 	    -> (let ((g (gensym 'pipe)))
-	         `(function (method ((bind ,g)) ,(fold (lambda (msg rcvr) (msg rcvr))
-		 	    	    	   	       `(ref ,g)
-						       messages))))
+	       	 `(function (method ((bind ,g)) ,(continuation `(ref ,g)))))
 ;
 
-message =
-	  parse:p -> (lambda (rcvr) `(send ,rcvr ,p))
-	| pipe parse:p -> (lambda (msg) `(send ,p ,msg))
+pipeline =
+	  pipe parse:receiver parse*:arguments pipeline:continuation
+	    -> (lambda (first-argument-ast)
+	         (continuation `(send ,receiver ,first-argument-ast ,@arguments)))
+	|   -> (lambda (first-argument-ast)
+	         first-argument-ast)
 ;
 
 methods =
