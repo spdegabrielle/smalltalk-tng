@@ -145,7 +145,7 @@
    ((assq opcode '((add 0) (or 1) (adc 2) (sbb 3) (and 4) (sub 5) (xor 6) (cmp 7))) => cadr)
    (else (error "arithmetic-opcode: Invalid opcode" opcode))))
 
-(define (*op opcode target source . maybe-8bit)
+(define (*op opcode source target . maybe-8bit)
   (let ((opcode (arithmetic-opcode opcode))
 	(w-bit (if (null? maybe-8bit) 1 (if (car maybe-8bit) 0 1))))
     (cond
@@ -161,7 +161,7 @@
       (cond
        ((not (register? target))
 	(error "*op: Cannot have memory source and non-register target"
-	       (list opcode target source)))
+	       (list opcode source target)))
        (else
 	(list (bitfield 2 0 3 opcode 2 1 1 w-bit) (mod-r-m target source)))))
      ((register? source)
@@ -170,12 +170,12 @@
 	(list (bitfield 2 0 3 opcode 2 0 1 w-bit) (mod-r-m source target)))
        (else
 	(error "*op: Cannot have register source and non-mem, non-reg target"
-	       (list opcode target source)))))
+	       (list opcode source target)))))
      (else
       (error "*op: Invalid source"
-	     (list opcode target source))))))
+	     (list opcode source target))))))
 
-(define (*mov target source . maybe-8bit)
+(define (*mov source target . maybe-8bit)
   (let ((w-bit (if (null? maybe-8bit) 1 (if (car maybe-8bit) 0 1))))
     (cond
      ((immediate? source)
@@ -192,7 +192,7 @@
 	;; special alternate encoding
 	(list (bitfield 7 #b1010000 1 w-bit) (imm32 (memory-base-reg-or-absolute source))))
        ((not (register? target))
-	(error "*mov: Cannot have memory source and non-register target" (list target source)))
+	(error "*mov: Cannot have memory source and non-register target" (list source target)))
        (else
 	(list (bitfield 2 2 3 1 2 1 1 w-bit) (mod-r-m target source)))))
      ((register? source)
@@ -204,9 +204,9 @@
 	(list (bitfield 2 2 3 1 2 0 1 w-bit) (mod-r-m source target)))
        (else
 	(error "*mov: Cannot have register source and non-mem, non-reg target"
-	       (list target source)))))
+	       (list source target)))))
      (else
-      (error "*mov: Invalid source" (list target source))))))
+      (error "*mov: Invalid source" (list source target))))))
 
 (define (push32 reg)
   (mod-r-m* 1 2 (reg-num reg)))
@@ -214,8 +214,8 @@
 (define (pop32 reg)
   (mod-r-m* 1 3 (reg-num reg)))
 
-(define (_CAR) (*mov %eax (@ %eax 4)))
-(define (_CDR) (*mov %eax (@ %eax 8)))
+(define (_CAR) (*mov (@ %eax 4) %eax))
+(define (_CDR) (*mov (@ %eax 8) %eax))
 
 (define (code->binary codevec)
   (list->string (map integer->char (reverse codevec))))
@@ -224,7 +224,9 @@
   (let ((code (apply assemble '() instrs)))
     (write `(instrs ,instrs)) (newline)
     (write `(finished-code ,(reverse code))) (newline)
-    (build-native-function (code->binary code))))
+    (let ((bin (code->binary code)))
+      (disassemble bin)
+      (build-native-function bin))))
 
 ;; for 32bit offset, eax <- [eax + ofs] is 8B 80 XX XX XX XX
 
@@ -234,7 +236,7 @@
 
 (define x (simple-function
 	   ;;#x8b #x44 #x24 #x08		;; movl 8(%esp), %eax
-	   (*mov %eax (@ %esp 8))
+	   (*mov (@ %esp 8) %eax)
 	   (_CAR)
 	   (_RET)))
 
@@ -242,10 +244,10 @@
 
 (define y (simple-function
 	   (push32 %ebp)
-	   (*mov %ebp %esp)
-	   (*op 'sub %esp 8)
-	   (*mov %eax (@ %ebp 12))
-	   (_CAR)
 	   (*mov %esp %ebp)
+	   (*op 'sub 8 %esp)
+	   (*mov (@ %ebp 12) %eax)
+	   (_CAR)
+	   (*mov %ebp %esp)
 	   (pop32 %ebp)
 	   (_RET)))
