@@ -2,7 +2,19 @@ syntax: glob
 *.o
 *.a
 *.so
+*.la
+*.lo
+*.Plo
 
 syntax: regexp
 ^experiments/codegen/tinyscheme[^/]*/scheme$
 ^experiments/codegen/shell$
+
+^experiments/codegen/libdis\.h$
+^experiments/codegen/libdisasm-0.23/dist$
+^experiments/codegen/libdisasm-0.23/(.*/|)\.(libs|deps)$
+^experiments/codegen/libdisasm-0.23/(.*/|)config\.(h|log|status)$
+^experiments/codegen/libdisasm-0.23/(.*/|)Makefile$
+^experiments/codegen/libdisasm-0.23/(.*/|)libtool$
+^experiments/codegen/libdisasm-0.23/(.*/|)stamp-h1
+^experiments/codegen/libdisasm-0.23/(.*/|)x86dis/x86dis$
