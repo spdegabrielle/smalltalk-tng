@@ -17,7 +17,7 @@
 (define (relocation-target x)
   (cadr x))
 
-(define (assemble instrs k)
+(define (flatten-and-pre-relocate instrs k)
   (define (walk instrs acc pos relocs k)
     (if (null? instrs)
 	(k acc pos relocs)
@@ -282,12 +282,13 @@
   (list->string (map integer->char codevec)))
 
 (define (simple-function . instrs)
-  (assemble instrs
-	    (lambda (code relocs)
-	      (write `((code ,code) (relocs ,relocs))) (newline)
-	      (let ((bin (code->binary code)))
-		(disassemble bin)
-		(build-native-function bin relocs)))))
+  (flatten-and-pre-relocate
+   instrs
+   (lambda (code relocs)
+     (write `((code ,code) (relocs ,relocs))) (newline)
+     (let ((bin (code->binary code)))
+       (disassemble bin)
+       (build-native-function bin relocs)))))
 
 ;; for 32bit offset, eax <- [eax + ofs] is 8B 80 XX XX XX XX
 
