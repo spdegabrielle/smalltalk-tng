@@ -140,7 +140,7 @@
 (define (imm32 i)
   (if (position-independent-immediate? i)
       (let ((address (position-independent-address i)))
-	(cons `(relocation ,address) (imm32* address)))
+	(list `(relocation ,address) 0 0 0 0))
       (imm32* i)))
 
 (define (imm32-if test-result i)
@@ -425,6 +425,6 @@
 		  do-primitive do-call push-continuation)
        exp))))
 
-(jit-compile '(lambda (n)
+(jit-compile '(lambda (num)
 		(define (f n) (if (zero? n) 1 (* n (f (- n 1)))))
-		(f n)))
+		(f num)))
