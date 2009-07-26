@@ -11,6 +11,10 @@
 
 #include "libdis.h"
 
+#ifndef RTLD_DEFAULT
+#define RTLD_DEFAULT NULL
+#endif
+
 static void die(char const *format, ...) {
   va_list vl;
   va_start(vl, format);
