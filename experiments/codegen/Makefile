@@ -1,6 +1,8 @@
 CFLAGS+=-Wall -O2 -DSTANDALONE=0 -I tinyscheme+cvs20090722
 LDFLAGS+=-O2 -DSTANDALONE=0 -I tinyscheme+cvs20090722
 
+all: libdisasm.a shell
+
 shell: shell.o libdisasm.a
 	$(CC) $(LDFLAGS) -o $@ \
 		$< \
