@@ -1,6 +1,8 @@
 (load "tinyscheme+cvs20090722/init.scm")
 
 (define (check-arg pred val caller) #t)
+(macro (:optional form)
+  `(if (null? ,(cadr form)) ,(caddr form) (car ,(cadr form))))
 (load "srfi-1.scm")
 
 (define (relocation? x)
