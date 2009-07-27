@@ -1,0 +1,51 @@
+Regular C conventions
+
+	pushl	%ebp
+	movl	%esp, %ebp
+	; Args start at 8(%ebp), and go upward
+	; Result in %eax
+	popl	%ebp
+	ret
+
+So we see..
+
+	... we're in a subroutine
+	%ebp points at our caller's saved state:
+		ebp[0]		frame chain
+		ebp[4]		return address
+		ebp[8]		argument zero
+		...
+		ebp[ebp[0]]	frame chain (next frame along)
+	%esp points at the top of our work area
+	work, loading arguments on the stack
+	call to our new subroutine
+		- after this, the return address is top-of-stack
+	In the new routine, push ebp
+		- this saves away our caller's frame pointer
+	set ebp equal to the current value of esp
+		- now we're fully set up to start working in
+		  this subroutine.
+	continue working, using args between ebp[8] and ebp[ebp[0]]
+	when we're done, reset esp to ebp, deallocating our scratchpad
+	pop ebp, which restores our caller's frame pointer
+	ret, which pops and jumps to the return address at top-of-stack
+	we're back in the state we were in before the call.
+	now we remove the arguments we put on the stack.
+
+In order to adapt this calling convention for tail calls, it's
+necessary to put the return address and frame pointer links *first*,
+before putting arguments on the stack. So instead of
+
+	high mem	args
+			ret addr
+			frame pointer
+	low mem
+
+we need
+
+	high mem	ret addr
+			frame pointer
+			args
+	low mem
+
+We don't really care if retaddr and framepointer are swapped.
