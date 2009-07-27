@@ -8,8 +8,9 @@
 
 (define gensym
   (let ((counter 14641))
-    (lambda ()
-      (let ((v (string->symbol (string-append "g" (number->string counter)))))
+    (lambda maybe-prefix
+      (let ((v (string->symbol (string-append (if (null? maybe-prefix) "g" (car maybe-prefix))
+					      (number->string counter)))))
 	(set! counter (+ counter 1))
 	v))))
 
@@ -98,7 +99,10 @@
   (lambda (
 	   error
 	   undefined
+	   begin-env
 	   allocate-env
+	   end-env
+	   leave-env
 	   update-env
 	   load-env
 	   unbound-variable-read
@@ -144,10 +148,12 @@
 	  env
 	  (make-env (caar defs) #f (make-recursive-env (cdr defs) env))))
     (define (e-recursive-definitions defs xs env k)
-      (let ((new-env (make-recursive-env defs env)))
+      (let ((new-env (end-env #t (make-recursive-env defs (begin-env #t env)))))
 	(define (fill-init defs pos)
 	  (if (null? defs)
-	      (e (cons 'begin xs) new-env k)
+	      (e (cons 'begin xs) new-env
+		 (lambda (v)
+		   (leave-env #t v k)))
 	      (e (cdar defs) new-env
 		 (push-continuation
 		  (lambda (v)
@@ -201,8 +207,11 @@
 	  ((lambda) (k (load-closure
 			(cadr x)
 			(lambda (actuals k)
-			  (let ((new-env (extend-env-with-actuals (cadr x) actuals env)))
-			    (e-body '() (cddr x) new-env k))))))
+			  (let ((new-env (end-env #f (extend-env-with-actuals (cadr x) actuals
+									      (begin-env #f env)))))
+			    (e-body '() (cddr x) new-env
+				    (lambda (v)
+				      (leave-env #f v k))))))))
 	  ((begin) (cond ((null? (cdr x)) (k (undefined)))
 			 ((null? (cddr x)) (e (cadr x) env k))
 			 (else (e (cadr x) env
@@ -213,8 +222,9 @@
 		   (push-continuation
 		    (lambda (v)
 		      (do-if v
-			     (lambda () (e (caddr x) env k))
-			     (lambda () (e (cadddr x) env k)))))))
+			     (lambda (k) (e (caddr x) env k))
+			     (lambda (k) (e (cadddr x) env k))
+			     k)))))
 	  ((set!) (search-env env (cadr x)
 			      (lambda (annotation v cell)
 				(if (eq? annotation 'macro)
@@ -249,13 +259,16 @@
   (let ()
     (define (error key val) (12345678 'magic-error-procedure key val))
     (define (undefined) 17)
+    (define (begin-env is-recursive env) env)
     (define (allocate-env name v) 'local)
+    (define (end-env is-recursive env) env)
+    (define (leave-env is-recursive v k) (k v))
     (define (update-env name old-annotation v) old-annotation)
     (define (load-env name annotation v) v)
     (define (unbound-variable-read x) (error 'unbound-variable-read x))
     (define (load-literal x) x)
     (define (load-closure formals f) f)
-    (define (do-if v tk fk) (if v (tk) (fk)))
+    (define (do-if v tg fg k) (if v (tg k) (fg k)))
     (define (push-frame count k) k)
     (define (update-frame index v) v)
     (define (do-primitive names vals expressions k)
@@ -272,8 +285,8 @@
       (search expressions))
     (define (do-call operator operands k) (operator operands k))
     (define (push-continuation k) k)
-    (make-eval error undefined allocate-env update-env load-env unbound-variable-read
-	       load-literal load-closure do-if push-frame update-frame
+    (make-eval error undefined begin-env allocate-env end-env leave-env update-env load-env
+	       unbound-variable-read load-literal load-closure do-if push-frame update-frame
 	       do-primitive do-call push-continuation)))
 
 (define-global! 'compile
@@ -281,9 +294,18 @@
     (let ((continuation-depth (make-parameter 0)))
       (define (error key val) (12345678 'magic-error-procedure key val))
       (define (undefined) (load-literal 17))
+      (define (begin-env is-recursive env)
+	(write `(begin-env ,is-recursive)) (newline)
+	env)
       (define (allocate-env name v)
 	(write `(allocate-env ,name ,v)) (newline)
 	'local)
+      (define (end-env is-recursive env)
+	(write `(end-env ,is-recursive)) (newline)
+	env)
+      (define (leave-env is-recursive v k)
+	(write `(leave-env ,is-recursive)) (newline)
+	(k v))
       (define (update-env name old-annotation v)
 	(write `(update-env ,name ,old-annotation)) (newline)
 	old-annotation)
@@ -305,12 +327,14 @@
 		       v))
 	  (write `(OUT===============)) (newline)
 	  'closure-result))
-      (define (do-if v tk fk)
+      (define (do-if v tg fg k)
 	(write `(do-if ,v)) (newline)
-	(write `tk) (newline)
-	(tk)
-	(write `fk) (newline)
-	(fk))
+	(write `tg) (newline)
+	(tg (lambda (v)
+	      (write `fg) (newline)
+	      (fg (lambda (v)
+		    (write `done-if) (newline)
+		    (k v))))))
       (define (push-frame count k)
 	(write `(push-frame ,count)) (newline)
 	k)
@@ -333,8 +357,8 @@
 	  ;;(write `(pop-continuation ,v)) (newline)
 	  (continuation-depth (- (continuation-depth) 1))
 	  (k v)))
-      ((make-eval error undefined allocate-env update-env load-env unbound-variable-read
-		  load-literal load-closure do-if push-frame update-frame
+      ((make-eval error undefined begin-env allocate-env end-env leave-env update-env load-env
+		  unbound-variable-read load-literal load-closure do-if push-frame update-frame
 		  do-primitive do-call push-continuation)
        exp))))
 

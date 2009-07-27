@@ -5,34 +5,101 @@
   `(if (null? ,(cadr form)) ,(caddr form) (car ,(cadr form))))
 (load "srfi-1.scm")
 
-(define (relocation? x)
-  (and (pair? x)
-       (eq? (car x) 'relocation)))
+(define (symbol-append . syms)
+  (if (null? syms)
+      (error "No symbols supplied to symbol-append")
+      (string->symbol
+       (fold-right (lambda (sym acc)
+		     (if (zero? (string-length acc))
+			 (symbol->string sym)
+			 (string-append (symbol->string sym) acc)))
+		   ""
+		   syms))))
 
-(define (relocation-target x)
-  (cadr x))
+(macro (cheap-struct form)
+  (let ((record-name (cadr form))
+	(field-names (caddr form)))
+    (let ((maker-name (symbol-append 'make- record-name))
+	  (predicate-name (symbol-append record-name '?)))
+      `(begin
+	 (define (,maker-name ,@field-names)
+	   (vector ',record-name ,@field-names))
+	 (define (,predicate-name x)
+	   (and (vector? x)
+		(eq? (vector-ref x 0) ',record-name)))
+	 ,@(let loop ((field-names field-names)
+		      (counter 1))
+	     (if (null? field-names)
+		 '()
+		 (cons `(define (,(symbol-append record-name '- (car field-names)) x)
+			  (vector-ref x ,counter))
+		       (loop (cdr field-names) (+ counter 1)))))))))
+
+(define (filter-map-alist predicate transformer l)
+  (filter-map (lambda (entry) (and (predicate (car entry))
+				   (if transformer
+				       (transformer (car entry) (cdr entry))
+				       entry))) l))
+
+(cheap-struct relocation (target))
+(cheap-struct label-reference (name is-8bit))
+(cheap-struct label-anchor (name))
 
 (define (flatten-and-pre-relocate instrs k)
-  (define (walk instrs acc pos relocs k)
+  (define (walk instrs acc pos marks k)
     (if (null? instrs)
-	(k acc pos relocs)
+	(k acc pos marks)
 	(let ((instr (car instrs))
 	      (rest (cdr instrs)))
 	  (cond
-	   ((relocation? instr) (walk rest acc pos (cons (cons instr pos) relocs) k))
-	   ((list? instr) (walk instr acc pos relocs
-				(lambda (acc pos relocs)
-				  (walk rest acc pos relocs k))))
-	   ((number? instr) (walk rest (cons instr acc) (+ pos 1) relocs k))
+	   ((or (relocation? instr)
+		(label-anchor? instr)
+		(label-reference? instr))
+	    (walk rest acc pos (cons (cons instr pos) marks) k))
+	   ((list? instr) (walk instr acc pos marks
+				(lambda (acc pos marks)
+				  (walk rest acc pos marks k))))
+	   ((number? instr) (walk rest (cons instr acc) (+ pos 1) marks k))
 	   ((string? instr) (walk rest
 				  (append (reverse (map char->integer (string->list instr))) acc)
 				  (+ pos (string-length instr))
-				  relocs
+				  marks
 				  k))
 	   (else (error "Invalid instruction in stream" instr))))))
   (walk instrs '() 0 '()
-	(lambda (acc pos relocs)
-	  (k (reverse acc) (reverse relocs)))))
+	(lambda (reversed-code final-length reversed-marks)
+	  (let* ((code (list->vector (reverse reversed-code)))
+		 (marks (reverse reversed-marks))
+		 (relocations (filter-map-alist relocation?
+						(lambda (r p) (cons (relocation-target r) p))
+						marks))
+		 (anchors (filter-map-alist label-anchor?
+					    (lambda (a p) (cons (label-anchor-name a) p))
+					    marks))
+		 (refs (filter-map-alist label-reference? #f marks)))
+	    (define (anchor-pos name)
+	      (cond
+	       ((assq name anchors) => cdr)
+	       (else (error "Undefined label-anchor" name))))
+	    (write `(code ,code))(newline)
+	    (write `(marks ,marks))(newline)
+	    (for-each (lambda (entry)
+			(let ((name (label-reference-name (car entry)))
+			      (is-8bit (label-reference-is-8bit (car entry)))
+			      (pos (cdr entry)))
+			  (if is-8bit
+			      (let ((delta (- (anchor-pos name) (+ pos 1))))
+				(if (onebyte-immediate? delta)
+				    (vector-set! code pos delta)
+				    (error "Short jump out of range" entry)))
+			      (let ((v (list->vector (imm32* (- (anchor-pos name) (+ pos 4))))))
+				(vector-set! code (+ pos 0) (vector-ref v 0))
+				(vector-set! code (+ pos 1) (vector-ref v 1))
+				(vector-set! code (+ pos 2) (vector-ref v 2))
+				(vector-set! code (+ pos 3) (vector-ref v 3))))))
+		      refs)
+	    (k code
+	       relocations)))))
 
 (define (*ret) #xC3)
 
@@ -59,6 +126,43 @@
 (define %esi 'esi)
 (define %edi 'edi)
 
+(define condition-codes '#((o)
+			   (no)
+			   (b nae)
+			   (nb ae)
+			   (e z)
+			   (ne nz)
+			   (be na)
+			   (nbe a)
+			   (s)
+			   (ns)
+			   (p pe)
+			   (np po)
+			   (l nge)
+			   (nl ge)
+			   (le ng)
+			   (nle g)))
+
+(define (condition-code-num code-sym)
+  (let loop ((i 0))
+    (cond
+     ((>= i 16) (error "Invalid condition-code" code-sym))
+     ((member code-sym (vector-ref condition-codes i)) i)
+     (else (loop (+ i 1))))))
+
+(define specials '((undefined 0)
+		   (true 1)
+		   (false 2)
+		   (nil 3)))
+
+(define (special-oop special-name)
+  (cond
+   ((assq special-name specials) =>
+    (lambda (entry)
+      (let ((special-num (cadr entry)))
+	(+ 3 (* special-num 8)))))
+   (else (error "Invalid special name" special-name))))
+
 (define (register=? x y)
   (eq? x y))
 
@@ -67,17 +171,8 @@
 
 (define (immediate? x)
   (or (number? x)
-      (position-independent-immediate? x)))
-
-(define (position-independent-immediate? x)
-  (and (pair? x)
-       (eq? (car x) 'position-independent)))
-
-(define (position-independent x)
-  (list 'position-independent x))
-
-(define (position-independent-address x)
-  (cadr x))
+      (relocation? x)
+      (label-reference? x)))
 
 (define (memory? x)
   (and (pair? x)
@@ -140,9 +235,8 @@
 	(modulo (shr i 24) 256)))
 
 (define (imm32 i)
-  (if (position-independent-immediate? i)
-      (let ((address (position-independent-address i)))
-	(list `(relocation ,address) 0 0 0 0))
+  (if (or (relocation? i) (label-reference? i))
+      (list i 0 0 0 0)
       (imm32* i)))
 
 (define (imm32-if test-result i)
@@ -226,7 +320,7 @@
 	  (list (bitfield 4 #b1011 1 w-bit 3 (reg-num target))
 		(imm32-if (= w-bit 1) source))
 	  (list (bitfield 2 3 3 0 2 3 1 w-bit)
-		(mod-r-m opcode target)
+		(mod-r-m 0 target)
 		(imm32-if (= w-bit 1) source))))
      ((memory? source)
       (cond
@@ -250,14 +344,33 @@
      (else
       (error "*mov: Invalid source" (list source target))))))
 
-(define (*call loc)
+(define (*call-or-jmp-like immediate-opcode indirect-mod loc)
   (cond
    ((immediate? loc)
-    (list #xE8 (imm32 loc)))
+    (list immediate-opcode (imm32 loc)))
    ((or (register? loc) (memory? loc))
-    (list #xFF (mod-r-m 2 loc)))
+    (list #xFF (mod-r-m indirect-mod loc)))
    (else
-    (error "*call: Invalid location" loc))))
+    (error "*call/*jmp: Invalid location" loc))))
+
+(define (*call loc)
+  (*call-or-jmp-like #xE8 2 loc))
+
+(define (is-short-jump? loc)
+  (and (label-reference? loc)
+       (label-reference-is-8bit loc)))
+
+(define (*jmp loc)
+  (if (is-short-jump? loc)
+      (list #xEB loc 0)
+      (*call-or-jmp-like #xE9 4 loc)))
+
+(define (*jmp-cc code loc)
+  (write `(*jmp-cc ,code ,loc))(newline)
+  (let ((tttn (condition-code-num code)))
+    (if (is-short-jump? loc)
+	(list (bitfield 4 7 4 tttn) loc 0)
+	(list #x0F (bitfield 4 8 4 tttn) (imm32 loc)))))
 
 (define (push32 reg)
   (mod-r-m* 1 2 (reg-num reg)))
@@ -273,7 +386,7 @@
 	(pop32 reg)))
 
 (define (code->binary codevec)
-  (list->string (map integer->char codevec)))
+  (list->string (map integer->char (vector->list codevec))))
 
 (define (simple-function . instrs)
   (flatten-and-pre-relocate
@@ -321,7 +434,7 @@
    (_CAR) ;; function pointer is in car slot
    (*mov %ecx (@ %esp 0))
    (*mov %eax (@ %esp 4))
-   (*call (position-independent mk_integer-addr))))
+   (*call (make-relocation mk_integer-addr))))
 
 (define puts-addr (lookup-native-symbol "puts"))
 (define puts (prelude-function 4
@@ -332,7 +445,7 @@
 
 	      ;(*mov puts-addr %eax)
 	      ;(*call %eax)
-	      (*call (position-independent puts-addr))
+	      (*call (make-relocation puts-addr))
 
 	      (*mov (@ %ebp 12) %eax)))
 
@@ -367,66 +480,222 @@
 
 (define-global! 'jit-compile
   (lambda (exp)
-    (let ((continuation-depth (make-parameter 0)))
-      (define (error key val) (12345678 'magic-error-procedure key val))
-      (define (undefined) (load-literal 17))
+    (let ((env-accumulator #f)
+
+	  (continuation-depth (make-parameter 0))
+	  (instruction-rev-acc (make-parameter '()))
+	  (frame-depth (make-parameter 0))
+	  (frame-stack (make-parameter '())))
+
+      (define (dp term)
+	(display (make-string (* 2 (length (frame-stack))) #\ ))
+	(write term)
+	(newline))
+
+      ;; -- Data types used to represent partial values
+
+      (cheap-struct argument (number))
+      (cheap-struct literal (number))
+      (cheap-struct recursive-binding (number frame-depth))
+
+      ;; -- Interface to assembler
+
+      (define (emit! . instrs)
+	(dp `(emit! ,@instrs))
+	(instruction-rev-acc (cons instrs (instruction-rev-acc))))
+
+      (define (*mov-to-eax source)
+	(if (and (register? source)
+		 (register=? source %eax))
+	    '()
+	    (*mov source %eax)))
+
+      (define (location-for-value v)
+	(cond
+	 ((argument? v) (@ %esp (+ (frame-depth) (* (+ (argument-number v) 1) 4))))
+	 ((literal? v) (literal-number v))
+	 ((recursive-binding? v) (@ %esp (+ (- (frame-depth) (recursive-binding-frame-depth v))
+					    (* (+ (recursive-binding-number v) 1) -4))))
+	 ((or (register? v) (memory? v) (immediate? v)) v)
+	 (else (error "Invalid PE value" v))))
+
+      (define (move-esp-by! slot-count)
+	(when (not (zero? slot-count))
+	  (let ((nbytes (abs (* slot-count 4))))
+	    (emit! (*op (if (positive? slot-count) 'add 'sub) nbytes %esp))
+	    (frame-depth ((if (positive? slot-count) - +) (frame-depth) nbytes)))))
+
+      (define (allocate! nwords)
+	(let ((ok-label (gensym "allocok")))
+	  (emit! (*mov %esi %eax)
+		 (*op 'add (* nwords 4) %esi)
+		 (*op 'cmp %esi %edi)
+		 (*jmp-cc 'ge (make-label-reference ok-label #t))
+		 (*mov %eax %esi)
+		 (*mov (* nwords 4) %eax))
+	  (trap! 0)
+	  (emit! (make-label-anchor ok-label))))
+
+      (define (push-frame* count)
+	(dp `(push-frame* ,count (frame-stack ,(frame-stack))))
+	(when (positive? count)
+	  (move-esp-by! (- count)))
+	(frame-stack (cons count (frame-stack))))
+
+      (define (pop-frame*)
+	(dp `(pop-frame* (frame-stack ,(frame-stack))))
+	(let ((count (car (frame-stack))))
+	  (when (positive? count)
+	    (move-esp-by! (car (frame-stack))))
+	  (frame-stack (cdr (frame-stack)))))
+
+      ;; -- Interpreter-core API
+
+      ;;(define (error key val)
+      ;;...?)
+
+      (define (undefined)
+	(special-oop 'undefined))
+
+      (define (begin-env is-recursive env)
+	(dp `(begin-env ,is-recursive))
+	(set! env-accumulator (if is-recursive 0 #f))
+	env)
+
       (define (allocate-env name v)
-	(write `(allocate-env ,name ,v)) (newline)
-	'local)
+	(dp `(allocate-env ,name ,v))
+	(if env-accumulator
+	    (let ((a (make-recursive-binding env-accumulator (frame-depth))))
+	      (set! env-accumulator (+ env-accumulator 1))
+	      a)
+	    (or v (undefined))))
+
+      (define (end-env is-recursive env)
+	(dp `(end-env ,is-recursive (env-accumulator ,env-accumulator)))
+	(when is-recursive
+	  (push-frame* env-accumulator)
+	  (set! env-accumulator #f))
+	env)
+
+      (define (leave-env is-recursive v k)
+	(dp `(leave-env ,is-recursive ,v))
+	(when is-recursive
+	  (pop-frame*))
+	(k v))
+
       (define (update-env name old-annotation v)
-	(write `(update-env ,name ,old-annotation)) (newline)
-	old-annotation)
+	(dp `(update-env ,name ,old-annotation ,v))
+	v)
+
       (define (load-env name annotation v)
-	(write `(load-env ,name ,annotation)) (newline)
-	v)
+	(dp `(load-env ,name ,annotation ,v))
+	(let ((loc (location-for-value annotation)))
+	  (if (immediate? loc)
+	      loc
+	      (begin
+		(emit! (*mov-to-eax loc))
+		%eax))))
+
       (define (unbound-variable-read name)
-	(write `(load-implicit-global ,name)) (newline)
-	'implicit-global-value)
+	(dp `(load-implicit-global ,name))
+	(let ((symloc (load-literal name)))
+	  (emit! (*mov (@ %eax 8) %eax)) ;; symbol's value -- FIXME, guessing about future
+	  %eax))
+
       (define (load-literal x)
-	(write `(load-literal ,x)) (newline)
-	x)
+	(dp `(load-literal ,x))
+	(let ((value (cond
+		      ((number? x) (+ 1 (* 4 x)))
+		      ((symbol? x) #x42424242)
+		      ((eq? x #t) (special-oop 'true))
+		      ((eq? x #f) (special-oop 'false))
+		      (else (error "Unsupported literal type" x)))))
+	  ;;(emit! (*mov-to-eax value))
+	  ;;%eax
+	  value))
+
       (define (load-closure formals f)
-	(write `(load-closure ,formals)) (newline)
-	(parameterize ((continuation-depth 0))
-	  (write `(IN================)) (newline)
-	  (f formals (lambda (v)
-		       (write `(return)) (newline)
-		       v))
-	  (write `(OUT===============)) (newline)
-	  'closure-result))
-      (define (do-if v tk fk)
-	(write `(do-if ,v)) (newline)
-	(write `tk) (newline)
-	(tk)
-	(write `fk) (newline)
-	(fk))
+	(dp `(load-closure ,formals))
+	(parameterize ((continuation-depth 0)
+		       (instruction-rev-acc '())
+		       (frame-depth 0)
+		       (frame-stack '()))
+	  (dp `=============================================)
+	  (f (do ((number 0 (+ number 0))
+		  (acc '() (cons (make-argument number) acc))
+		  (formals formals (cdr formals)))
+		 ((null? formals) (reverse acc)))
+	     (lambda (v)
+	       (dp `---------------------------------------------)
+	       (emit! (*mov-to-eax v)
+		      (*ret))
+	       (get-native-function-addr
+		(simple-function (reverse (instruction-rev-acc))))))))
+
+      (define (do-if v tg fg k)
+	(let ((false-label (gensym "testfalse"))
+	      (done-label (gensym "testdone")))
+	  (dp `(do-if ,v))
+	  (emit! (*op 'cmp (special-oop 'false) v)
+		 (*jmp-cc 'e (make-label-reference false-label #f)))
+	  (dp `tg)
+	  (tg (lambda (true-v)
+		(emit! (*mov-to-eax true-v)
+		       (*jmp (make-label-reference done-label #f))
+		       (make-label-anchor false-label))
+		(dp `fg)
+		(fg (lambda (false-v)
+		      (emit! (*mov-to-eax false-v)
+			     (make-label-anchor done-label))
+		      (dp `done-if)
+		      (k %eax)))))))
+
       (define (push-frame count k)
-	(write `(push-frame ,count)) (newline)
+	(dp `(push-frame ,count))
+	(push-frame* count)
 	k)
+
       (define (update-frame index v)
-	(write `(update-frame ,index ,v)) (newline)
-	v)
+	(dp `(update-frame ,index ,v))
+	(let ((loc (@ %esp (* index 4))))
+	  (emit! (*mov v loc))
+	  loc))
+
       (define (do-primitive names vals expressions k)
-	(write `(%assemble ,names ,vals ,expressions))
+	(dp `(%assemble ,names ,vals ,expressions))
 	(k 'primitive-result))
+
       (define (do-call operator operands k)
-	(write `(do-call ,(if (= (continuation-depth) 0)
+	(dp `(do-call ,(if (= (continuation-depth) 0)
 			      'tailcall
 			      'normalcall) ,operator ,operands))
-	(newline)
-	(k 'do-call-result))
+	(let ((loc (location-for-value operator)))
+	  (if (immediate? loc)
+	      ;; Always absolute
+	      (emit! (*call (make-relocation loc)))
+	      (emit! (*call loc))))
+	(pop-frame*)
+	(k %eax)) ;;;;;;'do-call-result))
+
       (define (push-continuation k)
-	;;(write `(push-continuation)) (newline)
 	(continuation-depth (+ (continuation-depth) 1))
+	;;(dp `(push-continuation ,(continuation-depth)))
 	(lambda (v)
-	  ;;(write `(pop-continuation ,v)) (newline)
+	  ;;(dp `(pop-continuation ,(continuation-depth) ,v))
 	  (continuation-depth (- (continuation-depth) 1))
 	  (k v)))
-      ((make-eval error undefined allocate-env update-env load-env unbound-variable-read
-		  load-literal load-closure do-if push-frame update-frame
+
+      ((make-eval error undefined begin-env allocate-env end-env leave-env update-env load-env
+		  unbound-variable-read load-literal load-closure do-if push-frame update-frame
 		  do-primitive do-call push-continuation)
        exp))))
 
-(jit-compile '(lambda (num)
-		(define (f n) (if (zero? n) 1 (* n (f (- n 1)))))
-		(f num)))
+(define (t1)
+  (jit-compile '(lambda (num)
+		  (= num 0))))
+
+(define (t2)
+  (jit-compile '(lambda (num)
+		  (define (f n) (if (zero? n) 1 (* n (f (- n 1)))))
+		  (f num))))
+
