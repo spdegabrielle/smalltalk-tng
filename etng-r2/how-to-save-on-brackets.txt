@@ -1,0 +1,12 @@
+So currently {} is non-self-capturing and [] is self-capturing. What
+if instead, the keyword "rec" (either "record" (== object) or
+"recursive") were used to introduce a self-binding/open-recursion?
+
+{ x -> x + 1 }	       	  	    { x -> x + 1 }
+
+rec { x -> x + 1 }		    [ x -> x + 1 ]
+
+It provides a nice place to put a name for self, too, if we decide
+that's a good idea:
+
+rec self { x -> x + 1 }

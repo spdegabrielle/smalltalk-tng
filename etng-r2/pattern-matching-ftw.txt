@@ -1,0 +1,37 @@
+19 May 2009
+---------------------------------------------------------------------------
+
+Unify OMeta with pattern matching. Support extensible pattern matching.
+
+Input stream can't hold semantic-values without extra stack
+discipline, because inputs and semantic-values are not of the same
+type.
+
+The wildcard operator, _, is of type token -> semantic-value
+
+Running example: parenthesised n-ary addition (into binary addition)
+
+  e()		--> e0():a '+' e0():b ^(a + b) / e0()
+  paren(p)	--> '(' p():a ')' ^a
+  e0()		--> paren(e) / num()
+  num()		--> '1' ^1 / '2' ^2 / '3' ^3 / ...
+
+
+define :e() -> { a=:e0() '+' b=:e0() -> a + b;
+                 a=:e0() -> a };
+
+define :paren(p) -> { '(' a=p() ')' -> a }
+
+define :e0() -> { a=:paren(:e) -> a;
+                  a=:num() -> a }
+
+define :num() -> { '1' -> 1; '2' -> 2; '3' -> 3; ... }
+
+
+8 July 2009
+---------------------------------------------------------------------------
+
+I should have written something about where the cutpoints in the
+backtracking should go. The issue is to do with autocurrying: if too
+many or too few arguments are supplied, how are the pattern-matching
+continuations wired up?
