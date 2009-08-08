@@ -121,3 +121,10 @@ define s:map stream fn -> s:foldr stream s:empty {elt, acc -> s:cons(fn(elt), ac
 -- (1, 2, 3) | s:foldr s:empty s:cons | s:do write;
 -- (1, 2) | s:append (3, 4) | s:do write;
 -- (| s:append (3, 4) | s:do write) (1, 2);
+
+-- define xyz = { .x .y .z -> .w ;
+-- 	       .x .y .w -> .a ;
+-- 	       .x .a .z -> 345 };
+-- define xx = xyz.x;
+-- define xy = xx.y;
+-- xx (xy (xy.z)) .z;
