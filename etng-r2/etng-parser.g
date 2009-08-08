@@ -73,7 +73,7 @@ tuple =
 send =
 	  parse:receiver parse*:arguments pipeline:continuation
 	    -> (continuation (if (null? arguments) receiver `(send ,receiver ,@arguments)))
-	| &pipe pipeline
+	| &pipe pipeline:continuation
 	    -> (let ((g (gensym 'pipe)))
 	       	 `(function (method ((bind ,g)) ,(continuation `(ref ,g)))))
 ;
