@@ -1,12 +1,10 @@
 (define previous-inspector (current-inspector))
 (current-inspector (make-inspector))
 
-(define-record-type etng-function
-  (make-etng-function ;;sources
-		      clauses)
-  etng-function?
-  ;;(sources etng-function-sources)
-  (clauses etng-function-clauses))
+(define-record-type etng-alternation
+  (make-etng-alternation clauses)
+  etng-alternation?
+  (clauses etng-alternation-clauses))
 
 (current-inspector previous-inspector)
 
@@ -49,28 +47,77 @@
 	      (namespace-variable-value (mangle-etng-id* builtin-namespace-url localname))
 	      message))
 
-(define (etng-lookup receiver via message)
-  (let lookup ((clauses (etng-function-clauses via)))
-    (if (null? clauses)
-	#f
-	(let apply-loop ((matcher (car clauses))
-			 (args message))
-	  (if (null? args)
-	      (make-etng-function ;;... some source code ...?
-	       (list matcher
-		     (lambda (arg kcomplete kmore kfail)
-		       (
-	      (let ((arg (car args))
-		    (remaining-args (cdr args)))
-		(matcher arg
-			 (lambda (thunk) thunk)
-			 (lambda (next-matcher) (apply-loop next-matcher remaining-args))
-			 (lambda () (lookup (cdr clauses)))))))
+(define (etng-alternation->parser a)
+  (lambda (input ks kf)
+    (let loop ((clauses (etng-alternation-clauses a)))
+      (if (null? clauses)
+	  (kf)
+	  ((car clauses) input ks (lambda () (loop (cdr clauses))))))))
+
+(define (make-parser-invocation first-message)
+  (let ((fragments-rev (make-parameter (list first-message))))
+    (define (fragment-following f)
+      (let search ((candidate #f)
+		   (fs (fragments-rev)))
+	(cond
+	 ((null? fs) (error 'should-not-reach-here 'fragment-following))
+	 ((eq? (car fs) f) candidate)
+	 (else (search (car fs) (cdr fs))))))
+    (define (remaining-input-following f)
+      (let search ((acc '())
+		   (fs (fragments-rev)))
+	(cond
+	 ((null? fs) (error 'should-not-reach-here 'fragment-following))
+	 ((eq? (car fs) f) acc)
+	 (else (search (append (car fs) acc) (cdr fs))))))
+    (define (stream-fragment f)
+      (let loop ((position f))
+	(lambda (op k)
+	  (case op
+	    ((next)
+	     (if (null? position)
+		 (let ((next-fragment (fragment-following f)))
+		   (if next-fragment
+		       ((stream-fragment next-fragment) 'next k)
+		       (let ((so-far (fragments-rev)))
+			 (lambda (ignored-receiver)
+			   (lambda (message)
+			     (parameterize ((fragments-rev (cons message so-far)))
+			       ((stream-fragment message) 'next k)))))))
+		 (k (car position) (loop (cdr position)))))
+	    ((rest)
+	     (k (append position (remaining-input-following f))))
+	    (else
+	     (error 'invalid-op op))))))
+    (stream-fragment first-message)))
+
+(define (etng-lookup via message)
+  (cond
+   ((etng-alternation? via)
+    ((etng-alternation->parser via)
+     (make-parser-invocation message)
+     (lambda (rhs-thunk-waiting-for-self remaining-input)
+       (remaining-input 'rest
+			(lambda (remaining-message)
+			  (if (null? remaining-message)
+			      rhs-thunk-waiting-for-self
+			      (lambda (receiver)
+				(etng-send (rhs-thunk-waiting-for-self receiver)
+					   remaining-message))))))
+     (lambda () #f)))
+   ((procedure? via)
+    (via message))
+   (else 'invalid-via (list via message))))
+
+(define (etng-directly-invokable? x)
+  (or (procedure? x) ;; a parser-invocation, (lambda (message) ...)
+      (etng-alternation? x) ;; a parser without invocation: see etng-lookup
+      ))
 
 (define (etng-send* receiver via message)
   (cond
-   ((etng-function? via)
-    (let ((thunk (or (etng-lookup receiver via message)
+   ((etng-directly-invokable? via)
+    (let ((thunk (or (etng-lookup via message)
 		     (error 'does-not-understand receiver via message))))
       (thunk receiver)))
    ((number? via) (etng-send-via-named-proxy receiver 'numberProxy message))
@@ -85,8 +132,7 @@
   (etng-send* receiver receiver message))
 
 (define (etng-merge-functions f1 f2)
-  (make-etng-function ;;(append (etng-function-sources f1) (etng-function-sources f2))
-		      (append (etng-function-clauses f1) (etng-function-clauses f2))))
+  (make-etng-alternation (append (etng-alternation-clauses f1) (etng-alternation-clauses f2))))
 
 (define (compile-to-scheme ast)
 
@@ -112,10 +158,8 @@
     (case (car ast)
       ((ref) (mangle-etng-id (cadr ast)))
       ((lit) `',(cadr ast))
-      ((object) `(make-etng-function ;;',(cddr ast)
-				     (list ,@(map (method (cadr ast)) (cddr ast)))))
-      ((function) `(make-etng-function ;;',(cdr ast)
-				       (list ,@(map (method #f) (cdr ast)))))
+      ((object) `(make-etng-alternation (list ,@(map (method (cadr ast)) (cddr ast)))))
+      ((function) `(make-etng-alternation (list ,@(map (method #f) (cdr ast)))))
       ((tuple) `(vector ,@(map expr (cdr ast))))
       ((send) `(etng-send ,(expr (cadr ast)) (list ,@(map expr (cddr ast)))))
       ((assemble) `(let ,(map (lambda (binding)
@@ -146,15 +190,20 @@
 
   (define (method self-id)
     (lambda (ast)
-      `(lambda (_arg _kcomplete _kmore _kfail)
-	 ,(let* ((patterns (cadr ast))
-		 (body (caddr ast))
-		 (remaining-patterns (cdr patterns)))
-	    (pattern (car patterns)
-		     (if (null? remaining-patterns)
-			 `(_kcomplete (lambda (,(if self-id (mangle-etng-id self-id) '_self))
-					,(expr body)))
-			 `(_kmore ,((method #f) `(method ,remaining-patterns ,body))))
-		     `(_kfail))))))
+      (let ((body (caddr ast)))
+	`(lambda (_stream _kt _kf)
+	   ,(let loop ((patterns (cadr ast)))
+	      `(_stream 'next
+			(lambda (_arg _stream)
+			  ,(let* ((remaining-patterns (cdr patterns)))
+			     (pattern (car patterns)
+				      (if (null? remaining-patterns)
+					  `(_kt (lambda (,(if self-id
+							      (mangle-etng-id self-id)
+							      '_self))
+						  ,(expr body))
+						_stream)
+					  (loop remaining-patterns))
+				      `(_kf))))))))))
 
   (toplevel ast))
