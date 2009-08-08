@@ -35,3 +35,64 @@ I should have written something about where the cutpoints in the
 backtracking should go. The issue is to do with autocurrying: if too
 many or too few arguments are supplied, how are the pattern-matching
 continuations wired up?
+
+
+7 August 2009
+---------------------------------------------------------------------------
+
+Input streams have two manifestations: from the POV of the lookup
+driver, streams *can* be empty, but from the POV of a *parser*, they
+*cannot* be empty: this is the essence of autocurrying. So when the
+lookup driver starts running, it examines its input stream. If the
+stream is empty, it returns the parser without further effort. [TODO:
+figure out what happens to the "receiver" (as distinct from "via") in
+this case!] If the stream is nonempty, it *wraps* it in an *infinite
+stream* guise, and if the wrapped stream ever internally runs out of
+input, a curried function is returned to the caller with a parameter
+(dynamic variable) used to speculatively extend the input stream as
+subsequent input comes available.
+
+The curried-function representation needs to be a bit special: a
+partial match. This may address the TODO about what happens to the
+receiver.
+
+Re: cutpoints -- a commit is a cutpoint, and they happen on the arrows
+in functions: { .a .b -> .c } has a cutpoint after the .b has been
+matched. Essentially any transition from a LHS to an RHS is a
+cutpoint. This is involved in what happens to "receiver" vs "via" in
+lookup, too.
+
+Here are some notes from a couple of weeks ago that I made in my graph
+pad:
+
+ - functions are implicit 'or's of 'seq's by default.
+
+ - stream * kt * kf -> ()
+
+ - currying:: model stream as CPS pair. Then when input runs out,
+   nonlocal exit to code that conses an intermediate lambda and waits
+   for more input? Problematic because during parsing it's often the
+   next unexpected token that causes the parser to switch to a more
+   appropriate clause -- and here we lack the means to terminate
+   pattern matching!
+
+ - therefore omit currying?? no. Alternative: treat every object as
+   "actor"? Messages stream into the actor
+
+ - matcher: stream kt kf ---- stream is always infinite! Will never
+   report "empty" to the parser and may suspend the parser pending
+   further messages
+
+ - Every object is therefore a parser.
+
+
+Thoughts on the TODO from above about "receiver" vs "via": Because
+sequences used to be seen as actually sugar for real curried
+procedures, and the interstitial procedures would be
+non-self-capturing, we can ignore supplied receivers to intermediate
+curried procedures!
+
+That means that the "receiver" supplied at the first, original
+"lookup" needs to be preserved through all intermediate curryings, for
+use at the time the "apply" is done. Any "receiver"s supplied after
+that first one are to be ignored.
