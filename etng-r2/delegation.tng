@@ -1,0 +1,14 @@
+define A = { .a -> write("A") };
+
+-- define B = rec { .a -> do write("IN"); do self.b; write("OUT") } |extends ({.b -> A.a} |extends A);
+define B = rec { .a -> self.b; .b -> A.a } |extends A;
+
+define debugTrace x -> rec {
+  selector -> do write(selector);
+	      do write("IN");
+	      let result = self |as x selector;
+	      do write(selector);
+	      do write("OUT");
+	      result
+};
+
