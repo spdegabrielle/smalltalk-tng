@@ -96,3 +96,21 @@ That means that the "receiver" supplied at the first, original
 "lookup" needs to be preserved through all intermediate curryings, for
 use at the time the "apply" is done. Any "receiver"s supplied after
 that first one are to be ignored.
+
+
+10 August 2009
+---------------------------------------------------------------------------
+
+Lining up OMeta and eTNG:
+
+  or :: implicit; clauses in a function
+  seq :: implicit; part of currying
+  exactly :: (lit)
+  anything :: (discard)
+  bind :: (bind), but eTNG doesn't do nested patterns here yet
+  sequence :: could be a function? a bit like tuple-matching?
+  nest :: needs to be provided?
+  not :: -
+  follow :: -
+  many :: -
+  many1 :: -
