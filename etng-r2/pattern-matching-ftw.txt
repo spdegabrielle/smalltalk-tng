@@ -114,3 +114,65 @@ Lining up OMeta and eTNG:
   follow :: -
   many :: -
   many1 :: -
+
+
+14 August 2009
+---------------------------------------------------------------------------
+
+Objects need to present alternately as *interpreter* and
+*interpretee*. Interpreters are in the pattern-match role;
+interpretees are data (ADTs etc). Data and co-data?
+
+So presenting as an interpreter is straightforward. Presenting as data
+is trickier. Ordinary expressions combine objects, interpreter in head
+position and syntax in non-head positions. On the pattern-matching
+side, the matching logic embodies the interpreter. The matching logic
+examines the offered data either *reflectively* or *interactively*.
+
+(Ha - where COLA has a recursive lookup that is ground-out on the
+primitive lookup object, we here have a recursive streaming-of-data
+that needs to be ground-out on primitive data streams! (as in,
+messages should be able to be Real Streams With Behaviour, but in
+order to be well-founded, some fake/primitive implementation needs to
+be available.)
+
+Reflective examination actually feels pretty interactive, just on the
+object's metaobject. Is representation (i.e. normal meta stuff) the
+same as data/interpretee in this sense? After all, a pattern-matcher
+may wish to examine an object's structure either at a physical level
+or a logical level. Normal meta stuff is the physical, representative,
+stuff; this interpretee idea is the logical level.
+
+Objects should be able to control how they are presented as data. One
+possibility is a two-stage menu/inject, where the interpreter offers a
+menu of contexts and the datum injects a context into the menu,
+backing off and trying an alternative context on DNU. The symmetric
+case works just as well, though, where the datum presents a menu and
+the interpreter injects into it. This is effectively multiple dispatch
+:-(
+
+    -- an interpreter menu
+    -- context     representation-pattern
+    { .stream -> { .pair head tail -> ...;
+                   .nil            -> ... };
+      .tuple  -> { length          -> ... } }
+
+This is also really similar to HTTP content negotiation.
+
+Actually on second thoughts perhaps it's better for the interpreter to
+inject a preferred interpretation into the datum, and have it answer
+either a representation under that interpretation, or DNU.
+
+    -- data menu for cons
+    { .stream k -> k .pair head tail;
+      .tuple  k -> k 2 head tail }
+
+    -- data menu for nil
+    { .stream k -> k .nil;
+      .tuple  k -> k 0 }
+
+Is using DNU appropriate here, or is an explicit failure-k better?
+
+    { .stream kt kf -> kt .pair head tail;
+      .tuple kt kf -> kt 2 head tail;
+      _ kt kf -> kf () }
