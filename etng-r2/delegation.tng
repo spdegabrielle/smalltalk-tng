@@ -1,4 +1,4 @@
-define A = { .a -> write("A") };
+define A = { .a -> do write("A"); .theAnswer; _ -> .other };
 
 -- define B = rec { .a -> do write("IN"); do self.b; write("OUT") } |extends ({.b -> A.a} |extends A);
 define B = rec { .a -> self.b; .b -> A.a } |extends A;
