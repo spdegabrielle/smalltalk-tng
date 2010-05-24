@@ -1,0 +1,132 @@
+define Continuation platform ->
+  rec Continuation {
+    .raw_callcc fn ->
+      '%assemble' (fn = fn) { .scheme -> ('call-with-current-continuation'
+					   (lambda (k) ('etng-send' fn (list k)))) };
+
+    .callcc fn ->
+      Continuation.raw_callcc { k -> fn {v -> '%assemble' (v = v, k = k) { .scheme -> (k v) } } };
+  }
+};
+
+define extends platform extension base ->
+  '%assemble' (extension = extension, base = base) {
+    .scheme -> ('etng-merge-functions' extension base);
+  };
+
+define as platform receiver via message ->
+  '%assemble' (receiver = receiver, via = via, message = message) {
+    -- FIXME: need some form of apply here, now we are n-ary instead of unary!
+    .scheme -> ('etng-send*' receiver via (list message))
+  };
+
+define :booleanBehaviour = rec {
+  .not -> '%assemble' (x = self) { .scheme -> (not x) };
+};
+
+define :falseProxy = :booleanBehaviour |extends {v -> v.:false};
+define :trueProxy = :booleanBehaviour |extends {v -> v.:true};
+
+define case x options -> options x;
+
+define < = .<;
+define > = .>;
+
+define :symbolProxy = rec {
+  msg -> case self {
+	   .< -> :messageAccumulator {receiver -> receiver} msg;
+	   _ -> error("Cannot send message to symbol", msg);
+	 };
+};
+
+define :messageAccumulator firstSender -> {
+  .> receiver -> firstSender receiver;
+  secondMsg -> :messageAccumulator {receiver -> firstSender receiver secondMsg};
+};
+
+define <> = < >;
+
+define false = '%assemble' () { .scheme -> (not (quote nonfalse)) };
+define true = false.not;
+
+define + = .+;
+define * = .*;
+define == = .==;
+
+define eq x y -> '%assemble' (x = x, y = y) { .scheme -> ('eq?' x y) };
+
+define write x -> '%assemble' (x = x) { .scheme -> (begin (write x) (newline)) };
+
+define :eq = rec {
+  .== other -> '%assemble' (a = self, b = other) { .scheme -> ('eqv?' a b) };
+};
+
+define :numberProxy = rec {
+  .+ other -> '%assemble' (a = self, b = other) { .scheme -> (+ a b) };
+  .* other -> '%assemble' (a = self, b = other) { .scheme -> (* a b) };
+  .< other -> '%assemble' (a = self, b = other) { .scheme -> (< a b) };
+};
+
+define s:empty = { .s:case v -> v.s:empty };
+define s:cons(head, tail) -> { .s:case v -> v.s:next(head, tail) };
+
+define :tupleProxy = rec {
+  .length -> '%assemble' (v = self) { .scheme -> ('vector-length' v) };
+  .get(n) -> '%assemble' (v = self, n = n) { .scheme -> ('vector-ref' v n) };
+  .s:case v -> :tupleIterator(self, 0).s:case v;
+};
+
+define :tupleIterator(tuple, index) ->
+  (index < (tuple.length)) {
+    .:true -> {.s:case v -> v.s:next(tuple.get(index), :tupleIterator(tuple, index + 1))};
+    .:false -> {.s:case v -> v.s:empty};
+  };
+
+define s:do stream fn ->
+  stream .s:case {
+    .s:empty -> .ok;
+    .s:next(head, tail) -> do fn(head); s:do tail fn;
+  };
+
+define s:foldl stream knil kons ->
+  stream .s:case {
+    .s:empty -> knil;
+    .s:next(head, tail) -> s:foldl tail (kons(head, knil)) kons;
+  };
+
+define s:foldr stream knil kons ->
+  stream .s:case {
+    .s:empty -> knil;
+    .s:next(head, tail) -> kons(head, s:foldr tail knil kons);
+  };
+
+define s:reverse stream -> s:foldl stream s:empty s:cons;
+define s:append s1 s2 -> s:foldr s1 s2 s:cons;
+
+define s:foldlK stream knil kons k ->
+  stream .s:case {
+    .s:empty -> k(knil);
+    .s:next(head, tail) -> kons (head, knil) {newSeed -> s:foldlK tail newSeed kons k};
+  };
+
+define s:foldrK stream knil kons k ->
+  stream .s:case {
+    .s:empty -> k(knil);
+    .s:next(head, tail) -> s:foldrK tail knil kons {newSeed -> kons (head, newSeed) k};
+  };
+
+define s:concatenate stream -> s:foldr stream s:empty s:append;
+
+define s:map stream fn -> s:foldr stream s:empty {elt, acc -> s:cons(fn(elt), acc)};
+
+-- s:map (1, 2, 3) {x -> x};
+-- (1, 2, 3) | s:foldr s:empty s:cons | s:do write;
+-- (1, 2) | s:append (3, 4) | s:do write;
+-- (| s:append (3, 4) | s:do write) (1, 2);
+
+-- define xyz = { .x .y .z -> .w ;
+-- 	       .x .y .w -> .a ;
+-- 	       .x .a .z -> 345 };
+-- define xx = xyz.x;
+-- define xy = xx.y;
+-- xx (xy (xy.z)) .z;

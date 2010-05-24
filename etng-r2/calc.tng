@@ -1,0 +1,27 @@
+define expr = {
+  number:n1 "+" expr:n2 -> n1 + n2;
+};
+
+define number = {
+  spaces digit+:digits -> digits |listToString |stringToNumber;
+};
+
+define token xs -> {
+  spaces <{xs}>;
+};
+
+define digit = {
+  c -> (charNumeric c) { .true -> c; .false -> error("expected", "charNumeric", c); };
+};
+
+spaces = {
+  (c -> (charWhitespace c) { .true -> c; .false -> error("expected", "charWhitespace", c) };)+
+    spaces;
+
+  $- $- ...
+
+  -> #t;
+};
+
+
+expr 1 + 2 + 3;

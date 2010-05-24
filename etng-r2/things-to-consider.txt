@@ -1,0 +1,4 @@
+29 Dec 2009. Exception hierarchies. How do they fit in with pattern
+matching? With prototypes? Investigate Self's exceptions. (Thought
+inspired by http://www.haskell.org/ghc/docs/6.10.4/html/libraries/base/Control-Exception.html,
+where it talks about exception hierarchies for a compiler.)

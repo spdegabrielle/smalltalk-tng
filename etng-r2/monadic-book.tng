@@ -1,0 +1,55 @@
+namespace m = "http://github.com/leithaus/XTrace/tree/monadic/src/main/book/content/#";
+namespace c = "http://eighty-twenty.org/etng/r1/ns/collection#";
+
+define m:mention reference		-> { .m:expression k -> k .m:mention reference };
+define m:abstraction formals body	-> { .m:expression k -> k .m:abstraction formals body };
+define m:application operation actuals	-> { .m:expression k -> k .m:application operation actuals };
+
+-- Let's imagine we chose a representation for names, separately from
+-- the representation of expressions. How, in eTNG, would we denote
+-- the contract (type) for the constructors and destructors? Separately?
+-- Together with the definitions? Compare with how Newmoon does it
+-- these days, perhaps.
+
+-- Ugh, the expression problem.
+
+define m:freeVariables x ->
+  x.m:expression {
+    .m:mention r	-> c:set.singleton r;
+    .m:abstraction f b	-> (c:set.fromStream f) ++ (m:freeVariables b);
+    .m:application o a	-> a | s:map m:freeVariables | s:foldr (m:freeVariables o) (binop ++);
+  };
+
+define m:closure fn -> { .m:value k -> k .m:closure fn };
+define m:quantity q -> { .m:value k -> k .m:quantity q };
+
+-- Ideally want to define some kind of interface for objects to satisfy.
+--
+--  type Dereferencer = {def apply( m : Mention ) : Value }
+-- type Expansionist =
+--      {def extend( fmls : List[Mention], actls : List[Value] ) : Dereferencer}
+--   type Environment <: (Dereferencer with Expansionist)
+--   type Applicator = Expression => List[Value] => Value
+
+define m:initialApplicator expression actuals ->
+  expression.m:expression {
+    .m:integerExpression i -> m:quantity i;
+    _ -> throw exception("why are we here?");
+  };
+
+define m:reduce (applicator, environment) ->
+  rec reduceExpression { expression ->
+    expression.m:expression {
+      .m:integerExpression i -> m:quantity i;
+      .m:mention v -> environment.m:lookup v;
+      .m:abstraction formals body ->
+	m:closure { actuals ->
+		      let keys = formals | s:map m:mention;
+		      m:reduce (applicator, environment.m:extend(keys, actuals)) body };
+      .m:application operator actuals ->
+	(reduceExpression operator).m:value {
+	  .m:closure fn -> fn (actuals | s:map reduceExpression);
+	  _ -> throw exception("attempt to apply non function");
+	};
+    }
+  };

@@ -1,0 +1,43 @@
+Subject: Clojure's sequences and nil punning
+Time-stamp: <2010-04-16 17:25:01 tonyg>
+From: tonyg
+
+http://clojure.org/lazy
+
+    namespace s = "http://eighty-twenty.org/etng/r1/ns/stream#";
+    define s:foldr stream knil kons ->
+      stream .s:case {
+	.s:empty -> knil;
+	.s:next(head, tail) -> kons(head, s:foldr tail knil kons);
+      };
+    define s:map stream fn -> s:foldr stream s:empty {elt, acc -> s:cons(fn(elt), acc)};
+
+Expand through `s:foldr`, and we get
+
+    define s:map stream fn ->
+      stream .s:case {
+      	.s:empty -> s:empty;
+	.s:next(head, tail) -> s:cons(fn(head), s:map tail fn);
+      };
+
+Delay:
+
+    define nothing = { .case v -> v .nothing };
+    define just x  = { .case v -> v .just x };
+
+    define delay v ->
+      -- Carefully written to avoid holding onto v for too long.
+      -- Needs let rec cell = etc. to avoid the initial cell.set!
+      let cell = ref ();
+      do cell.set { let forced = v ();
+      	       	    do cell.set { forced };
+		    forced };
+      { msg -> cell.get () msg };
+
+Lazy map:
+
+    define s:lazymap stream fn ->
+      delay {stream .s:case {
+      	.s:empty -> s:empty;
+	.s:next(head, tail) = s:cons(delay {fn(head)}, delay {s:map tail fn});
+      }};
