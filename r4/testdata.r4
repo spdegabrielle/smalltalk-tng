@@ -1,0 +1,51 @@
+sef drg fth
+  dew
+  fre
+
+nog
+   gjg oji
+       jij
+       ehe
+ eoje
+ installProxy tuple
+    extends Stream
+      rec [nth :n]      -> %assemble ((v self) (n n)) scheme -> (vector-ref v n)
+                           otheraction too; subsequent action;;;;;
+                           fff ((a); d; (b)) c
+                           more actions;
+          [first second
+           third fourth]-> boo!
+          [next :k]     -> (tupleIterator self 0) next k
+
+[]->
+  (fn1 arg arg; fn2 arg)
+    cool1
+  fn1 arg arg; fn2 arg
+    uncool2
+  val3;
+  (fn4a arg1 arg2
+    arg3
+    ((fn44 arg41); actualval)
+    arg5)
+  fn4 arg1 arg2
+    arg3
+    fn44 arg41; actualval
+    arg5
+
+: Stream
+  rec [foldlK :knil :kons :k]->
+	self next
+	  [done]              -> k knil
+	  [skip :s1]          -> s1 foldlK knil kons k
+	  [yield :v :s1]      -> kons v knil [:newSeed]-> s1 foldlK newSeed kons k
+      [length]->
+	self foldl 0 [:item :acc]-> acc + 1
+      [drop :n]->
+	iterate n (! tail) self
+      [nth :n]->
+	(self drop n) head
+      [do :f] ->
+	self foldl done [:item done]-> f item; done
+
+kpo fof
+pok

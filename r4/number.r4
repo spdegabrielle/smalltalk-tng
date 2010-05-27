@@ -1,0 +1,9 @@
+import platform char c::
+
+: convert-number [:sign :digits]->
+  : result digits foldl 0 [:c :acc]-> (acc * 10) + (c c::digitValue)
+  if sign [true]-> result negated
+	  [false]-> result
+
+: convert-hex [:digits]->
+  digits foldl 0 [:c :acc]-> (acc * 16) + (c c::hexDigitValue)

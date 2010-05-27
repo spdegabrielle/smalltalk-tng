@@ -1,0 +1,193 @@
+-- -*- etng-r4 -*-
+-- Indentation for blocks
+-- punua -- maori for "small, of minor significance"
+
+: boot module "http://eighty-twenty.org/etng/r4/ns/boot#" [:platform]->
+  . raw_callcc [:fn]->
+      %assemble ((fn fn))
+        scheme -> (call-with-current-continuation (lambda (k) (etng-send fn (list k))))
+
+  : callcc [:fn]->
+    raw_callcc [:k]-> fn [:v]-> %assemble ((v v) (k k)) scheme -> (k v)
+
+  : extends [:base :extension]->
+    %assemble ((extension extension) (base base))
+      scheme -> (etng-merge-functions extension base)
+
+  : responds? [:what :to]->
+    %assemble ((what what) (to to))
+      scheme -> (etng-responds? what to)
+
+  : as [:receiver :via]->
+    :message ->
+      %assemble ((receiver receiver) (via via) (message message))
+	scheme ->
+	   -- FIXME: need some form of apply here, now we are n-ary instead of unary!
+	   (etng-send* receiver via (list message))
+
+  : not
+
+  : booleanBehaviour
+    rec [not]-> %assemble ((x self)) scheme -> (not x)
+
+  : false	%assemble () scheme -> (not (quote nonfalse))
+  : true	%assemble () scheme -> (not (not (quote nonfalse)))
+
+  : booleanCase
+
+  : installProxy! [:name :proxy]->
+    %assemble ((name name) (proxy proxy))
+      scheme -> (etng-install-proxy! name proxy)
+
+  installProxy! "false" (extends booleanBehaviour [booleanCase :v]-> v false)
+  installProxy! "true"  (extends booleanBehaviour [booleanCase :v]-> v true)
+
+  : case [:x :options] -> options || x
+
+  : if [:x :options] -> x booleanCase options
+
+  : matchValue
+
+  : _ [matchValue :v :kt :kf]-> kt v
+
+  : <
+  : >
+
+  : <> [:v]-> v -- identity
+
+  : +
+  : *
+  : ==
+
+  : eq [:x :y]-> %assemble ((x x) (y y)) scheme -> (eq? x y)
+
+  : write [:x]-> %assemble ((x x)) scheme -> (begin (write x) (newline))
+
+  : Eq rec [== :other]-> %assemble ((a self) (b other)) scheme -> (eqv? a b)
+
+  installProxy! "number"
+    rec [+ :other]-> %assemble ((a self) (b other)) scheme -> (+ a b)
+	[* :other]-> %assemble ((a self) (b other)) scheme -> (* a b)
+	[< :other]-> %assemble ((a self) (b other)) scheme -> (< a b)
+
+  : ! :message -> [:receiver] -> receiver || message
+  : !! [:binop] -> [:l :r] -> l binop r
+
+  . ++ symbol "http://eighty-twenty.org/etng/r4/ns/stream#" "++"
+  : curry ([:receiver] ++ :left)-> :right -> receiver || (left ++ right)
+
+  : iterate [:n :f :v]->
+    case n
+      0 -> v
+      _ -> iterate (n - 1) f (f v)
+
+  : compose  [:f :g]-> :message -> g (f || message)
+  : compose' [:g :f]-> compose g f
+
+: stream module "http://eighty-twenty.org/etng/r4/ns/stream#" [:platform]->
+  import platform boot
+
+  : next
+  : yield
+  : skip
+  : done
+
+  : head
+  : tail
+  : foldl
+  : foldr
+  : foldlK
+  : foldrK
+  : length
+  : drop
+  : nth
+  : do
+  : reverse
+  : ++
+  : concatenate
+  : map
+
+  : Stream
+    rec [head]->
+	  self next
+	    [done]		-> error "head of empty stream"
+	    [skip :s1]		-> s1 head
+	    [yield :v _]	-> v
+	[tail]->
+	  self next
+	    [done]		-> error "tail of empty stream"
+	    [skip :s1]		-> s1 tail
+	    [yield _ :s1]	-> s1
+	[foldl :knil :kons]->
+	  self next
+	    [done]		-> knil
+	    [skip :s1]		-> s1 foldl knil kons
+	    [yield :v :s1]	-> s1 foldl (kons v knil) kons
+	[foldr :knil :kons]->
+	  self next
+	    [done]		-> knil
+	    [skip :s1]		-> s1 foldr knil kons
+	    [yield :v :s1]	-> kons v (s1 foldr knil kons)
+	[foldlK :knil :kons :k]->
+	  self next
+	    [done]		-> k knil
+	    [skip :s1]		-> s1 foldlK knil kons k
+	    [yield :v :s1]	-> kons v knil [:newSeed]-> s1 foldlK newSeed kons k
+	[foldrK :knil :kons :k]->
+	  self next
+	    [done]		-> k knil
+	    [skip :s1]		-> s1 foldrK knil kons k
+	    [yield :v :s1]	-> s1 foldrK knil kons [:newSeed]-> kons v newSeed k
+	[length]->
+	  self foldl 0 [:item :acc]-> acc + 1
+	[drop :n]->
+	  iterate n (! tail) self
+	[nth :n]->
+	  (self drop n) head
+	[do :f] ->
+	  self foldl done [:item done]-> f item; done
+	[reverse]->
+	  self foldl empty cons
+	[++ :other]->
+	  self foldr other cons
+	[concatenate]->
+	  self foldr empty (!! ++)
+	[map :f]->
+	  self foldr empty [:item :tail]-> cons (f item) tail
+
+  : empty	 		extends Stream [next :k]-> k done
+  : cons [:head :tail]->	extends Stream [next :k]-> k yield head tail
+
+  installProxy! "tuple"
+    extends Stream
+      rec [nth :n]	-> %assemble ((v self) (n n)) scheme -> (vector-ref v n)
+	  [next :k]	-> (tupleIterator self 0) next k
+
+  : tupleIterator [:tuple :index]->
+    extends Stream
+      if (index < (tuple length))
+	[true]->  [next :k]-> k yield (tuple nth index) (tupleIterator tuple (index + 1))
+	[false]-> [next :k]-> k done
+
+  installProxy! "null" empty
+  installProxy! "pair"
+    extends Stream
+      rec [next :k]-> k yield (self head) (self tail)
+	  [head]-> %assemble ((v self)) scheme -> (car v)
+	  [tail]-> %assemble ((v self)) scheme -> (cdr v)
+
+-- [1 2 3] map [:x]->x
+-- ([1 2 3] foldr empty cons) do write
+-- ([1 2] ++ [3 4]) do write
+-- ([:x]-> (x ++ [3 4]) do write) [1 2]
+
+-- : x
+-- : y
+-- : z
+-- : w
+-- : xyz [x y z]-> w
+--       [x y w]-> a
+--       [x a z]-> 345
+-- : xx = curry xyz x
+-- : xy = curry xx y
+-- xx (xy (xy z)) z

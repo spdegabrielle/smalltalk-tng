@@ -1,0 +1,18 @@
+: name
+: avatar
+
+: make-player [:original-name :avatar-animation-spec]->
+  rec [name]-> original-name
+      [avatar]-> avatar-animation-spec
+
+: *all-animations* (make-hash-table)
+
+: load-animations! []->
+  os working-directory allFiles do [:filename]->
+    filename open [:fileHandle]->
+      *all-animations* put filename (image pngReader loadFrom fileHandle)
+
+: lookup-animation [name]->
+  *all-animations* get name *default-animation*
+
+make-player "Callum" (lookup-animation "skeleton")

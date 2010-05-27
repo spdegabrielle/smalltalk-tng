@@ -1,0 +1,26 @@
+: instruction module "http://eighty-twenty.org/etng/r4/ns/instruction#" [:platform]->
+
+  : instruction struct (id parent instruction-type source output clobbered next-live generator)
+
+  : is-void
+  : find-sources
+  : clobber-registers
+  : allocate-registers
+  : dropped
+
+  : statement
+    rec [is-void]-> true
+	[find-sources filter]-> []
+	[clobber-registers gen]-> clobber-registers gen self
+	[allocate-registers alloc]->
+	  assert-type self void
+	  []
+	[dropped]-> []
+
+  : arg
+
+  : leaf [:arg_]->
+    rec [arg]-> arg_
+	[is-void]-> false
+	[find-sources filter]->
+	  if 

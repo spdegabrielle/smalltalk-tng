@@ -1,0 +1,24 @@
+: animal module "http://eighty-twenty.org/etng/r4/ns/animal#" [:platform]->
+  : name
+  : speak
+
+  : Animal
+    [name]-> error "subclassResponsibility"
+    [speak]-> print "animal sound"
+
+  : Frog
+    extends Animal
+      [name]-> "anonymous"
+      [speak]-> print "ribbit"
+
+  : Duck [:name_] ->
+    extends Animal
+      [name]-> name_
+      [speak]-> print "quack"
+
+  : main []->
+    : d Duck "Jemima"
+    d speak
+
+import platform animal
+(main)
