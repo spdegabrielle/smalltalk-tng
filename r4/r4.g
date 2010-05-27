@@ -6,7 +6,7 @@ exprtop = block;
 position = spaces &_ @;
 
 block = position:p (position:p1 ?(same-column? p1 p) blockline)+:es
-        ->(if (= (length es) 1) (car es) `(begin ,@es)) ;
+        ->`(block ,@es);
 
 blockline =
   position:p
