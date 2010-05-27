@@ -85,7 +85,6 @@
   : compose' [:g :f]-> compose g f
 
 : stream module "http://eighty-twenty.org/etng/r4/ns/stream#" [:platform]->
-  import platform boot
 
   : next
   : yield

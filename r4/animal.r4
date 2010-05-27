@@ -20,5 +20,4 @@
     : d Duck "Jemima"
     d speak
 
-import platform animal
-(main)
+((platform animal main))
