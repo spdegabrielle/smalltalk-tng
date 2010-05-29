@@ -1,17 +1,17 @@
 -- -*- text -*-
 
 filetop = block:b spaces ~_ ->b;
-exprtop = block;
+exprtop = blockline | spaces ~_ ->`eof;
 
 position = spaces &_ @;
 
-block = position:p (position:p1 ?(same-column? p1 p) blockline)+:es
+block = position:p (position:p1 ?(same-column? p1 p) blockline)+:es ( token(";") | )
         ->`(block ,@es);
 
 blockline =
   position:p
   opensend(p):s
-    ( token(";") position:kp ?(same-line? p kp) position:p1 opensend(p1) )*:ss token(";")*
+    ( token(";") position:kp ?(same-line? p kp) position:p1 opensend(p1) )*:ss ( token(";") | )
   ->(if (null? ss) s `(begin ,s ,@ss)) ;
 
 opensend :parentp =
@@ -29,7 +29,7 @@ expr = position:p
        expr1:lhs
        ( funbody:body
        	 ( position:nextclause
-	   ?(same-column? nextclause p)
+	   ?(or (same-column? nextclause p) (same-line? nextclause p))
 	   expr:restexp ?(eq? (car restexp) 'function)
 	   ->`(function ((,lhs ,body) ,@(cadr restexp)))
 	 | ->`(function ((,lhs ,body))) )
@@ -39,7 +39,6 @@ funbody = token("->") block;
 
 expr1 = assemble
       | token("[") expr*:es token("]") ->`(list ,@es)
-      | token("(") expr:e token(")") -> `(apply ,e) -- special case for nullary procedure calls
       | token("(") block:b token(")") -> b
       | token(":") name-no-spaces:b ->`(binding ,b)
       | name:n ->`(varref ,n)
@@ -70,7 +69,7 @@ okeyword :xs :val = spaces <{xs}> ~name-subsequent('(#\- #\? #\! #\* #\+ #\/ #\=
 token :xs = spaces <{xs}>;
 
 name = spaces name-no-spaces;
-name-no-spaces = scheme-symbol-no-spaces;
+name-no-spaces = ($| $| ->(error 'illegal-identifier) | ~($| $|) scheme-symbol-no-spaces);
 
 generic-name :initial-chars :subsequent-chars =
 	name-initial(initial-chars):x name-subsequent(subsequent-chars)*:xs

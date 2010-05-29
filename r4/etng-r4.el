@@ -45,6 +45,10 @@
     (list
      '("%assemble\\>" . font-lock-warning-face)
 
+     '("\\([:.]\\)\\s +\\([A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
+       (1 font-lock-keyword-face)
+       (2 font-lock-type-face))
+
      '("\\([:.]\\)\\s +\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)\\s +\\["
        (1 font-lock-keyword-face)
        (2 font-lock-function-name-face))
@@ -53,10 +57,6 @@
        (1 font-lock-keyword-face)
        (2 font-lock-type-face)
        (4 font-lock-keyword-face))
-
-     '("\\([:.]\\)\\s +\\([A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
-       (1 font-lock-keyword-face)
-       (2 font-lock-type-face))
 
      '("\\([:.]\\)\\s +\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
        (1 font-lock-keyword-face)
@@ -67,6 +67,8 @@
 	"do"
 	"self"
 	"rec"
+	"module"
+	"macro"
 	"import"
 	"return"
 	"exit"

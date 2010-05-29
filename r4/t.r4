@@ -1,11 +1,11 @@
 : name
 : avatar
 
-: make-player [:original-name :avatar-animation-spec]->
+: Player [new :original-name :avatar-animation-spec]->
   rec [name]-> original-name
       [avatar]-> avatar-animation-spec
 
-: *all-animations* (make-hash-table)
+: *all-animations* Hashtable new
 
 : load-animations! []->
   os working-directory allFiles do [:filename]->

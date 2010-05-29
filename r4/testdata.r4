@@ -2,6 +2,22 @@ sef drg fth
   dew
   fre
 
+-- [1 2 3] map [:x]->x
+-- ([1 2 3] foldr empty cons) do write
+-- ([1 2] ++ [3 4]) do write
+-- ([:x]-> (x ++ [3 4]) do write) [1 2]
+
+-- : x
+-- : y
+-- : z
+-- : w
+-- : xyz [x y z]-> w
+--       [x y w]-> a
+--       [x a z]-> 345
+-- : xx = curry xyz x
+-- : xy = curry xx y
+-- xx (xy (xy z)) z
+
 nog
    gjg oji
        jij
@@ -10,8 +26,8 @@ nog
  installProxy tuple
     extends Stream
       rec [nth :n]      -> %assemble ((v self) (n n)) scheme -> (vector-ref v n)
-                           otheraction too; subsequent action;;;;;
-                           fff ((a); d; (b)) c
+                           otheraction too; subsequent action;
+                           fff (<> a; d; <> b) c
                            more actions;
           [first second
            third fourth]-> boo!

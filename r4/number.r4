@@ -1,7 +1,6 @@
 : convert-number [:sign :digits]->
   : result digits foldl 0 [:c :acc]-> (acc * 10) + (c (platform char digitValue))
-  if sign [true]-> result negated
-	  [false]-> result
+  if sign [true]-> result negated ;; [false]-> result
 
 : convert-hex [:digits]->
   digits foldl 0 [:c :acc]-> (acc * 16) + (c (platform char hexDigitValue))

@@ -61,3 +61,6 @@ How to avoid parens in long chain unary message sequences?
 
 ** Problems with nullary function definitions and calls! **
 
+
+Newspeak executable grammars:
+http://gbracha.blogspot.com/2007/09/executable-grammars.html

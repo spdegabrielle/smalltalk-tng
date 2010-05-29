@@ -20,4 +20,4 @@
     : d Duck "Jemima"
     d speak
 
-((platform animal main))
+<> (platform animal main)
