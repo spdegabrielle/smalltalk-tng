@@ -120,10 +120,9 @@
 			    (if (eq? result 'eof)
 				(read-block)
 				(begin
-				  (pretty-print result)
+				  ;;(pretty-print result)
 				  (with-handlers ((exn:fail? print-etng-error))
-				    (print-etng (e result))
-				    (newline))
+				    (print-etng (e result)))
 				  (when (and next (not (eq? next input)))
 				    (eval-block next)))))
 			  (lambda (err)
