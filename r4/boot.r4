@@ -70,9 +70,14 @@ installProxy! "true"  (extends booleanBehaviour [booleanCase :v]-> v true)
 
 : if [:x :options] -> x booleanCase options
 
+: meta [:fn] ->
+  %assemble ((fn fn))
+    scheme -> (make-etng-meta fn)
+
 : matchValue
 
-: _ [matchValue :v :kt :kf]-> kt v
+. _
+: _ extends _ (meta [:p matchValue :v :ns]-> true)
 
 : id [:v]-> v
 

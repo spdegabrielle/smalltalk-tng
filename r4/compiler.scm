@@ -28,6 +28,11 @@
   (base etng-merge-base)
   (derived etng-merge-derived))
 
+(define-record-type etng-meta
+  (make-etng-meta object)
+  etng-meta?
+  (object etng-meta-object))
+
 (define-record-type etng-macro
   (make-etng-macro handler)
   etng-macro?
@@ -104,8 +109,12 @@
 (define (fresh-private-namespace)
   (gensym 'private-namespace))
 
+(define *builtin-namespace* "http://eighty-twenty.org/etng/r4/ns/builtin#")
+
+(define *matchValue* (make-etng-symbol *builtin-namespace* 'matchValue))
+
 (define etng-proxies (make-hash-table))
-(define etng-public-namespace (make-parameter "http://eighty-twenty.org/etng/r4/ns/builtin#"))
+(define etng-public-namespace (make-parameter *builtin-namespace*))
 (define etng-private-namespace (make-parameter (fresh-private-namespace)))
 (define etng-export-base (make-parameter #f))
 
@@ -124,8 +133,8 @@
 (define (etng-install-proxy! name proxy)
   (hash-table-set! etng-proxies (string->symbol name) proxy))
 
-(define (etng-send-via-named-proxy receiver proxyname message)
-  (etng-send* receiver (hash-table-ref etng-proxies proxyname) message))
+(define (etng-proxy-named proxyname)
+  (hash-table-ref etng-proxies proxyname))
 
 (define (etng-symbol=? a b)
   (or (eq? a b)
@@ -133,6 +142,39 @@
 		   (etng-symbol-namespace b))
 	   (eq? (etng-symbol-name a)
 		(etng-symbol-name b)))))
+
+(define (etng-objectlike? o)
+  (or (etng-object? o)
+      (etng-merge? o)
+      (etng-meta? o)))
+
+(define (proxy-for-primitive o)
+  (cond
+   ((etng-symbol? o) (etng-proxy-named 'symbol))
+   ((symbol? o) (etng-proxy-named 'identifier))
+   ((number? o) (etng-proxy-named 'number))
+   ((string? o) (etng-proxy-named 'string))
+   ((pair? o) (etng-proxy-named 'pair))
+   ((null? o) (etng-proxy-named 'null))
+   ((vector? o) (etng-proxy-named 'tuple))
+   ((not o) (etng-proxy-named 'false))
+   ((eq? o #t) (etng-proxy-named 'true))
+   ((hash-table? o) (etng-proxy-named 'hash-table))
+   (else (error "Unsupported primitive object" o))))
+
+(define (find-meta-object o)
+  (cond
+   ((etng-meta? o) (etng-meta-object o))
+   ((etng-merge? o)
+    (or (find-meta-object (etng-merge-derived o))
+	(find-meta-object (etng-merge-base o))))
+   ((etng-object? o) #f)
+   (else (find-meta-object (proxy-for-primitive o)))))
+
+(define (etng-meta-send o message)
+  (let ((m (or (find-meta-object o)
+	       (etng-default-meta-object))))
+    (etng-send m (cons o message))))
 
 (define (etng-match ns p v)
   ;;(pretty-print `(etng-match ,ns ,p ,v))
@@ -142,10 +184,10 @@
 		   (etng-match ns (cdr p) (cdr v))))
    ((etng-symbol? p) (and (etng-symbol? v)
 			  (etng-symbol=? p v)))
-   ((etng-object? p)
+   ((etng-objectlike? p)
     ;; Use matcher-combinators instead of this setup.
     ;; Will permit bindings with subpatterns, and, or etc etc.
-    (error "Not yet implemented: custom matching" p v))
+    (etng-meta-send p (list *matchValue* v ns)))
    ((etng-binding? p)
     ;; private, because otherwise e.g. platform is public
     (etng-define! ns (etng-binding-identifier p) #t v)
@@ -153,9 +195,13 @@
    (else (equal? p v))))
 
 (define (etng-lookup o message)
-  (if (etng-merge? o)
-      (or (etng-lookup (etng-merge-derived o) message)
-	  (etng-lookup (etng-merge-base o) message))
+  (let search ((o o))
+    (cond
+     ((etng-meta? o) #f)
+     ((etng-merge? o)
+      (or (search (etng-merge-derived o))
+	  (search (etng-merge-base o))))
+     ((etng-object? o)
       (let loop ((clauses (etng-object-clauses o)))
 	(and (pair? clauses)
 	     (let* ((clause (car clauses))
@@ -168,26 +214,14 @@
 		     (when self-name
 		       (etng-define! ns self-name #t receiver))
 		     ((eval-etng ns) body-block))
-		   (loop (cdr clauses))))))))
+		   (loop (cdr clauses)))))))
+     (else (search (proxy-for-primitive o))))))
 
 (define (etng-send* receiver via message)
   ;;(pretty-print `(etng-send* ,receiver ,via ,message))
-  (cond
-   ((or (etng-object? via) (etng-merge? via))
-    (let ((thunk (or (etng-lookup via message)
-		     (error "Does not understand" receiver via message))))
-      (thunk receiver)))
-   ((etng-symbol? via) (etng-send-via-named-proxy receiver 'symbol message))
-   ((symbol? via) (etng-send-via-named-proxy receiver 'identifier message))
-   ((number? via) (etng-send-via-named-proxy receiver 'number message))
-   ((string? via) (etng-send-via-named-proxy receiver 'string message))
-   ((pair? via) (etng-send-via-named-proxy receiver 'pair message))
-   ((null? via) (etng-send-via-named-proxy receiver 'null message))
-   ((vector? via) (etng-send-via-named-proxy receiver 'tuple message))
-   ((not via) (etng-send-via-named-proxy receiver 'false message))
-   ((eq? via #t) (etng-send-via-named-proxy receiver 'true message))
-   ((hash-table? via) (etng-send-via-named-proxy 'hash-table message))
-   (else (error "Illegal primitive object" receiver via message))))
+  (let* ((thunk (or (etng-lookup via message)
+		    (error "Does not understand" receiver via message))))
+    (thunk receiver)))
 
 (define (etng-send receiver argseq)
   ;;(pretty-print `(etng-send ,receiver ,argseq))

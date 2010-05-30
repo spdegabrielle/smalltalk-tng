@@ -69,6 +69,7 @@
 	"rec"
 	"module"
 	"macro"
+	"meta"
 	"import"
 	"return"
 	"exit"
