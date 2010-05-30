@@ -53,7 +53,7 @@
 	[length]->
 	  self foldl 0 [:item :acc]-> acc + 1
 	[drop :n]->
-	  iterate n self (! tail)
+	  iterate n self (? tail)
 	[nth :n]->
 	  (self drop n) head
 	[do :f] ->
@@ -63,7 +63,7 @@
 	[++ :other]->
 	  self foldr other cons
 	[concatenate]->
-	  self foldr empty (!! ++)
+	  self foldr empty (?? ++)
 	[map :f]->
 	  self foldr empty [:item :tail]-> cons (f item) tail
 

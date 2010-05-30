@@ -102,8 +102,8 @@ installProxy! "number"
       [/ :other]-> %assemble ((a self) (b other)) scheme -> (/ a b)
       [< :other]-> %assemble ((a self) (b other)) scheme -> (< a b)
 
-: ! :message -> [:receiver] -> receiver || message
-: !! [:binop] -> [:l :r] -> l binop r
+: ? :message -> [:receiver] -> receiver || message
+: ?? [:binop] -> [:l :r] -> l binop r
 
 : symbol [:nsname :symname] ->
   %assemble ((nsname nsname) (symname symname))
@@ -119,6 +119,6 @@ installProxy! "number"
     _ -> iterate (n - 1) (f v) f
 
 : compose  [:f :g]-> :message -> g (f || message)
-: compose' [:g :f]-> compose g f
+: compose' [:g :f]-> compose f g
 
 : new
