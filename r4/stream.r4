@@ -53,7 +53,7 @@
 	[length]->
 	  self foldl 0 [:item :acc]-> acc + 1
 	[drop :n]->
-	  iterate n (! tail) self
+	  iterate n self (! tail)
 	[nth :n]->
 	  (self drop n) head
 	[do :f] ->

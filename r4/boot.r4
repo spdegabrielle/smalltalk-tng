@@ -113,10 +113,10 @@ installProxy! "number"
 -- : curry ([:receiver] ++ :left)-> :right -> receiver || (left ++ right)
 -- : <> ([:receiver] ++ :message) -> receiver || message
 
-: iterate [:n :f :v]->
+: iterate [:n :v :f]->
   case n
     0 -> v
-    _ -> iterate (n - 1) f (f v)
+    _ -> iterate (n - 1) (f v) f
 
 : compose  [:f :g]-> :message -> g (f || message)
 : compose' [:g :f]-> compose g f
