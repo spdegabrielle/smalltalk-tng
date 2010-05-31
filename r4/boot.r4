@@ -122,3 +122,7 @@ installProxy! "number"
 : compose' [:g :f]-> compose f g
 
 : new
+
+: load [:filename]->
+  %assemble ((filename filename))
+    scheme -> (load-etng-file (eval-etng (etng-scope-parent the-environment)) filename)
