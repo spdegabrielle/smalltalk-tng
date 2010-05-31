@@ -1,0 +1,86 @@
+-- (a b c d) e f g (h i) j
+(a b
+   c
+   d) e f g
+ h i
+ j
+
+-- (a b c d) e f g h
+a b c d, e f g h
+
+-- (a b c d) || e f g h
+a b c d, || e f g h
+
+-- (a b c d) || e f g h
+a b c d,
+  || e f g h
+
+-- (a b c d) || e f g h
+a b c d, ||
+  e f g h
+
+-- (a b c d) || e f g h
+a b c d, ||e f g h
+
+-- (a b c d) e f g h
+a b c d,
+  e f g h
+
+-- (a b c d) e f g h
+a b c d
+, e f g h
+
+-- (a b c d) e f g h
+a b c d
+  , e f g h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+a b c d,
+  e f
+  g h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+a b c d
+  , e f
+  g h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+a b c d
+  , e f
+    g h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+a b c d
+  , e f
+      g h
+
+-- a b c (d e f) -- and then syntax error for out-of-place g h
+a b
+  c
+  d, e f
+       g
+       h
+
+-- a b c (d e f) g h
+a b
+  c
+  d, e f
+  g
+  h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+(a b c d), e f
+             g
+             h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+(a b c d), e f
+ g
+ h
+
+-- (a b c d) e f -- and then syntax error for out-of-place g h
+(a b
+   c
+   d), e f
+         g
+         h

@@ -55,7 +55,7 @@
 	[drop :n]->
 	  iterate n self (? tail)
 	[nth :n]->
-	  (self drop n) head
+	  self drop n, head
 	[do :f] ->
 	  self foldl done [:item done]-> f item; done
 	[reverse]->
@@ -73,7 +73,7 @@
   installProxy! "tuple"
     extends Stream
       rec [nth :n]	-> %assemble ((v self) (n n)) scheme -> (vector-ref v n)
-	  [next :k]	-> (tupleIterator self 0) next k
+	  [next :k]	-> tupleIterator self 0, next k
 
   : tupleIterator [:tuple :index]->
     extends Stream

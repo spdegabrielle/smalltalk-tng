@@ -31,7 +31,7 @@ nog
                            more actions;
           [first second
            third fourth]-> boo!
-          [next :k]     -> (tupleIterator self 0) next k
+          [next :k]     -> tupleIterator self 0, next k
 
 []->
   (fn1 arg arg; fn2 arg)
@@ -59,7 +59,7 @@ nog
       [drop :n]->
         iterate n self (? tail)
       [nth :n]->
-        (self drop n) head
+        self drop n, head
       [do :f] ->
         self foldl done [:item done]-> f item; done
 

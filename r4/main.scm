@@ -35,18 +35,10 @@
       (and (> (cadr a) (cadr b))
 	   (> (caddr a) (caddr b)))))
 
-(define (hoist-application v)
-  (let loop ((v v)
-	     (acc '()))
-    (case (car v)
-      ((appval*) (loop (caddr v) (cons (cadr v) acc)))
-      ((appseq*) `(appseq ,@(reverse (cons (cadr v) acc)) ,(caddr v)))
-      (else `(apply ,@(reverse (cons v acc)))))))
-
-(define (convert-application v)
-  (case (car v)
-    ((appval* appseq*) (hoist-application v))
-    (else v)))
+(define (make-apply-node r args)
+  (if (null? args)
+      r
+      `(apply ,r ,@args)))
 
 ;;---------------------------------------------------------------------------
 

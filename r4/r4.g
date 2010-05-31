@@ -10,20 +10,31 @@ block = position:p (position:p1 ?(same-column? p1 p) blockline)+:es ( token(";")
 
 blockline =
   position:p
-  opensend(p):s
-    ( token(";") position:kp ?(same-line? p kp) opensend(kp) )*:ss ( token(";") | )
+  combination:s
+    ( token(";") position:kp ?(same-line? p kp) combination )*:ss ( token(";") | )
   ->(if (null? ss) s `(begin ,s ,@ss)) ;
 
-opensend :parentp =
-  opensend1(parentp):v ->(convert-application v);
+combination =
+  position:topleft expr:r samelineexps:args1
+  ( ( appseq:seqexp ->`(appseq ,r ,@args1 ,seqexp)
+    |               ->(make-apply-node r args1) ):app
+    commachain(app)
+  | position:argpos ?(or (below-and-rightward? argpos topleft) (same-line? argpos topleft))
+    ( position:p ?(same-column? p argpos) blockline)*:args2
+    ( position:p ?(same-column? p argpos) appseq:seqexp ->`(appseq ,r ,@args1 ,@args2 ,seqexp)
+    |                                                  	->(make-apply-node r (append args1 args2)) )
+  | ->(make-apply-node r args1) ) ;
 
-opensend1 :parentp =
-  position:p
-  ( ?(below-and-rightward? p parentp)   blockline
-  | ?(same-line? p parentp)		expr
-  ):e1 ( token("||") opensend(parentp):e2 ->`(appseq* ,e1, e2)
-       | opensend1(parentp):e2 ->`(appval* ,e1 ,e2)
-       | ->e1 );
+samelineexps = @:linestart ( position:p ?(same-line? p linestart) expr)* ;
+
+commachain :r =
+  token(",") spaces samelineexps:args
+  ( appseq:seqexp       ->`(appseq ,r ,@args ,seqexp)
+  | ?(not (null? args)) ->(make-apply-node r args) ):app
+  ( commachain(app)
+  | ->app );
+
+appseq = token("||") combination ;
 
 expr = position:p
        expr1:lhs
