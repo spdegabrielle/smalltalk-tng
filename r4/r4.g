@@ -90,7 +90,7 @@ name-subsequent :subsequent-chars =
 
 digit = ochar:c -> (if (char-numeric? c) c (error 'expected 'char-numeric?));
 
-spaces = (ochar:c -> (if (char-whitespace? c) c (error 'expected 'char-whitespace?)))+ spaces;
+spaces = ((ochar:c ?(char-whitespace? c) ->c) | ->(error 'expected 'char-whitespace?))+ spaces;
 spaces = $- $- (:x -> (if (memv x '(#\return #\newline)) (error 'expected 'non-eol) x))* spaces;
 spaces = -> #t;
 
