@@ -50,18 +50,18 @@ nog
 
 : Stream
   rec [foldlK :knil :kons :k]->
-	self next
-	  [done]              -> k knil
-	  [skip :s1]          -> s1 foldlK knil kons k
-	  [yield :v :s1]      -> kons v knil [:newSeed]-> s1 foldlK newSeed kons k
+        self next
+          [done]              -> k knil
+          [skip :s1]          -> s1 foldlK knil kons k
+          [yield :v :s1]      -> kons v knil [:newSeed]-> s1 foldlK newSeed kons k
       [length]->
-	self foldl 0 [:item :acc]-> acc + 1
+        self foldl 0 [:item :acc]-> acc + 1
       [drop :n]->
-	iterate n self (? tail)
+        iterate n self (? tail)
       [nth :n]->
-	(self drop n) head
+        (self drop n) head
       [do :f] ->
-	self foldl done [:item done]-> f item; done
+        self foldl done [:item done]-> f item; done
 
 kpo fof
 pok
