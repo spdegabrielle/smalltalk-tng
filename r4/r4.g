@@ -11,7 +11,7 @@ block = position:p (position:p1 ?(same-column? p1 p) blockline)+:es ( token(";")
 blockline =
   position:p
   opensend(p):s
-    ( token(";") position:kp ?(same-line? p kp) position:p1 opensend(p1) )*:ss ( token(";") | )
+    ( token(";") position:kp ?(same-line? p kp) opensend(kp) )*:ss ( token(";") | )
   ->(if (null? ss) s `(begin ,s ,@ss)) ;
 
 opensend :parentp =
