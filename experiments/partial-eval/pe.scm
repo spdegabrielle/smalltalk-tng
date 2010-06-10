@@ -708,6 +708,45 @@
      (let ((y (g x x)))
        (h y y))))
 
+(define filtering-mapping-exp
+  '(fold (lambda* (elt acc)
+	   (if (even? elt)
+	       (cons elt acc)
+	       acc))
+	 '()
+	 (map (lambda* (x) (* x 2)) mylist)))
+
+(define filtering-mapping-exp2
+  '(fold (lambda* (elt acc)
+	   (if (even? elt)
+	       (cons elt acc)
+	       acc))
+	 '()
+	 (map (lambda* (x) (* x 2)) '(1 2 3 4 5))))
+
+(define sfiltering-smapping-exp
+  '(stream->list
+    (sfilter (lambda* (elt)
+	       (even? elt))
+	     (smap (lambda* (x)
+		     (* x 2))
+		   (list->stream mylist)))))
+
+(define sfiltering-smapping-exp1
+  '(sfilter (lambda* (elt)
+	      (even? elt))
+	    (smap (lambda* (x)
+		    (* x 2))
+		  mystream)))
+
+(define sfiltering-smapping-exp2
+  '(stream->list
+    (sfilter (lambda* (elt)
+	       (even? elt))
+	     (smap (lambda* (x)
+		     (* x 2))
+		   (list->stream '(1 2 3 4 5))))))
+
 ;;; Local Variables:
 ;;; eval: (put 'lambda* 'scheme-indent-function 1)
 ;;; End:
