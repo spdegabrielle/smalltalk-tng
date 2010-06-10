@@ -1,0 +1,199 @@
+: stream module "http://eighty-twenty.org/etng/r4/ns/stream#" [:platform]->
+  : next
+  : yield
+  : skip
+  : done
+
+  : head
+  : tail
+  : foldl
+  : foldr
+  : foldlK
+  : foldrK
+  : length
+  : drop
+  : nth
+  : do
+  : reverse
+  : ++
+  : concatenate
+  : map
+  : removeFirst
+  : removeAll
+
+  -- A stream is a pair of a state-stepper and a state
+  define-record Stream :stepper :state
+
+  -- Hmm or as a datatype
+  datatype Stream
+    Stream :stepper :state
+  -- Stream then is both a type, and a constructor.
+  -- The constructor creates simple record instances.
+  -- The instances can be used as patterns as well as values.
+  -- The instance therefore has to have a meta matchValue implementation.
+  -- How will types be used? If they are able to be used as patterns, they
+  --   themselves must have a meta matchValue implementation.
+
+  datatype: SomeType
+    SomeCtor :x :y :z
+    AnotherCtor :a :b
+    ThirdCtor
+
+  -- expands to
+  : x
+  : y
+  : z
+  : a
+  : b
+
+  : SomeType
+    meta [matchValue :v :ns]-> implements-any? v [SomeCtor AnotherCtor ThirdCtor]
+
+  : SomeCtor
+    extends
+      meta [constructorFor]-> SomeType
+	   [printString]-> "SomeCtor"
+      [:x_ :y_ :z_]->
+	extends
+	  meta [printString]-> "SomeCtor " ++ (([x_ y_ z_] map [:v]->meta v printString) join " ")
+	       [interfaces]-> [SomeCtor]
+	       [matchValue :v :ns]-> and (implements? v SomeCtor)
+					 metaMatch (self x) (v x)
+					 metaMatch (self y) (v y)
+					 metaMatch (self z) (v z)
+	  [x]-> x_
+	  [y]-> y_
+	  [z]-> z_
+
+  -- AnotherCtor similarly
+
+  : ThirdCtor
+    meta [constructorFor]-> SomeType
+	 [printString]-> "ThirdCtor"
+	 [interfaces]-> [ThirdCtor]
+	 [matchValue :v :ns]-> implements? v ThirdCtor
+
+  -- Which gives us, from datatype Stream above:
+  : Stream
+    extends
+      meta [matchValue :v :ns]-> implements-any? v [Stream]
+	   [constructorFor]-> Stream
+	   [printString]-> "Stream"
+      [:stepper_ :state_]->
+	extends
+	  meta [printString]-> "Stream " ++ (([stepper_ state_] map [:v]->meta v printString)
+						join " ")
+	       [interfaces]-> [Stream]
+	       [matchValue :v :ns]-> and (implements? v Stream)
+					 metaMatch (self stepper) (v stepper)
+					 metaMatch (self state) (v state)
+	  StreamTrait
+	  [stepper]-> stepper_
+	  [state]-> state_
+
+  : nextResult [(Stream :stepper :state)]-> stepper state
+
+  : statelessStreamTransformer [(Stream :stepper :state0) :transformer]->
+    Stream [:state]-> case (stepper state) transformer
+	   state0
+
+  : empty			Stream ([_]-> Done) _
+  : cons [:head :tail]->	Stream ([_]-> Yield head 
+
+  -- A stepper result is either Done, Skip, or Yield
+  datatype StepperResult
+    Done
+    Skip :tail
+    Yield :head :tail
+
+  : StreamTrait
+    rec
+	-- Stream consumption - core
+	[head]->
+	  case (nextResult self)
+	    (Done)		-> error "head of empty stream"
+	    (Skip :s1)		-> s1 head
+	    (Yield :v _)	-> v
+	[tail]->
+	  case (nextResult self)
+	    (Done)		-> error "tail of empty stream"
+	    (Skip :s1)		-> s1 tail
+	    (Yield _ :s1)	-> Stream (self stepper) s1
+	[foldl :knil :kons]->
+	  self next
+	    (Done)		-> knil
+	    (Skip :s1)		-> s1 foldl knil kons
+	    (Yield :v :s1)	-> s1 foldl (kons v knil) kons
+	[foldr :knil :kons]->
+	  self next
+	    (Done)		-> knil
+	    (Skip :s1)		-> s1 foldr knil kons
+	    (Yield :v :s1)	-> kons v (s1 foldr knil kons)
+	[foldlK :knil :kons :k]->
+	  self next
+	    (Done)		-> k knil
+	    (Skip :s1)		-> s1 foldlK knil kons k
+	    (Yield :v :s1)	-> kons v knil [:newSeed]-> s1 foldlK newSeed kons k
+	[foldrK :knil :kons :k]->
+	  self next
+	    (Done)		-> k knil
+	    (Skip :s1)		-> s1 foldrK knil kons k
+	    (Yield :v :s1)	-> s1 foldrK knil kons [:newSeed]-> kons v newSeed k
+
+	-- Stream transformation - core
+	[map :f]->
+	  statelessStreamTransformer self
+	    (Done)		-> Done
+	    (Skip :s1)		-> Skip s1
+	    (Yield :v :s1)	-> Yield (f v) s1
+
+	-- Stream utilities
+	[length]->
+	  self foldl 0 [:item :acc]-> acc + 1
+	[drop :n]->
+	  iterate n self (? tail)
+	[nth :n]->
+	  self drop n, head
+	[do :f] ->
+	  self foldl done [:item done]-> f item; done
+	[reverse]->
+	  self foldl Done Yield
+	[++ :other]->
+	  self foldr other Yield
+	[concatenate]->
+	  self foldr Done (?? ++)
+	[map :f]->
+	  self foldr Done [:item :tail]-> Yield (f item) tail
+	[removeFirst :o]->
+	  self next
+	    [done]		-> []
+	    [skip :s1]		-> s1 removeFirst o
+	    [yield :v :s1]	-> if (o == v) [true]-> s1;; [false]-> Yield v (s1 removeFirst o)
+	[removeAll :o]->
+	  self next
+	    [done]		-> []
+	    [skip :s1]		-> s1 removeAll o
+	    [yield :v :s1]	-> if (o == v)
+				     [true]-> s1 removeAll o
+				     [false]-> Yield v (s1 removeAll o)
+
+
+  : cons Yield
+
+  installProxy! "tuple"
+    extends Stream
+      rec [nth :n]	-> %assemble ((v self) (n n)) scheme -> (vector-ref v n)
+	  [next :k]	-> tupleIterator self 0, next k
+
+  : tupleIterator [:tuple :index]->
+    extends Stream
+      if (index < (tuple length))
+	[true]->  [next :k]-> k yield (tuple nth index) (tupleIterator tuple (index + 1))
+	[false]-> [next :k]-> k done
+
+  installProxy! "null" Done
+  installProxy! "pair"
+    extends Stream
+      rec [next :k]-> k yield (self head) (self tail)
+	  [head]-> %assemble ((v self)) scheme -> (car v)
+	  [tail]-> %assemble ((v self)) scheme -> (cdr v)
