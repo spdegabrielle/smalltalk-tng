@@ -77,7 +77,7 @@ installProxy! "true"  (extends booleanBehaviour [booleanCase :v]-> v true)
 : matchValue
 
 . _
-: _ extends _ (meta [:p matchValue :v :ns]-> true)
+: _ extends _ (meta [matchValue :v :ns]-> true)
 
 : id [:v]-> v
 

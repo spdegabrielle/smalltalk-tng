@@ -174,7 +174,7 @@
 (define (etng-meta-send o message)
   (let ((m (or (find-meta-object o)
 	       (etng-default-meta-object))))
-    (etng-send m (cons o message))))
+    (etng-send* o m message)))
 
 (define (etng-match ns p v)
   ;;(pretty-print `(etng-match ,ns ,p ,v))
@@ -216,6 +216,9 @@
 		     ((eval-etng ns) body-block))
 		   (loop (cdr clauses)))))))
      (else (search (proxy-for-primitive o))))))
+
+(define (etng-responds? receiver message)
+  (and (etng-lookup receiver message) #t)) ;; coerce to boolean
 
 (define (etng-send* receiver via message)
   ;;(pretty-print `(etng-send* ,receiver ,via ,message))
