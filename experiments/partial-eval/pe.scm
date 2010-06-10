@@ -104,10 +104,10 @@
 (define (extend-env env names inits)
   (append (if inits
 	      (map (lambda (name init)
-		     (list name init))
+		     (cons name (box (list init))))
 		   names inits)
 	      (map (lambda (name)
-		     (cons name #f))
+		     (cons name (box #f)))
 		   names))
 	  env))
 
@@ -130,7 +130,7 @@
     ((letrec) (let ((newenv (extend-env env (node-ref pexp 'names) #f)))
 		(for-each (lambda (name init)
 			    (let ((binding (assq name newenv)))
-			      (set-cdr! binding (list (pe init newenv cache)))))
+			      (set-box! (cdr binding) (list (pe init newenv cache)))))
 			  (node-ref pexp 'names)
 			  (node-ref pexp 'inits))
 		;; BUG: need to collect free variables of the pe'd body,
@@ -143,8 +143,8 @@
 		  (binding (assq name env)))
 	     (cond
 	      ((not binding) pexp)
-	      ((not (cdr binding)) pexp)
-	      (else (cadr binding)))))
+	      ((not (unbox (cdr binding))) pexp)
+	      (else (car (unbox (cdr binding)))))))
     ((lambda) (make-node 'closure
 			 'formals (node-ref pexp 'formals)
 			 'filter (node-ref pexp 'filter)
@@ -295,23 +295,23 @@
     (else (error "Bad node-kind in free-names" pexp))))
 
 (define (codegen pexp)
-  (let ((cache '()))
+  (let ((cache (box '()))) ;; alist of (pexp use-count-box temp-var-sym reduced-expr-box)
     (define (walk pexp)
       (cond
-       ((assq pexp cache) =>
+       ((assq pexp (unbox cache)) =>
 	(lambda (entry)
-	  (set-car! (cdr entry) (+ (cadr entry) 1))
+	  (set-box! (cadr entry) (+ (unbox (cadr entry)) 1))
 	  (caddr entry)))
        (else
-	(let ((entry (list pexp 1 (gensym 't) #f)))
-	  (set! cache (cons entry cache))
+	(let ((entry (list pexp (box 1) (gensym 't) (box #f))))
+	  (set-box! cache (cons entry (unbox cache)))
 	  (let ((exp (walk1 pexp)))
-	    (set-car! (cdddr entry) exp)
+	    (set-box! (car (cdddr entry)) exp)
 	    (caddr entry))))))
     (define (env-entry-walker names)
       (lambda (entry)
 	(if (memq (car entry) names)
-	    (list (list (car entry) (walk (cadr entry))))
+	    (list (list (car entry) (walk (car (unbox (cdr entry))))))
 	    '())))
     (define (walk1 pexp)
       (case (node-kind pexp)
@@ -354,8 +354,10 @@
 	(else (error "Bad node-kind in codegen" pexp))))
     (let* ((exp (walk pexp))
 	   (remapped-cache (map (lambda (entry)
-				  (list (caddr entry) (cadr entry) (cadddr entry)))
-				cache)))
+				  (list (caddr entry) ;; temp-var-sym
+					(unbox (cadr entry)) ;; use-count
+					(unbox (cadddr entry)))) ;; reduced-expr
+				(unbox cache))))
       (define (inlinable? entry)
 	(or (= (cadr entry) 1)
 	    (let ((v (caddr entry)))
@@ -385,10 +387,10 @@
 
 (define (prim-env)
   (map (lambda (entry)
-	 (list (car entry)
-	       (make-node 'prim
-			  'prim-name (car entry)
-			  'handler (cadr entry))))
+	 (cons (car entry)
+	       (box (list (make-node 'prim
+				     'prim-name (car entry)
+				     'handler (cadr entry))))))
        (list
 	(list 'sval-known? (lambda (x)
 			     (make-lit (sval-known? x))))
@@ -447,8 +449,8 @@
 
 (define (basic-env)
   (fold (lambda (entry env)
-	  (cons (list (car entry)
-		      (pe (parse (cadr entry) '()) env '()))
+	  (cons (cons (car entry)
+		      (box (list (pe (parse (cadr entry) '()) env '()))))
 		env))
 	(prim-env)
 	(list
@@ -495,8 +497,8 @@
 
 (define (basic-env/streams)
   (fold (lambda (entry env)
-	  (cons (list (car entry)
-		      (pe (parse (cadr entry) '()) env '()))
+	  (cons (cons (car entry)
+		      (box (list (pe (parse (cadr entry) '()) env '()))))
 		env))
 	(basic-env)
 	(list
