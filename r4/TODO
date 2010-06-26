@@ -1,0 +1,10 @@
+Fix streams to be properly fusing.
+
+Think about separating namespaces/parts-of-speech.
+
+Change user-level matching to ks/kf-based (parsing, IOW) so that ++ as a pattern works.
+
+Think on how to export values from module expressions.
+(Implement module expressions.)
+
+Implement "datatype:" with ".field" convention.
