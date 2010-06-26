@@ -40,11 +40,11 @@
     ThirdCtor
 
   -- expands to
-  : x
-  : y
-  : z
-  : a
-  : b
+  : .x
+  : .y
+  : .z
+  : .a
+  : .b
 
   : SomeType
     meta [matchValue :v :ns]-> implements-any? v [SomeCtor AnotherCtor ThirdCtor]
@@ -53,17 +53,17 @@
     extends
       meta [constructorFor]-> SomeType
 	   [printString]-> "SomeCtor"
-      [:x_ :y_ :z_]->
+      [:x :y :z]->
 	extends
-	  meta [printString]-> "SomeCtor " ++ (([x_ y_ z_] map [:v]->meta v printString) join " ")
+	  meta [printString]-> "SomeCtor " ++ (([x y z] map [:v]->meta v printString) join " ")
 	       [interfaces]-> [SomeCtor]
 	       [matchValue :v :ns]-> and (implements? v SomeCtor)
-					 metaMatch (self x) (v x)
-					 metaMatch (self y) (v y)
-					 metaMatch (self z) (v z)
-	  [x]-> x_
-	  [y]-> y_
-	  [z]-> z_
+					 metaMatch (self .x) (v .x)
+					 metaMatch (self .y) (v .y)
+					 metaMatch (self .z) (v .z)
+	  [.x]-> x
+	  [.y]-> y
+	  [.z]-> z
 
   -- AnotherCtor similarly
 
@@ -79,17 +79,17 @@
       meta [matchValue :v :ns]-> implements-any? v [Stream]
 	   [constructorFor]-> Stream
 	   [printString]-> "Stream"
-      [:stepper_ :state_]->
+      [:stepper :state]->
 	extends
-	  meta [printString]-> "Stream " ++ (([stepper_ state_] map [:v]->meta v printString)
+	  meta [printString]-> "Stream " ++ (([stepper state] map [:v]->meta v printString)
 						join " ")
 	       [interfaces]-> [Stream]
 	       [matchValue :v :ns]-> and (implements? v Stream)
-					 metaMatch (self stepper) (v stepper)
-					 metaMatch (self state) (v state)
+					 metaMatch (self .stepper) (v .stepper)
+					 metaMatch (self .state) (v .state)
 	  StreamTrait
-	  [stepper]-> stepper_
-	  [state]-> state_
+	  [.stepper]-> stepper
+	  [.state]-> state
 
   : nextResult [(Stream :stepper :state)]-> stepper state
 
@@ -164,6 +164,7 @@
 	  self foldr Done (?? ++)
 	[map :f]->
 	  self foldr Done [:item :tail]-> Yield (f item) tail
+	  -- doesn't the binding of tail above shadow tail? Hmmmm this could be a problem
 	[removeFirst :o]->
 	  self next
 	    [done]		-> []

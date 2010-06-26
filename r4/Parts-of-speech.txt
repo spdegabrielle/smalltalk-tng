@@ -1,0 +1,95 @@
+27 June 2010
+
+Languages like C, Smalltalk, Java, Common Lisp etc have more than one
+part of speech: identifiers mean different (but related, in the mind
+of the human) things in different positions. It's implemented with
+different namespaces. Languages like Scheme and R4 here have only a
+single part of speech! In Scheme we switch to "another" namespace by
+quoting identifiers and leaving it up to the receiver to analyze the
+symbol. In R4 there is no easy way of switching at all! This seems
+like a weakness. (Perl is an oddball, as usual.) (This "part of
+speech" name is not quite accurate: Scheme and R4 clearly have
+operator and operand positions, not to mention the various positions
+in all the special forms; but the other languages have more
+grammatical support for separate namespaces.)
+
+It's not so much a question of keywords vs variable-names, it's a
+question of parts-of-speech. Ideally we want clear separation of
+selector-like things from class-like things from variable-like things
+from keyword-like things from constructor-like things from
+destructor-like things, so that a lexically-defined variable doesn't
+shadow an outer selector and so on. It's difficult in languages like
+Scheme where the syntax is so fluid.
+
+Smalltalk
+ - distinguishes globals (classes) and locals by case.
+ - distinguishes selectors and variables by grammatical position.
+ - functions don't really exist (everything's a method, modulo blocks)
+ - keywords don't really exist (self, super, true, false, nil;
+   otherwise everything's a message send)
+ - constructors don't really exist
+ - destructors don't exist: there's no pattern matching
+ - quotation of symbols/selectors exists, but isn't much used
+
+Common Lisp
+ - distinguishes function-variables from data-variables by position.
+ - macros are keywords, in the function namespace.
+ - selectors are sometimes encoded as functions, sometimes quoted symbols.
+ - the quotation is what lets us simulate extra namespaces ad-hoc
+ - classes are encoded as data
+ - constructors are encoded as functions
+ - destructors don't exist: there's no pattern matching
+
+C
+ - distinguishes type names from variable names by grammatical
+   position (and occasionally by keyword: struct names are a
+   complication)
+ - functions (strictly, pointers) are data
+ - distinguishes constants from variables by case, generally.
+ - selectors are encoded as constants
+ - keywords are baked in to the language
+ - classes don't exist
+ - constructors don't really exist, but struct initializer syntax will
+   sometimes do, and under this interpretation, the constructor name
+   is the type name
+ - destructors don't exist: there's no pattern matching
+
+Java
+ - distinguishes class names from variable names by grammatical position
+ - distinguishes selectors from variables by grammatical position.
+ - functions don't really exist (everything's a method)
+ - keywords are baked in to the language
+ - constructors don't really exist (class names are used instead, after a keyword)
+ - destructors don't exist: there's no pattern matching
+
+Scheme
+ - macros are keywords, in the single namespace
+ - variables, classes are data in the single namespace
+ - selectors are sometimes encoded as functions, sometimes quoted symbols.
+ - the quotation is what lets us simulate extra namespaces ad-hoc
+ - classes are encoded as data
+ - constructors are encoded as functions (i.e. data)
+ - destructors don't exist: there's no pattern matching
+
+R4
+ - selector, class, variable, constructor, and destructor names are
+   all jumbled in together, in the same namespace.
+ - selectors are data
+ - classes are data
+ - constructors are data
+ - destructors are data
+ - macros/keywords are data
+ - there's no quotation!
+
+The quotation in certain of these languages is what lets us simulate
+extra namespaces ad-hoc. Other languages use strings for similar
+applications sometimes.
+
+A convention for capitalization, as seen in C and Java, might help
+informally separate out the namespaces. Plus, the language should warn
+you if you shadow anything. This might well become unwieldy as the
+number of bound variables gets large (many imports, gui toolkits
+etc). Besides, what about a Point class, with "x" and "y" fields? It'd
+suck to not be able to use "x" and "y" variables while manipulating
+some Point-related object. A convention of field-names starting with
+dot (".x", ".y") might help.

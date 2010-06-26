@@ -45,20 +45,20 @@
     (list
      '("%assemble\\>" . font-lock-warning-face)
 
-     '("\\([:.]\\)\\s +\\([A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
+     '("\\([:.]\\)\\s +\\([A-Z]\\([-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
        (1 font-lock-keyword-face)
        (2 font-lock-type-face))
 
-     '("\\([:.]\\)\\s +\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)\\s +\\["
+     '("\\([:.]\\)\\s +\\(\\([-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)\\s +\\["
        (1 font-lock-keyword-face)
        (2 font-lock-function-name-face))
 
-     '("\\([:.]\\)\\s +\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)\\s +\\(module\\)\\>"
+     '("\\([:.]\\)\\s +\\(\\([-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)\\s +\\(module\\)\\>"
        (1 font-lock-keyword-face)
        (2 font-lock-type-face)
        (4 font-lock-keyword-face))
 
-     '("\\([:.]\\)\\s +\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
+     '("\\([:.]\\)\\s +\\(\\([-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
        (1 font-lock-keyword-face)
        (2 font-lock-constant-face))
 
@@ -81,14 +81,14 @@
       'words)
 
      ;; Traits, types.
-     '("\\<[A-Z]\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~]\\)*" . font-lock-type-face)
+     '("\\<[A-Z]\\([-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~]\\)*" . font-lock-type-face)
 
      ;; Pattern variables.
-     '("\\(^\\|[^-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\):\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
+     '("\\(^\\|[^-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\):\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
        (2 font-lock-variable-name-face))
 
      ;; "Constants" leading a pattern.
-     '("\\[\\(\\([-a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
+     '("\\[\\(\\([-.a-zA-Z0-9+=_|/?<>*&^%$@!`'~:]\\)+\\)"
        (1 font-lock-function-name-face))
 
      ;; Selectors.
