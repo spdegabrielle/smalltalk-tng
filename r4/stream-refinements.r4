@@ -1,4 +1,4 @@
-: stream module "http://eighty-twenty.org/etng/r4/ns/stream#" [:platform]->
+: stream module []->
   : next
   : yield
   : skip

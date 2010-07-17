@@ -1,4 +1,4 @@
-: animal module "http://eighty-twenty.org/etng/r4/ns/animal#" [:platform]->
+: animal module [:platform]->
   : name
   : speak
 
