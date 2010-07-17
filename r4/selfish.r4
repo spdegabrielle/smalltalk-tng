@@ -1,0 +1,92 @@
+-- 2010-07-17 12pmish tonyg
+-- What if we make all variable references message sends to the
+-- context? Unifies modules etc. Problem: multipart messages.
+
+: x 123		-- tripartite message to context?
+: x fn arg	-- quadripartite? supposed to parse (: x (fn arg))
+x		-- unary message to context
+
+x aMessage	-- ((context x) aMessage)
+
+
+-- OK alternative syntax time. (Vietnam)
+
+x y		-- straight adjacency for normal message sending
+x y z
+x.aMessage	-- dot as a tight-binding binary apply operator: expr.expr
+x aMessage: y	-- colon as a medium-binding ... something
+x.foo bar: y.zot quux: baz
+
+-- Keep running into the quotation problem.
+(localVar otherLocalVar) -- needs evaluation at both positions, but
+(localVar someMessage) -- is supposed to be treated symbolically at someMessage!
+
+-- So the idea already extant in r4 of having symbols be lexically
+-- bound like everything else is a sound one, but becomes awkward in
+-- cases where you have, say, a Point struct, with members x and y,
+-- and you'd like to have a local variable named x as well as having
+-- access to (somePoint x). The x's shadow each other one way or the
+-- other.
+
+((context localVar) (context otherLocalVar)) -- where context is magic
+((context localVar) someMessage)
+
+-- Seen this way, quotation ('scheme-style) is seen as preventing
+-- evaluation. Another approach is seen in string interpolation,
+-- where "some $string or other" uses a quote-mark to *force*
+-- evaluation.
+
+-- The problem then is that the natural syntax kind of wants to be
+-- asymmetric: we may not mind sticking a quote mark on symbols
+-- intended as messages to explicit receivers, but might balk at
+-- marking the messages sent to the implicit context receiver (local
+-- variables)!
+
+((context $localVar) (context $otherLocalVar))
+((context $localVar) $someMessage)
+
+-- Grr
+
+-- Quote marks suppress evaluation by the default evaluation strategy.
+
+(1 + 2) asString
+::->
+1 [ + 2 ] send [ asString ] send
+
+(1 + (2 * 3))
+::->
+1 [ + 2 [ * 3 ] send ] send
+
+[:x | x + 2] 1
+::->
+{
+
+-- 2010-07-17 14:31:11 tonyg (still thinking about parts-of-speech)
+-- Could it be that the unnatural thing here is the use of adjacent
+-- *noun*ish things to indicate a combination? With a Smalltalkish
+-- message send, there are never two objects right next to each other:
+-- there's always a selector or selector fragment in between!
+
+-- Imperative programming
+-- Relational programming (logic, predicates, semweb, temporal logic?)
+
+-- Smalltalk messages are noun transformers (noun -> noun) with
+-- side-effects.
+
+-- What about things like parser combinators, and combinators in
+-- general? What part of speech is an applied parser-combinator? What
+-- about an unapplied parser-combinator?
+
+-- 2010-07-17 15:14:41 tonyg
+-- Objects in the r4 sense are nounish things with properties useful
+-- for selecting actions; that is to say, data. They're contexts for
+-- actions. Actions are side-effectful reductions, yielding new
+-- contexts. Actions are context rewrites.
+--
+-- A program is then a way of guiding reduction in some context. The
+-- context is the type? The programmer writes down selectors which are
+-- matched against the context to select the reduction to perform.
+
+-- (Beware of multiple dispatch: with single dispatch,
+-- action-selection is local, and remote-proxies are viable; with
+-- multiple dispatch, action-selection is a distributed transaction!)
