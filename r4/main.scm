@@ -1,9 +1,11 @@
+#lang racket
+
 (require srfi/1) ;; lists
 (require srfi/4) ;; homogeneous-numeric-vectors, u8vector
 (require srfi/8) ;; receive
 (require srfi/9) ;; records
 (require srfi/13) ;; strings
-(require srfi/69) ;; hash-tables
+(require (except-in srfi/69 string-hash)) ;; hash-tables
 (require scheme/pretty)
 
 (print-struct #t)
@@ -20,6 +22,8 @@
 
 (require "../../ometa-scheme/ometa.scm")
 (ometa-library-path "../../ometa-scheme")
+(define-namespace-anchor r4-namespace-anchor)
+(ometa-namespace-getter (lambda () (namespace-anchor->namespace r4-namespace-anchor)))
 
 (define (same-line? a b)
   (cond
@@ -42,7 +46,7 @@
 
 ;;---------------------------------------------------------------------------
 
-(load "compiler.scm")
+(require "compiler.scm")
 
 (define read-etng* (load-ometa "r4.g"))
 
@@ -99,7 +103,7 @@
 
 (define (etng-repl)
   (let* ((env (make-etng-scope #f))
-	 (e (eval-etng env)))
+	 (e (eval-etng/namespace env ((ometa-namespace-getter)))))
     (load-etng-file e "boot.r4")
     (let read-block ()
       (let ((block-text (collect-block (current-input-port))))

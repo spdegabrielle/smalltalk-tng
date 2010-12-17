@@ -1,3 +1,9 @@
+#lang racket
+(require srfi/9) ;; records
+(require (except-in srfi/69 string-hash)) ;; hash-tables
+
+(provide (except-out (all-defined-out) previous-inspector))
+
 '(define ast-node-patterns
    (<block> (block <expr> ...))
    (<expr> (begin <expr> ...)
@@ -58,6 +64,8 @@
 (current-inspector previous-inspector)
 ;;---------------------------------------------------------------------------
 
+(define etng-evaluator-metalevel-namespace (make-parameter 'no-etng-evaluator-metalevel-namespace))
+
 (define (make-etng-scope parent)
   (make-etng-scope* parent (make-hash-table equal?)))
 
@@ -96,7 +104,8 @@
     (`((varref ,identifier) ,ast)
      (etng-define! env identifier private? ((eval-etng env) ast)))
     (`((varref ,identifier) . ,asts)
-     (etng-define! env identifier private? ((eval-etng env) `(apply ,@asts))))))
+     (etng-define! env identifier private? ((eval-etng env)
+					    `(apply ,@asts))))))
 
 (define (etng-object->macro o)
   (make-etng-macro o))
@@ -170,6 +179,9 @@
 	(find-meta-object (etng-merge-base o))))
    ((etng-object? o) #f)
    (else (find-meta-object (proxy-for-primitive o)))))
+
+(define (etng-default-meta-object)
+  (error "No default-meta-object yet"))
 
 (define (etng-meta-send o message)
   (let ((m (or (find-meta-object o)
@@ -280,7 +292,13 @@
 			 (expr (caddr ast)))
 		     (let ((form `((lambda ,formals ,expr) ,@actuals)))
 		       ;;(pretty-print `(%assemble ,form))
-		       (eval form (current-namespace)))))
+		       (eval form (etng-evaluator-metalevel-namespace)))))
       (else (error "Invalid ETNG AST"))))
 
   e)
+
+(define (eval-etng/namespace env metalevel-namespace)
+  (let ((e (eval-etng env)))
+    (lambda (ast)
+      (parameterize ((etng-evaluator-metalevel-namespace metalevel-namespace))
+	(e ast)))))
