@@ -18,6 +18,8 @@
 
 	 extension?
 
+	 meta
+
 	 inert
 
 	 define-language
@@ -108,6 +110,14 @@
 (struct literal (value) #:transparent)
 (struct destructor (constructor subpatterns) #:transparent)
 
+(struct metaterm (value) #:transparent)
+(struct metapattern (pattern) #:transparent)
+
+(define-syntax meta
+  (syntax-rules ()
+    ((_ (ctor arg ...))
+     (metaterm (ctor arg ...)))))
+
 ;; The inert object.
 (define inert (coterm '()))
 
@@ -159,7 +169,9 @@
 	 body ...)))))
 
 (define-syntax compile-pattern
-  (syntax-rules (quote _)
+  (syntax-rules (meta quote _)
+    ((compile-pattern (meta subpat))
+     (metapattern (compile-pattern subpat)))
     ((compile-pattern _)
      'discard)
     ((compile-pattern (quote lit))
@@ -172,7 +184,8 @@
 (define-syntax compile-expr
   (lambda (stx)
     (define (flatten x)
-      (syntax-case x (quote _)
+      (syntax-case x (meta quote _)
+	((meta pat) (flatten (syntax pat)))
 	(_ '())
 	((quote lit) '())
 	((dtor pat ...) (apply append (map flatten (syntax->list (syntax (pat ...))))))
@@ -227,6 +240,13 @@
   (parameterize ((coercion-cache (make-hash)))
     (ensure-termish value language)))
 
+(define (try-coerce language direct-receiver indirect-receiver)
+  (send-as/k (metaterm (coerce (language-name language)))
+	     direct-receiver
+	     indirect-receiver
+	     (lambda (result) (ensure-termish result language))
+	     (lambda (message receiver) #f)))
+
 (define (ensure-termish v0 language)
   ;; TODO: check for cyclic coercion maybe?
   ;;(pretty-print `(ensure-termish ,v0 ,language))
@@ -239,56 +259,51 @@
 		      ((term? v) (if (eq? (constructor-language (term-constructor v))
 					  language)
 				     v
-				     (send-as/k (coerce (language-name language))
-						v
-						v0
-						(lambda (result)
-						  (ensure-termish result language))
-						(lambda (message receiver)
-						  #f))))
-		      ((coterm? v) (send-as/k (coerce (language-name language))
-					      v
-					      v0
-					      (lambda (result)
-						(ensure-termish result language))
-					      (lambda (message receiver)
-						#f)))
+				     (try-coerce language v v0)))
+		      ((coterm? v) (try-coerce language v v0))
 		      (else (let loop ((rewriters primitive-rewriters))
 			      (cond
 			       ((null? rewriters) #f)
-			       (((caar rewriters) v) (ensure-termish ((cdar rewriters) v)
-								     language))
+			       (((caar rewriters) v)
+				(ensure-termish ((cdar rewriters) v) language))
 			       (else (loop (cdr rewriters))))))))))
 	(hash-set! (coercion-cache) v0 value)
 	value)))
 
 (define (match-pattern message p bindings)
   ;;(pretty-print `(match-pattern ,message ,p ,bindings))
-  (cond
-   ((eq? p 'discard)
-    bindings)
-   ((binding? p)
-    (cons message bindings))
-   ((literal? p)
-    (and (equal? message (literal-value p))
-	 bindings))
-   ((destructor? p)
-    (let* ((c (destructor-constructor p))
-	   (m (ensure-termish message (constructor-language c))))
-      (and m
-	   (eq? (term-constructor m) c)
-	   (let ((field-count (constructor-arity c))
-		 (fields (term-fields m))
-		 (subpatterns (destructor-subpatterns p)))
-	     (let match-fields ((i (- field-count 1))
-				(bindings bindings))
-	       (if (negative? i)
-		   bindings
-		   (let ((new-bindings (match-pattern (vector-ref fields i)
-						      (vector-ref subpatterns i)
-						      bindings)))
-		     (and new-bindings
-			  (match-fields (- i 1) new-bindings)))))))))))
+  (if (metaterm? message)
+      (and (metapattern? p)
+	   (match-pattern (metaterm-value message)
+			  (metapattern-pattern p)
+			  bindings))
+      (cond
+       ((eq? p 'discard)
+	bindings)
+       ((binding? p)
+	(cons message bindings))
+       ((literal? p)
+	(and (equal? message (literal-value p))
+	     bindings))
+       ((destructor? p)
+	(let* ((c (destructor-constructor p))
+	       (m (ensure-termish message (constructor-language c))))
+	  (and m
+	       (eq? (term-constructor m) c)
+	       (let ((field-count (constructor-arity c))
+		     (fields (term-fields m))
+		     (subpatterns (destructor-subpatterns p)))
+		 (let match-fields ((i (- field-count 1))
+				    (bindings bindings))
+		   (if (negative? i)
+		       bindings
+		       (let ((new-bindings (match-pattern (vector-ref fields i)
+							  (vector-ref subpatterns i)
+							  bindings)))
+			 (and new-bindings
+			      (match-fields (- i 1) new-bindings)))))))))
+       ((metapattern? p)
+	#f))))
 
 (define (send-single-message message receiver)
   (send-as message receiver receiver))
@@ -352,14 +367,17 @@
   (Snoc butlast last))
 
 (extend-behaviour <list>
-  ((Cons a (Nil))      (object ((coerce '<tsil>) (Snoc (Nil) a))))
-  ((Cons a (Snoc b c)) (object ((coerce '<tsil>) (Snoc (Cons a b) c)))))
+  ((Cons a (Nil))      (object ((meta (coerce '<tsil>)) (Snoc (Nil) a))))
+  ((Cons a (Snoc b c)) (object ((meta (coerce '<tsil>)) (Snoc (Cons a b) c)))))
 
 (define (t)
   ((object ((Cons a d) d)) '(1 2)))
 
 (define last
   (object ((Snoc d a) a)))
+
+(define butlast
+  (object ((Snoc d a) d)))
 
 (define (r)
   ((object ((Snoc d a) d)) '(1 2)))
