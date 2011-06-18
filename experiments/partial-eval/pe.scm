@@ -767,6 +767,28 @@
 		     (* x 2))
 		   (list->stream '(1 2 3 4 5))))))
 
+(define list-serializer
+  '(letrec ((ser (lambda* (x emit k)
+		   (if (pair? x)
+		       (emit 'open
+			     (lambda* (emit)
+			       (letrec ((serlist (lambda* (xs emit k)
+						   (if (pair? xs)
+						       (ser (car x) emit
+							    (lambda* (emit)
+							      (serlist (cdr xs) emit k)))
+						       (k emit)))))
+				 (serlist x emit (lambda* (emit)
+						   (emit 'close k))))))
+		       (if (number? x)
+			   (emit x k)
+			   (error 'not-supported-in-ser))))))
+     (letrec ((collect (lambda* (v k)
+			 (cons v (k collect)))))
+       (ser '(12 22 32)
+	    collect
+	    (lambda* (emit) '())))))
+
 ;;; Local Variables:
 ;;; eval: (put 'lambda* 'scheme-indent-function 1)
 ;;; End:

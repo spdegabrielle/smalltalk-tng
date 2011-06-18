@@ -1,0 +1,15 @@
+language Term
+  | num :value
+  | var :name
+  | :left times :right
+
+-- Lame
+def simplify =
+  | x times (num 1) -> x
+  | v -> v
+
+-- Better
+def simplify =
+  | x times (num 1) -> simplify x
+  | (num 1) times x -> simplify x
+  | v -> v
