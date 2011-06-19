@@ -426,14 +426,15 @@
 	    ((Cons a (Snoc b c)) (Just (Snoc (Cons a b) c)))
 	    (_                   (Nothing))))))
 
-(define (t)
-  ((object ((Cons a d) d)) '(1 2)))
+(extend-behaviour <tsil>
+  (object self
+    ((meta (coerce '<list>))
+     (ocase self
+	    ((Snoc (Nil) a)      (Just (Cons a (Nil))))
+	    ((Snoc (Cons a b) c) (Just (Cons a (Snoc b c))))
+	    (_                   (Nothing))))))
 
-(define last
-  (object ((Snoc d a) a)))
-
-(define butlast
-  (object ((Snoc d a) d)))
-
-(define (r)
-  ((object ((Snoc d a) d)) '(1 2)))
+(define first   (object ((Cons a d) a)))
+(define rest    (object ((Cons a d) d)))
+(define last    (object ((Snoc d a) a)))
+(define butlast (object ((Snoc d a) d)))
