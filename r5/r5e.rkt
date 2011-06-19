@@ -143,10 +143,6 @@
 ;; The inert object.
 (define inert (coterm '()))
 
-(define (default-language-behaviour name)
-  ;; TODO: the way language behaviour is defined is all screwed up.
-  (object (term (object))))
-
 (define (make-constructor! language name field-names)
   (let ((c (constructor language name field-names)))
     (set-language-constructors! language (append (language-constructors language)
@@ -156,7 +152,7 @@
 (define-syntax define-language
   (syntax-rules ()
     ((_ name ctor-definition ...)
-     (begin (define name (language 'name '() (make-parameter (default-language-behaviour 'name))))
+     (begin (define name (language 'name '() (make-parameter inert)))
 	    (define-constructor name ctor-definition) ...))))
 
 (define-syntax define-constructor
