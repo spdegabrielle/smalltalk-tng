@@ -85,10 +85,20 @@
 (define (constructor-arity c)
   (vector-length (constructor-field-names c)))
 
+(define (write-term v port is-write)
+  (display "{" port)
+  (display (constructor-name (term-constructor v)) port)
+  (for-each (lambda (f)
+	      (display " " port)
+	      (write f port))
+	    (vector->list (term-fields v)))
+  (display "}" port))
+
 ;; Term = (term Constructor VectorOf<Value>)
 (struct term (constructor fields)
 	#:transparent
-	#:property prop:procedure send-series)
+	#:property prop:procedure send-series
+	#:property prop:custom-write write-term)
 
 ;; Coterm = (coterm ListOf<(cons Pattern Procedure)>)
 (struct coterm (clauses)
@@ -106,9 +116,20 @@
 ;;         | (binding Symbol)
 ;;         | (literal Any)
 ;;         | (destructor Constructor VectorOf<Pattern>)
-(struct binding (name) #:transparent)
-(struct literal (value) #:transparent)
-(struct destructor (constructor subpatterns) #:transparent)
+(struct binding (name) #:transparent
+	#:property prop:custom-write
+	(lambda (v port is-write)
+	  (write (binding-name v) port)))
+(struct literal (value) #:transparent
+	#:property prop:custom-write
+	(lambda (v port is-write)
+	  (write (list 'quote (literal-value v)) port)))
+(struct destructor (constructor subpatterns) #:transparent
+	#:property prop:custom-write
+	(lambda (v port is-write)
+	  ;; cheap hack.
+	  (write (term (destructor-constructor v)
+		       (destructor-subpatterns v)) port)))
 
 (struct metaterm (value) #:transparent)
 (struct metapattern (pattern) #:transparent)
