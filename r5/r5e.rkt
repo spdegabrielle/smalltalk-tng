@@ -39,7 +39,8 @@
 
 	 define-primitive-rewriter
 
-	 send-as)
+	 as
+	 ocase)
 
 (define-syntax make-writer
   (syntax-rules ()
@@ -165,29 +166,41 @@
 
 (define-syntax define-behaviour
   (syntax-rules ()
-    ((_ language (pattern expr ...) ...)
-     ((language-behaviour language)
-      (object (pattern expr ...) ...)))))
+    ((_ language object)
+     ((language-behaviour language) object))))
 
 (define-syntax extend-behaviour
   (syntax-rules ()
-    ((_ language (pattern expr ...) ...)
+    ((_ language object)
+     (extend-behaviour language dummy-super object))
+    ((_ language super object)
      (let ((p (language-behaviour language)))
-       (p (extend (object (pattern expr ...) ...) (p)))))))
+       (let ((super (p)))
+	 (p (extend object super)))))))
 
 (define-syntax let-behaviour
   (syntax-rules ()
-    ((_ language ((pattern expr ...) ...) body ...)
-     (parameterize (((language-behaviour language)
-		     (object (pattern expr ...) ...)))
+    ((_ ((language object) ...) body ...)
+     (parameterize (((language-behaviour language) object)
+		    ...)
        body ...))))
 
 (define-syntax let-extension
   (syntax-rules ()
-    ((_ language ((pattern expr ...) ...) body ...)
-     (let ((p (language-behaviour language)))
-       (parameterize ((p (extend (object (pattern expr ...) ...) (p))))
+    ((_ ((language more ...) ...) body ...)
+     (let ((p (language-behaviour language))
+	   ...)
+       (parameterize ((p (build-extension (p) more ...))
+		      ...)
 	 body ...)))))
+
+(define-syntax build-extension
+  (syntax-rules ()
+    ((_ super-expr object)
+     (extend object super-expr))
+    ((_ super-expr super object)
+     (let ((super super-expr))
+       (extend object super)))))
 
 (define-syntax compile-pattern
   (syntax-rules (meta quote _)
@@ -246,8 +259,7 @@
 		  (lambda (self) (apply method self bindings))
 		  (search rest)))))))
    ((term? r)
-    (let* ((behaviour-factory ((language-behaviour (constructor-language (term-constructor r)))))
-	   (behaviour (send-as r behaviour-factory behaviour-factory)))
+    (let ((behaviour ((language-behaviour (constructor-language (term-constructor r))))))
       (lookup message behaviour)))
    (else
     (error 'lookup "Expected cotermish, got ~v" r))))
@@ -265,7 +277,18 @@
   (send-as/k (metaterm (coerce (language-name language)))
 	     direct-receiver
 	     indirect-receiver
-	     (lambda (result) (ensure-termish result language))
+	     (lambda (result)
+	       (cond
+		((and (term? result)
+		      (eq? <maybe> (constructor-language (term-constructor result))))
+		 (if (eq? Nothing (term-constructor result))
+		     #f
+		     (ensure-termish (vector-ref (term-fields result) 0) language)))
+		(else
+		 ;; TODO: permit coercion of result into <maybe> ?
+		 (error 'try-coerce
+			"Coercion must return <maybe> instance; got ~v"
+			result))))
 	     (lambda (message receiver) #f)))
 
 (define (ensure-termish v0 language)
@@ -329,6 +352,9 @@
 (define (send-single-message message receiver)
   (send-as message receiver receiver))
 
+(define (as super self message)
+  (send-as message super self))
+
 (define (send-as message direct-receiver indirect-receiver)
   (send-as/k message direct-receiver indirect-receiver values does-not-understand))
 
@@ -354,6 +380,11 @@
      (define-primitive-rewriter! predicate
        (lambda (valuename) body ...)))))
 
+(define-syntax ocase
+  (syntax-rules ()
+    ((_ test (pattern expr ...) ...)
+     ((object (pattern expr ...) ...) test))))
+
 ;;---------------------------------------------------------------------------
 
 (define-language <debugging>
@@ -372,6 +403,10 @@
 (define-language <racket-symbol>
   (RacketSymbol s))
 
+(define-language <maybe>
+  (Nothing)
+  (Just value))
+
 (define-primitive-rewriter (null? v)
   (Nil))
 
@@ -388,8 +423,12 @@
   (Snoc butlast last))
 
 (extend-behaviour <list>
-  ((Cons a (Nil))      (object ((meta (coerce '<tsil>)) (Snoc (Nil) a))))
-  ((Cons a (Snoc b c)) (object ((meta (coerce '<tsil>)) (Snoc (Cons a b) c)))))
+  (object self
+    ((meta (coerce '<tsil>))
+     (ocase self
+	    ((Cons a (Nil))      (Just (Snoc (Nil) a)))
+	    ((Cons a (Snoc b c)) (Just (Snoc (Cons a b) c)))
+	    (_                   (Nothing))))))
 
 (define (t)
   ((object ((Cons a d) d)) '(1 2)))
