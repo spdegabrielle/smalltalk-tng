@@ -418,6 +418,15 @@
 (define-language <tsil>
   (Snoc butlast last))
 
+(define-language <mapping>
+  (Map))
+
+(extend-behaviour <list>
+  (object self
+    ((Map) (object (f (ocase self
+			     ((Cons a d) (Cons (f a) (d (Map) f)))
+			     (_ (Nil))))))))
+
 (extend-behaviour <list>
   (object self
     ((meta (coerce '<tsil>))
