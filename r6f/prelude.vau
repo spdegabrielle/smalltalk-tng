@@ -1,0 +1,52 @@
+; -*- scheme -*-
+
+(display "Vau 0") (newline)
+
+($define! *base-env*
+  (($vau () env env)))
+
+($define! $cond
+  ($vau forms env
+    ($if (null? forms)
+         #ignore
+	 ($let ((val (eval (car (car forms)) env)))
+	   ($if val
+	        (eval (list* $begin (cdr (car forms))) env)
+		(eval (list* $cond (cdr forms)) env))))))
+
+($define! for-each
+  ($lambda (proc xs)
+    ($if (null? xs)
+         #ignore
+	 ($begin (proc (car xs))
+		 (for-each proc (cdr xs))))))
+
+($define! dump-env
+  ($lambda (env)
+    ($cond
+     ((null? env) #ignore)
+     ((eq? env *base-env*) #ignore)
+     (#t (for-each ($lambda (x) (write x) (newline))
+		   (hash->list (car env)))
+	 (display "----------------------------------------")
+	 (newline)
+	 (dump-env (cdr env))))))
+
+($define! $repl
+  ($vau () env
+    ($define! loop
+      ($lambda ()
+	(newline)
+	(dump-env env)
+	(display ">> ")
+	(flush-output)
+	($let ((exp (read)))
+	  ($if (eof-object? exp)
+	    #ignore
+	    ($begin (write (eval exp env))
+		    (newline)
+		    (loop))))))
+    (loop)))
+
+($let ()
+  ($repl))
