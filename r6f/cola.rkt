@@ -3,6 +3,12 @@
 ;; Implementation of Piumarta/Warth-style "Open, Reusable Object
 ;; Models" for Racket.
 
+;; Objects: have private state of their own, and a vtable for giving
+;; them behaviour.
+;;
+;; VTables: map method names to closures. Include simple parent-style
+;; delegation. Are also objects.
+
 (provide (all-defined-out)) ;; TODO
 
 (define-values (prop:vtable vtable? vtable-getter)
@@ -60,4 +66,4 @@
 
 (send vtable-vt 'add-method! 'delegated
       (lambda (self)
-	(simple-vtable (make-hash) self (vtable-of self))))
+	(simple-vtable (make-hash) self vtable-vt)))

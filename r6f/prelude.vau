@@ -3,7 +3,7 @@
 (display "Vau 0") (newline)
 
 ($define! *base-env*
-  (($vau () env env)))
+  (($vau #ignore env env)))
 
 ($define! $cond
   ($vau forms env
@@ -47,6 +47,25 @@
 		    (newline)
 		    (loop))))))
     (loop)))
+
+;; ($define! apply
+;;   ($lambda (appv arg . opt)
+;;     (eval (cons (unwrap appv) arg)
+;; 	  ($if (null? opt)
+;; 	       (make-environment)
+;; 	       (car opt)))))
+
+;; ($define! mc-eval
+;;   ($lambda (exp env)
+;;     ($define! v
+;;       ($lambda (exp)
+;; 	($cond
+;; 	 ((symbol? exp) (lookup exp env))
+;; 	 ((not (pair? exp)) exp)
+;; 	 (#t ($let ((rator (v (car exp))))
+;; 	       (cond
+;; 		((applicative? rator) (v (cons (unwrap rator) (map v (cdr exp)))))
+;; 		((operative? rator) (mc-eval (operative-body rator)
 
 ($let ()
   ($repl))
