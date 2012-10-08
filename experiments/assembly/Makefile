@@ -15,5 +15,8 @@ tiny.elf.stripped: tiny.elf
 tiny.elf: tiny.S elfheader.S
 	gcc -nostdlib -o tiny.elf tiny.S
 
+tiny_osx.macho: tiny_osx.S machoheader.S
+	gcc -nostdlib -o tiny_osx.macho tiny_osx.S
+
 clean:
 	rm -f $(TARGETS)

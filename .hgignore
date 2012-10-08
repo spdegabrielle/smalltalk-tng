@@ -7,6 +7,9 @@ syntax: glob
 *.Plo
 
 syntax: regexp
+
+^experiments/assembly/tiny_osx\.macho$
+
 ^experiments/codegen/tinyscheme[^/]*/scheme$
 ^experiments/codegen/shell$
 
