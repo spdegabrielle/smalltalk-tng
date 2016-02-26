@@ -26,7 +26,7 @@
   (let ((vt (vtable-of o)))
     (if (and (eq? name 'lookup)
 	     (eq? vt vtable-vt))
-	(vtable-lookup o name)
+	(vtable-lookup vt name)
 	(send vt 'lookup name))))
 
 (define (send o name . args)
