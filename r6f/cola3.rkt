@@ -90,3 +90,11 @@ o
 ;; than being in a cycle with them, so vtables do not inherit any
 ;; protocol of objects. This is getting closer to Smalltalk-like
 ;; subclassing-of-nil.
+
+;; However, we have gone too far: in the step from cola.rkt to
+;; cola2.rkt, I removed simple-vtable-vtable. This means that all
+;; simple-vtable instances have the same behaviour, which is why
+;; adding 'allocate to vtable-vt seems to work. Better would be to
+;; have some object-specific vt that we could add 'allocate to, but
+;; without simple-vtable-vtable there is no way to do that without
+;; constructing a new kind of vtable.
