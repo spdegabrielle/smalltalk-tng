@@ -14,12 +14,12 @@
 (define-values (prop:vtable vtable? vtable-getter)
   (make-struct-type-property 'vtable))
 
-(struct simple-vtable (methods parent vtable) #:prefab)
+(struct simple-vtable (methods parent) #:prefab)
 
 (define (vtable-of o)
   (cond
    ((vtable? o) ((vtable-getter o) o))
-   ((simple-vtable? o) (simple-vtable-vtable o))
+   ((simple-vtable? o) vtable-vt)
    (else (error 'vtable-of "Cannot compute vtable for ~v" o))))
 
 (define (bind o name)
@@ -47,14 +47,8 @@
 	     name
 	     method))
 
-(define object-vt (let* ((ovt-ph (make-placeholder #f))
-			 (vvt-ph (make-placeholder #f))
-			 (ovt (simple-vtable (make-hash) #f vvt-ph))
-			 (vvt (simple-vtable (make-hash) ovt-ph vvt-ph)))
-		    (placeholder-set! ovt-ph ovt)
-		    (placeholder-set! vvt-ph vvt)
-		    (make-reader-graph ovt)))
-(define vtable-vt (simple-vtable-vtable object-vt))
+(define object-vt (simple-vtable (make-hash) #f))
+(define vtable-vt (simple-vtable (make-hash) object-vt))
 
 (vtable-add-method! vtable-vt 'lookup vtable-lookup)
 
@@ -66,7 +60,7 @@
 
 (send vtable-vt 'add-method! 'delegated
       (lambda (self)
-	(simple-vtable (make-hash) self (vtable-of self))))
+	(simple-vtable (make-hash) self)))
 
 ;;---------------------------------------------------------------------------
 
@@ -91,7 +85,8 @@
 (send o 'get-field 0)
 o
 
-;; Awkward: simple-vtable-vtable seems redundant (though does make the
-;; recursion in the object graph explicit); and vtables extend object,
-;; which means they get all object behaviours, including get-field,
-;; which doesn't make sense.
+;; Awkward: though I have removed simple-vtable-vtable, making the
+;; recursion in the object graph implicit via recursion in a Racket
+;; module-level variable, it is still the case that vtables extend
+;; object, which means they get all object behaviours, including
+;; get-field, which doesn't make sense.
