@@ -66,4 +66,27 @@
 
 (send vtable-vt 'add-method! 'delegated
       (lambda (self)
-	(simple-vtable (make-hash) self vtable-vt)))
+	(simple-vtable (make-hash) self (vtable-of self))))
+
+;;---------------------------------------------------------------------------
+
+(struct object (vtable fields)
+  #:transparent
+  #:property prop:vtable (lambda (o) (object-vtable o)))
+
+(send vtable-vt 'add-method! 'allocate
+      (lambda (self field-count)
+        (object self (make-vector field-count (void)))))
+
+(send object-vt 'add-method! 'get-field
+      (lambda (self field-index)
+        (vector-ref (object-fields self) field-index)))
+
+(send object-vt 'add-method! 'set-field!
+      (lambda (self field-index new-value)
+        (vector-set! (object-fields self) field-index new-value)))
+
+(define o (send object-vt 'allocate 1))
+(send o 'set-field! 0 'hello)
+(send o 'get-field 0)
+o
