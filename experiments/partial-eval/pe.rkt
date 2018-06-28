@@ -317,24 +317,32 @@
         (Lit (apply f args))
         (apply residualize-apply f-name args))))
 
+(define (lift-commutative-associative-binop f-name f identity)
+  (lambda vals
+    (define-values (known unknown) (partition sval-known? vals))
+    (define part-val (apply f (map Lit-value known)))
+    (define part (Lit part-val))
+    (cond [(null? unknown) part]
+          [(= identity part-val) (apply residualize-apply f-name unknown)]
+          [else (apply residualize-apply f-name part unknown)])))
+
 (define (prim-env)
   (map (lambda (p) (cons (Prim-name p) (box (list p))))
        (list
 	(Prim 'sval-known? (lambda (x) (Lit (sval-known? x))))
-	(Prim '+ (lambda vals
-                   (define-values (known unknown) (partition sval-known? vals))
-                   (define part-val (apply + (map Lit-value known)))
-                   (define part (Lit part-val))
-                   (cond [(null? unknown) part]
-                         [(zero? part-val) (apply residualize-apply '+ unknown)]
-                         [else (apply residualize-apply '+ part unknown)])))
+	(Prim '+ (lift-commutative-associative-binop '+ + 0))
+	(Prim '* (lift-commutative-associative-binop '* * 1))
 	(Prim '- (lift-residualize '- -))
 	(Prim '< (lift-residualize '< <))
-	(Prim 'cons Cons)
+	(Prim 'cons (lambda (a d)
+                      (if (and (Lit? a) (Lit? d))
+                          (Lit (cons (Lit-value a) (Lit-value d)))
+                          (Cons a d))))
 	(Prim 'null? (lift-residualize* 'null? (lambda (x) (and (Lit? x) (null? (Lit-value x))))))
 	(Prim 'pair? (lift-residualize* 'pair? (lambda (x)
                                                  (or (Cons? x)
                                                      (and (Lit? x) (pair? (Lit-value x)))))))
+        (Prim 'number? (lift-residualize* 'number? (lambda (x) (and (Lit? x) (number? (Lit-value x))))))
 	(Prim 'zero? (lift-residualize 'zero? zero?))
 	(Prim 'eq? (lambda (x y)
 		     (if (and (Lit? x)
@@ -690,20 +698,22 @@
 
 (define list-serializer
   '(letrec ((ser (lambda* (x emit k)
-		   (if (pair? x)
-		       (emit 'open
-			     (lambda* (emit)
-			       (letrec ((serlist (lambda* (xs emit k)
-						   (if (pair? xs)
-						       (ser (car x) emit
-							    (lambda* (emit)
-							      (serlist (cdr xs) emit k)))
-						       (k emit)))))
-				 (serlist x emit (lambda* (emit)
-						   (emit 'close k))))))
-		       (if (number? x)
-			   (emit x k)
-			   (error 'not-supported-in-ser))))))
+                   (cond
+                     [(pair? x)
+                      (emit 'open
+                            (lambda* (emit)
+                              (letrec ((serlist (lambda* (xs emit k)
+                                                  (if (pair? xs)
+                                                      (ser (car xs) emit
+                                                           (lambda* (emit)
+                                                             (serlist (cdr xs) emit k)))
+                                                      (k emit)))))
+                                (serlist x emit (lambda* (emit)
+                                                  (emit 'close k))))))]
+                     [(number? x)
+                      (emit x k)]
+                     [else
+                      (error 'not-supported-in-ser)]))))
      (letrec ((collect (lambda* (v k)
 			 (cons v (k collect)))))
        (ser '(12 22 32)
