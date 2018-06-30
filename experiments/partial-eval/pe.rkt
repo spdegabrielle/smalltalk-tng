@@ -37,7 +37,7 @@
 (define-node-struct Prim (name handler))
 (define-node-struct Cons (a d))
 
-(define (parse exp env)
+(define (parse exp)
   (let walk ((exp exp))
     (match exp
       [(? symbol?) (Ref exp)]
@@ -45,18 +45,17 @@
       [`(quote ,e) (Lit e)]
 
       [`(lambda (,formals ...) #:filter ,filter ,body-exps ...)
-       (define newenv (append formals env))
        (Lambda formals
-               (parse filter newenv)
-               (parse `(begin ,@body-exps) newenv))]
+               (parse filter)
+               (parse `(begin ,@body-exps)))]
       [`(lambda (,formals ...) ,body-exps ...)
        (Lambda formals
                #f
-               (parse `(begin ,@body-exps) (append formals env)))]
+               (parse `(begin ,@body-exps)))]
       [`(lambda* (,formals ...) ,body-exps ...)
        (Lambda formals
                (Lit 'unfold)
-               (parse `(begin ,@body-exps) (append formals env)))]
+               (parse `(begin ,@body-exps)))]
 
       [`(begin) (Lit (void))]
       [`(begin ,e) (walk e)]
@@ -77,9 +76,7 @@
       [`(letrec ((,names ,inits) ...) ,es ...)
        (if (null? names)
            (walk `(begin ,@es))
-           (let* ((newenv (append names env))
-                  (p (lambda (x) (parse x newenv))))
-             (Letrec names (map p inits) (p `(begin ,@es)))))]
+           (Letrec names (map parse inits) (parse `(begin ,@es))))]
 
       [`(let* () ,es ...)
        (walk `(begin ,@es))]
@@ -371,7 +368,7 @@
 (define (basic-env)
   (foldl (lambda (entry env)
            (cons (cons (car entry)
-                       (box (list (pe (parse (cadr entry) '()) env '()))))
+                       (box (list (pe (parse (cadr entry)) env '()))))
                  env))
          (prim-env)
          (list
@@ -439,7 +436,7 @@
 (define (basic-env/streams)
   (foldl (lambda (entry env)
            (cons (cons (car entry)
-                       (box (list (pe (parse (cadr entry) '()) env '()))))
+                       (box (list (pe (parse (cadr entry)) env '()))))
                  env))
          (basic-env)
          (list
@@ -582,7 +579,7 @@
           )))
 
 (define (test-exp exp)
-  (pe (parse exp '()) (basic-env/streams) '()))
+  (pe (parse exp) (basic-env/streams) '()))
 
 (define (test)
   (let ((result (test-exp '(map (lambda (x)
