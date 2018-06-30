@@ -13,9 +13,10 @@
 (require racket/match)
 (require racket/pretty)
 (require (only-in racket/list drop-right last partition append-map))
+(require (only-in racket/struct make-constructor-style-printer))
 
-(define-syntax-rule (define-node-struct N (F ...))
-  (struct N (F ...) #:prefab))
+(define-syntax-rule (define-node-struct N (F ...) extra ...)
+  (struct N (F ...) #:transparent extra ...))
 
 (define-node-struct Lit (value))
 (define-node-struct Letrec (names inits body))
@@ -24,7 +25,14 @@
 (define-node-struct Begin (exprs))
 (define-node-struct If (test true false))
 (define-node-struct Apply (rator rands))
-(define-node-struct Closure (formals filter body env))
+(define-node-struct Closure (formals filter body env)
+  #:methods gen:custom-write
+  [(define write-proc
+     (make-constructor-style-printer (lambda (c) 'Closure)
+                                     (lambda (c) (list (Closure-formals c)
+                                                       (Closure-filter c)
+                                                       (Closure-body c)
+                                                       '*env*))))])
 (define-node-struct ApplyCached (rator rands))
 (define-node-struct Prim (name handler))
 (define-node-struct Cons (a d))
