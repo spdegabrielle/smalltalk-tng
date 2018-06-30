@@ -33,7 +33,6 @@
                                                        (Closure-filter c)
                                                        (Closure-body c)
                                                        '*env*))))])
-(define-node-struct ApplyCached (rator rands))
 (define-node-struct Prim (name handler))
 (define-node-struct Cons (a d))
 
@@ -155,7 +154,7 @@
                                      (if prop rand (Ref formal))))
                (define cache-key (cons rator cache-rands))
                (match (assoc cache-key cache)
-                 [(list _ cached-rator) (ApplyCached cached-rator rands)]
+                 [(list _ cached-rator) (Apply cached-rator rands)]
                  [#f
                   (define tmp-sym (gensym 'rator))
                   (Letrec (list tmp-sym)
@@ -200,8 +199,7 @@
 
     [(If test true false) `(if ,(codegen test) ,(codegen true) ,(codegen false))]
 
-    [(Apply rator rands) `(,(codegen rator) ,@(map codegen rands))]
-    [(ApplyCached rator rands) `(GOTO ,(codegen rator) ,@(map codegen rands))]))
+    [(Apply rator rands) `(,(codegen rator) ,@(map codegen rands))]))
 
 (define (free-names pexp)
   (match pexp
@@ -216,9 +214,7 @@
     [(Ref name) (seteq name)]
     [(Begin exprs) (apply set-union (seteq) (map free-names exprs))]
     [(If test true false) (set-union (free-names test) (free-names true) (free-names false))]
-    [(or (Apply rator rands)
-         (ApplyCached rator rands))
-     (apply set-union (free-names rator) (map free-names rands))]))
+    [(Apply rator rands) (apply set-union (free-names rator) (map free-names rands))]))
 
 (struct cached-code ([use-count #:mutable] temp-var-sym [reduced-expr #:mutable]) #:transparent)
 
@@ -275,8 +271,7 @@
 
       [(If test true false) `(if ,(walk test) ,(walk true) ,(walk false))]
 
-      [(Apply rator rands) `(,(walk rator) ,@(map walk rands))]
-      [(ApplyCached rator rands) `(GOTO ,(walk rator) ,@(map walk rands))]))
+      [(Apply rator rands) `(,(walk rator) ,@(map walk rands))]))
 
   (let* ((exp (walk pexp))
          (remapped-cache (for/hash [(c (in-hash-values cache))]
