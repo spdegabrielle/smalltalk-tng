@@ -360,11 +360,13 @@
                            [(Lit (cons _ d)) (Lit d)]
                            [_ (residualize-apply 'PRIMcdr x)]))))))
 
+(define (extend-env/global entry env)
+  (cons (cons (car entry)
+              (box (list (pe (parse (cadr entry)) env '()))))
+        env))
+
 (define (basic-env)
-  (foldl (lambda (entry env)
-           (cons (cons (car entry)
-                       (box (list (pe (parse (cadr entry)) env '()))))
-                 env))
+  (foldl extend-env/global
          (prim-env)
          (list
           (list 'car '(lambda (x)
@@ -429,10 +431,7 @@
           )))
 
 (define (basic-env/streams)
-  (foldl (lambda (entry env)
-           (cons (cons (car entry)
-                       (box (list (pe (parse (cadr entry)) env '()))))
-                 env))
+  (foldl extend-env/global
          (basic-env)
          (list
           (list 'make-stream '(lambda* (stepper state)
