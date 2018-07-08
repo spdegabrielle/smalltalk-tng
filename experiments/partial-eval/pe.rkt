@@ -13,9 +13,10 @@
 (require racket/match)
 (require racket/pretty)
 (require (only-in racket/list drop-right last partition append-map))
+(require (only-in racket/struct make-constructor-style-printer))
 
-(define-syntax-rule (define-node-struct N (F ...))
-  (struct N (F ...) #:prefab))
+(define-syntax-rule (define-node-struct N (F ...) extra ...)
+  (struct N (F ...) #:transparent extra ...))
 
 (define-node-struct Lit (value))
 (define-node-struct Letrec (names inits body))
@@ -24,12 +25,18 @@
 (define-node-struct Begin (exprs))
 (define-node-struct If (test true false))
 (define-node-struct Apply (rator rands))
-(define-node-struct Closure (formals filter body env))
-(define-node-struct ApplyCached (rator rands))
+(define-node-struct Closure (formals filter body env)
+  #:methods gen:custom-write
+  [(define write-proc
+     (make-constructor-style-printer (lambda (c) 'Closure)
+                                     (lambda (c) (list (Closure-formals c)
+                                                       (Closure-filter c)
+                                                       (Closure-body c)
+                                                       '*env*))))])
 (define-node-struct Prim (name handler))
 (define-node-struct Cons (a d))
 
-(define (parse exp env)
+(define (parse exp)
   (let walk ((exp exp))
     (match exp
       [(? symbol?) (Ref exp)]
@@ -37,18 +44,17 @@
       [`(quote ,e) (Lit e)]
 
       [`(lambda (,formals ...) #:filter ,filter ,body-exps ...)
-       (define newenv (append formals env))
        (Lambda formals
-               (parse filter newenv)
-               (parse `(begin ,@body-exps) newenv))]
+               (parse filter)
+               (parse `(begin ,@body-exps)))]
       [`(lambda (,formals ...) ,body-exps ...)
        (Lambda formals
                #f
-               (parse `(begin ,@body-exps) (append formals env)))]
+               (parse `(begin ,@body-exps)))]
       [`(lambda* (,formals ...) ,body-exps ...)
        (Lambda formals
                (Lit 'unfold)
-               (parse `(begin ,@body-exps) (append formals env)))]
+               (parse `(begin ,@body-exps)))]
 
       [`(begin) (Lit (void))]
       [`(begin ,e) (walk e)]
@@ -69,9 +75,7 @@
       [`(letrec ((,names ,inits) ...) ,es ...)
        (if (null? names)
            (walk `(begin ,@es))
-           (let* ((newenv (append names env))
-                  (p (lambda (x) (parse x newenv))))
-             (Letrec names (map p inits) (p `(begin ,@es)))))]
+           (Letrec names (map parse inits) (parse `(begin ,@es))))]
 
       [`(let* () ,es ...)
        (walk `(begin ,@es))]
@@ -150,7 +154,7 @@
                                      (if prop rand (Ref formal))))
                (define cache-key (cons rator cache-rands))
                (match (assoc cache-key cache)
-                 [(list _ cached-rator) (ApplyCached cached-rator rands)]
+                 [(list _ cached-rator) (Apply cached-rator rands)]
                  [#f
                   (define tmp-sym (gensym 'rator))
                   (Letrec (list tmp-sym)
@@ -195,8 +199,7 @@
 
     [(If test true false) `(if ,(codegen test) ,(codegen true) ,(codegen false))]
 
-    [(Apply rator rands) `(,(codegen rator) ,@(map codegen rands))]
-    [(ApplyCached rator rands) `(GOTO ,(codegen rator) ,@(map codegen rands))]))
+    [(Apply rator rands) `(,(codegen rator) ,@(map codegen rands))]))
 
 (define (free-names pexp)
   (match pexp
@@ -211,9 +214,7 @@
     [(Ref name) (seteq name)]
     [(Begin exprs) (apply set-union (seteq) (map free-names exprs))]
     [(If test true false) (set-union (free-names test) (free-names true) (free-names false))]
-    [(or (Apply rator rands)
-         (ApplyCached rator rands))
-     (apply set-union (free-names rator) (map free-names rands))]))
+    [(Apply rator rands) (apply set-union (free-names rator) (map free-names rands))]))
 
 (struct cached-code ([use-count #:mutable] temp-var-sym [reduced-expr #:mutable]) #:transparent)
 
@@ -270,8 +271,7 @@
 
       [(If test true false) `(if ,(walk test) ,(walk true) ,(walk false))]
 
-      [(Apply rator rands) `(,(walk rator) ,@(map walk rands))]
-      [(ApplyCached rator rands) `(GOTO ,(walk rator) ,@(map walk rands))]))
+      [(Apply rator rands) `(,(walk rator) ,@(map walk rands))]))
 
   (let* ((exp (walk pexp))
          (remapped-cache (for/hash [(c (in-hash-values cache))]
@@ -360,11 +360,13 @@
                            [(Lit (cons _ d)) (Lit d)]
                            [_ (residualize-apply 'PRIMcdr x)]))))))
 
+(define (extend-env/global entry env)
+  (cons (cons (car entry)
+              (box (list (pe (parse (cadr entry)) env '()))))
+        env))
+
 (define (basic-env)
-  (foldl (lambda (entry env)
-           (cons (cons (car entry)
-                       (box (list (pe (parse (cadr entry) '()) env '()))))
-                 env))
+  (foldl extend-env/global
          (prim-env)
          (list
           (list 'car '(lambda (x)
@@ -429,10 +431,7 @@
           )))
 
 (define (basic-env/streams)
-  (foldl (lambda (entry env)
-           (cons (cons (car entry)
-                       (box (list (pe (parse (cadr entry) '()) env '()))))
-                 env))
+  (foldl extend-env/global
          (basic-env)
          (list
           (list 'make-stream '(lambda* (stepper state)
@@ -574,7 +573,7 @@
           )))
 
 (define (test-exp exp)
-  (pe (parse exp '()) (basic-env/streams) '()))
+  (pe (parse exp) (basic-env/streams) '()))
 
 (define (test)
   (let ((result (test-exp '(map (lambda (x)
