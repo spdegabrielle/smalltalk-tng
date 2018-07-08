@@ -46,7 +46,7 @@
 ;;
 ;; Environment = (Listof (Cons Symbol AbsVal))
 
-(record Answer (computations env value)) ;; (Answer (Listof (Cons Symbol AST)) Environment AbsVal)
+(record Answer (computations value)) ;; (Answer (Listof (List Symbol AST AbsVal)) AbsVal)
 
 ;; AbsVal
 (record Runtime (reference description)) ;; (Runtime Symbol (U Description Unknown))
@@ -61,7 +61,7 @@
 (record Pair (car cdr)) ;; (Pair AbsVal AbsVal)
 (record Closure (formals body env)) ;; (Closure (Listof Symbol) AST Environment)
 
-(define (next-id) (gensym 'tmp))
+(define (next-id base) (gensym base))
 
 (define (known-case v k-known k-unknown)
   (match v
@@ -150,6 +150,12 @@
 (define (extend-env env names inits)
   (append (for/list [(name names) (init inits)] (cons name (box init))) env))
 
+(define (extend-env/computations env cs)
+  (append (for/list [(c cs)]
+            (match-define (list id ast av) c)
+            (cons id (box av)))
+          env))
+
 (define (lookup-env env name)
   (match (assq name env)
     [#f (unbox (hash-ref *globals*
@@ -159,32 +165,28 @@
 
 ;;---------------------------------------------------------------------------
 
-(define-syntax answer-let*
-  (syntax-rules ()
-    [(_ [] body)
-     body]
-    [(_ [(env absval expr) more ...] body)
-     (match expr
-       [(Answer cs1 env absval)
-        (match (answer-let* [more ...] body)
-          [(Answer cs2 final-env final-absval)
-           (Answer (append cs1 cs2) final-env final-absval)])])]))
+(define (pe-step pexp env k)
+  (match (pe pexp env)
+    [(Answer cs1 absval)
+     (match (k absval (extend-env/computations env cs1))
+       [(Answer cs2 final-absval)
+        (Answer (append cs1 cs2) final-absval)])]))
 
-(define (return env absval)
-  (Answer '() env absval))
+(define (return absval)
+  (Answer '() absval))
 
-(define-syntax-rule (emit [id ast] env av)
-  (let ((id (next-id)))
-    (Answer (list (cons id ast))
-            (cons (cons id av) env)
-            av)))
+(define-syntax-rule (emit [id ast-expr] av-expr)
+  (let* ((ast ast-expr)
+         (id (next-id 'id))
+         (av av-expr))
+    (Answer (list (list id ast av)) av)))
 
 (define (codegen ans)
-  (match-define (Answer defs _env absval) ans)
+  (match-define (Answer defs absval) ans)
   (let loop ((defs defs))
     (match defs
       ['() (codegen-absval absval)]
-      [(cons (cons id ast) defs)
+      [(cons (list id ast av) defs)
        (Bind id ast (loop defs))])))
 
 (define (codegen-absval absval)
@@ -205,34 +207,35 @@
 
 (define INDENT (make-parameter 0))
 (define (D x)
-  (display (make-string (INDENT) #\space))
-  (display x)
-  (newline))
+  (when #f ;; #t
+    (display (make-string (INDENT) #\space))
+    (display x)
+    (newline)))
 
 ;; AST Environment -> Answer
 (define (pe pexp env)
-  (D pexp)
+  (D `((pexp ,pexp) (env ,env)))
   (parameterize ((INDENT (+ (INDENT) 2)))
   (match pexp
-    [(Lit v) (return env (Compiletime (Atom v)))]
+    [(Lit v) (return (Compiletime (Atom v)))]
 
-    [(Prim _ _) (return env (Compiletime pexp))]
+    [(Prim _ _) (return (Compiletime pexp))]
 
-    [(Ref id) (return env (lookup-env env id))]
+    [(Ref id) (return (lookup-env env id))]
 
     [(If test true false)
-     (answer-let* [(env test-v (pe test env))]
-                  (known-case test-v
-                              (lambda (test-id test-d)
-                                (if (equal? test-d (Atom #f))
-                                    (pe false env)
-                                    (pe true env)))
-                              (lambda (test-id)
-                                (emit [if-id (If (Ref test-id)
-                                                 (codegen (pe true env))
-                                                 (codegen (pe false env)))]
-                                      env
-                                      (Runtime if-id (Unknown))))))]
+     (pe-step test env
+              (lambda (test-v env)
+                (known-case test-v
+                            (lambda (test-id test-d)
+                              (if (equal? test-d (Atom #f))
+                                  (pe false env)
+                                  (pe true env)))
+                            (lambda (test-id)
+                              (emit [if-id (If (Ref test-id)
+                                               (codegen (pe true env))
+                                               (codegen (pe false env)))]
+                                    (Runtime if-id (Unknown)))))))]
 
     [(Lambda formals body)
      (define cloenv
@@ -249,40 +252,37 @@
                                                      (Runtime formal (Unknown))))))
                           cloenv))
      (emit [lam-id (codegen-desc clo)]
-           env
            (Runtime lam-id clo))]
 
     [(Apply rator rands)
-     (answer-let* [(env rator-v (pe rator env))]
-                  (let loop ((env env) (rands rands) (rands-vs-rev '()))
-                    (match rands
-                      ['()
-                       (define rands-vs (reverse rands-vs-rev))
-                       (known-case rator-v
-                                   (lambda (rator-id d)
-                                     (match d
-                                       [(Closure formals body cloenv)
-                                        (D `(--> ,body))
-                                        ;; TODO: separate inspection of history and environment
-                                        (match (pe body (extend-env cloenv
-                                                                    formals
-                                                                    rands-vs))
-                                          [(Answer hist _env absval)
-                                           (Answer hist env absval)])]
-                                       [(Prim _name handler)
-                                        (apply handler env d rands-vs)]))
-                                   (lambda (rator-id)
-                                     (emit [app-id (Apply (Ref rator-id)
-                                                          (map codegen-absval rands-vs))]
-                                           env
-                                           (Runtime app-id (Unknown)))))]
-                      [(cons rand rands)
-                       (answer-let* [(env rand-v (pe rand env))]
-                                    (loop env rands (cons rand-v rands-vs-rev)))])))]
+     (pe-step rator env
+              (lambda (rator-v env)
+                (let loop ((env env) (rands rands) (rands-vs-rev '()))
+                  (match rands
+                    ['()
+                     (define rands-vs (reverse rands-vs-rev))
+                     (known-case rator-v
+                                 (lambda (rator-id d)
+                                   (match d
+                                     [(Closure formals body cloenv)
+                                      (D `(--> closure ,body))
+                                      (pe body (extend-env cloenv formals rands-vs))]
+                                     [(Prim _name handler)
+                                      (D `(--> prim ,_name ,@rands-vs))
+                                      (apply handler d rands-vs)]))
+                                 (lambda (rator-id)
+                                   (emit [app-id (Apply (Ref rator-id)
+                                                        (map codegen-absval rands-vs))]
+                                         (Runtime app-id (Unknown)))))]
+                    [(cons rand rands)
+                     (pe-step rand env
+                              (lambda (rand-v env)
+                                (loop env rands (cons rand-v rands-vs-rev))))]))))]
 
     [(Bind formal init body)
-     (answer-let* [(env init-v (pe init env))]
-                  (pe body (extend-env env (list formal) (list init-v))))]
+     (pe-step init env
+              (lambda (init-v env)
+                (pe body (extend-env env (list formal) (list init-v)))))]
 
     [(Letrec formals inits body)
      (error 'pe "Unimplemented: Letrec")])
@@ -290,37 +290,34 @@
 
 ;;---------------------------------------------------------------------------
 
-(define (prim-app env prim . args)
+(define (prim-app prim . args)
   (emit [app-id (Apply prim (map codegen-absval args))]
-        env
         (Runtime app-id (Unknown))))
 
 (define (lift-residualize f)
-  (lambda (env self . args)
+  (lambda (self . args)
     (if (andmap known? args)
-        (return env (Compiletime (Atom (apply f (map unatom args)))))
-        (apply prim-app env self args))))
+        (return (Compiletime (Atom (apply f (map unatom args)))))
+        (apply prim-app self args))))
 
 (define (lift-residualize* f)
-  (lambda (env self . args)
+  (lambda (self . args)
     (if (andmap known? args)
-        (return env (Compiletime (Atom (apply f args))))
-        (apply prim-app env self args))))
+        (return (Compiletime (Atom (apply f args))))
+        (apply prim-app self args))))
 
 (define (lift-commutative-associative-binop f identity)
-  (lambda (env self . vals)
+  (lambda (self . vals)
     (define-values (known unknown) (partition known? vals))
     (define part-val (apply f (map unatom known)))
     (define part (Compiletime (Atom part-val)))
-    (cond [(null? unknown) (return env part)]
-          [(= identity part-val) (apply prim-app env self unknown)]
-          [else (apply prim-app env self part unknown)])))
+    (cond [(null? unknown) (return part)]
+          [(= identity part-val) (apply prim-app self unknown)]
+          [else (apply prim-app self part unknown)])))
 
 (define CONS-prim (Prim 'cons (lambda (self a d)
-                                (lambda (env)
-                                  (emit [pair-id (Apply CONS-prim (map codegen-absval a d))]
-                                        env
-                                        (Runtime pair-id (Pair a d)))))))
+                                (emit [pair-id (Apply CONS-prim (map codegen-absval (list a d)))]
+                                      (Runtime pair-id (Pair a d))))))
 
 (for-each (lambda (p) (hash-set! *globals* (Prim-name p) (box (Compiletime p))))
           (list
@@ -330,10 +327,6 @@
            (Prim '< (lift-residualize <))
 
            CONS-prim
-           ;; (Prim 'cons (lambda (a d)
-           ;;               (if (and (Lit? a) (Lit? d))
-           ;;                   (Lit (cons (Lit-value a) (Lit-value d)))
-           ;;                   (Cons a d))))
 
            ;; (Prim 'null? (lift-residualize* 'null? (lambda (x) (and (Lit? x) (null? (Lit-value x))))))
            ;; (Prim 'pair? (lift-residualize* 'pair? (lambda (x)
@@ -346,16 +339,15 @@
            ;;                       (Lit? y))
            ;;                  (Lit (eq? (Lit-value x) (Lit-value y)))
            ;;                  (prim-app 'eq? x y))))
-           ;; (Prim 'PRIMcar (lambda (x)
-           ;;                  (match x
-           ;;                    [(Cons a _) a]
-           ;;                    [(Lit (cons a _)) (Lit a)]
-           ;;                    [_ (prim-app 'PRIMcar x)])))
-           ;; (Prim 'PRIMcdr (lambda (x)
-           ;;                  (match x
-           ;;                    [(Cons _ d) d]
-           ;;                    [(Lit (cons _ d)) (Lit d)]
-           ;;                    [_ (prim-app 'PRIMcdr x)])))
+
+           (Prim 'PRIMcar (lambda (self x)
+                            (if (known? x)
+                                (return (Pair-car (known-value x)))
+                                (prim-app self x))))
+           (Prim 'PRIMcdr (lambda (self x)
+                            (if (known? x)
+                                (return (Pair-cdr (known-value x)))
+                                (prim-app self x))))
            ))
 
 ;;---------------------------------------------------------------------------
@@ -397,20 +389,23 @@
       ))
 
   (define (reconstruct ans)
-    (match-define (Answer history env absval) ans)
+    (match-define (Answer history absval) ans)
     `(let* (,@(map (lambda (entry)
-                     (match-define (cons id v) entry)
-                     (list id (reconstruct-ast v)))
+                     (match-define (list id ast av) entry)
+                     (list id (reconstruct-ast ast)))
                    history))
        ,(reconstruct-ast (codegen-absval absval))))
 
   (define (T e)
     (define ans (pe (parse e) '()))
-    (pretty-display ans)
+    ;; (pretty-display ans)
     (pretty-display (reconstruct ans)))
 
   ;; (T '((lambda (x) (+ x 1)) 123))
   ;; (T `(let ((c (lambda (f) (f 123))))
   ;;       (c (lambda (x) (+ x 1)))))
+
+  (T `(let ((p (cons 1 2))) (PRIMcdr (PRIMcar (cons p p)))))
+
   (T compose-exp)
   )
