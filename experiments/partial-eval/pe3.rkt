@@ -207,7 +207,7 @@
 
 (define INDENT (make-parameter 0))
 (define (D x)
-  (when #f ;; #t
+  (when #t
     (display (make-string (INDENT) #\space))
     (display x)
     (newline)))
@@ -405,7 +405,15 @@
   ;; (T `(let ((c (lambda (f) (f 123))))
   ;;       (c (lambda (x) (+ x 1)))))
 
-  (T `(let ((p (cons 1 2))) (PRIMcdr (PRIMcar (cons p p)))))
+  ;; (T `(let ((p (cons 1 2))) (PRIMcdr (PRIMcar (cons p p)))))
 
-  (T compose-exp)
+  ;; (T compose-exp)
+
+  (T
+   '(lambda (do-something-with bb)
+      ((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
+       (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
+                                         'cc))
+                        (bb)))
+       'aa)))
   )
