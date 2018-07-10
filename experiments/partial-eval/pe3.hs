@@ -216,6 +216,6 @@ main = do
   let Right [exampleSexp] = readSexps exampleSource
   let example = parse exampleSexp
   -- let example = Lambda ["bb"] $ Apply (Lambda ["k", "b"] $ Apply (Ref "k") [Lambda [] (Ref "b")])
-  --               [Lambda ["f"] (Ref "f"),
+  --               [Lambda ["f"] (Apply (Ref "f") []),
   --                Apply (Ref "bb") []]
   putStrLn $ showSexp $ reconstruct $ partialEval [] example
