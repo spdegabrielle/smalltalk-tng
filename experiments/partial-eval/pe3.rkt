@@ -204,7 +204,7 @@
   (match d
     [(Atom v) (Lit v)]
     [(? Prim? p) p]
-    [(Pair a d) (Apply CONS-prim (map codegen-desc (list a d)))]
+    [(Pair a d) (Apply CONS-prim (map codegen-absval (list a d)))]
     [(Closure formals body env) (Lambda formals body)]))
 
 (define INDENT (make-parameter 0))
