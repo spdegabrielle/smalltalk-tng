@@ -186,7 +186,6 @@ reconstruct (Bind name init body) = reconstructBinds [(name, init)] body
 
 reconstructBinds :: [(Symbol, AST)] -> AST -> Sexp
 reconstructBinds bs (Bind name init body) = reconstructBinds ((name, init) : bs) body
-reconstructBinds [] body = reconstruct body
 reconstructBinds bs body =
     List [Atom (Symbol "let*"),
           List [List [Atom (Symbol name), reconstruct init] | (name, init) <- reverse bs],
