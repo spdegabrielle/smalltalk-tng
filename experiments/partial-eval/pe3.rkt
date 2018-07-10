@@ -170,6 +170,7 @@
     [(Answer cs1 absval)
      (match (k absval (extend-env/computations env cs1))
        [(Answer cs2 final-absval)
+        (D `(gluing ,cs1 ,cs2))
         (Answer (append cs1 cs2) final-absval)])]))
 
 (define (return absval)
@@ -179,6 +180,7 @@
   (let* ((ast ast-expr)
          (id (next-id 'id))
          (av av-expr))
+    (D `(emitting ,id ,ast ,av))
     (Answer (list (list id ast av)) av)))
 
 (define (codegen ans)
@@ -409,11 +411,17 @@
 
   ;; (T compose-exp)
 
+  ;; (T
+  ;;  '(lambda (do-something-with bb)
+  ;;     ((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
+  ;;      (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
+  ;;                                        'cc))
+  ;;                       (bb)))
+  ;;      'aa)))
+
   (T
-   '(lambda (do-something-with bb)
-      ((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
-       (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
-                                         'cc))
-                        (bb)))
-       'aa)))
+   '(lambda (bb)
+      ((lambda (k b) (k (lambda () b)))
+       (lambda (f) (f))
+       (bb))))
   )
