@@ -40,7 +40,7 @@ type PEState = (Integer, History)
 type PE a = State PEState a
 
 data MaybeKnown = NotKnown Symbol
-                | Known (Maybe Symbol) Description
+                | Known Description
 
 freeNames (Lit v) = Set.empty
 freeNames (Ref id) = Set.singleton id
@@ -82,8 +82,8 @@ lookupEnv env id = do hs <- getHistory
 
 maybeKnown :: AbsVal -> MaybeKnown
 maybeKnown (Unknown id) = NotKnown id
-maybeKnown (Runtime id d) = Known (Just id) d
-maybeKnown (Compiletime d) = Known Nothing d
+maybeKnown (Runtime id d) = Known d
+maybeKnown (Compiletime d) = Known d
 
 pushHistory :: PE ()
 pushHistory = do
@@ -132,8 +132,8 @@ pe env (If test true false) = do
     NotKnown testid -> do t <- codegen $ pe env true
                           f <- codegen $ pe env false
                           emit "if" (If (Ref testid) t f) (return . Unknown)
-    Known _ (Simple (A (Int 0))) -> pe env false
-    Known _ _ -> pe env true
+    Known (Simple (A (Int 0))) -> pe env false
+    Known _ -> pe env true
 pe env p@(Lambda formals body) = do
   hs <- getHistory
   let cloenv = [(id, lookupEnv' env hs id) | id <- Set.toList $ freeNames p, boundIn env id]
@@ -146,11 +146,11 @@ pe env (Apply rator rands) = do
   case maybeKnown ratorv of
     NotKnown ratorid ->
         emit "app" (Apply (Ref ratorid) (List.map codegenAbsVal randsv)) (return . Unknown)
-    Known _ (Closure formals body cloenv) ->
+    Known (Closure formals body cloenv) ->
         pe (bindActuals env formals randsv) body
-    Known _ (Simple p@(P name handler)) ->
+    Known (Simple p@(P name handler)) ->
         handler p randsv
-    Known _ other -> error ("Cannot apply non-procedure: " ++ show other)
+    Known other -> error ("Cannot apply non-procedure: " ++ show other)
 pe env (Bind formal init body) = do
   initv <- pe env init
   pe (bindActuals env [formal] [initv]) body
