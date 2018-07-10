@@ -373,7 +373,7 @@
       ;;                env))
       ;;     (lambda ,formals ,(reconstruct-ast body)))]
       [(Lit v)
-       v]
+       `(quote ,v)]
       [(Prim name _)
        `(PRIM ,name)]
       [(Ref id)
