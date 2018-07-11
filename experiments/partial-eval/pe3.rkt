@@ -449,4 +449,10 @@
        (let ((x (f a b c)))
          (let ((y (g x x)))
            (h y y)))))
+
+  (define unknown-if-with-computation
+    '(lambda (p f g x)
+       (if (p x)
+           (f (g x))
+           (g (f x)))))
   )
