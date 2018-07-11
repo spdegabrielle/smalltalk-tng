@@ -141,14 +141,14 @@
                               (lambda () (error 'lookup-env "Unbound variable: ~v" name))))]
             [(cons h hs)
              (match (assq name h)
-               [(list _name _ast absval) absval]
+               [(list _name _pure-or-effect _ast absval) absval]
                [#f (loop hs)])]))]))
 
 ;;---------------------------------------------------------------------------
 
 ;; pe-history : (Parameterof History)
 ;; History = (Listof Era)
-;; Era = (Listof (List Symbol AST AbsVal))
+;; Era = (Listof (List Symbol (U 'pure 'effect) AST AbsVal))
 (define pe-history (make-parameter '()))
 
 (define (next-id base) (gensym base))
@@ -156,23 +156,53 @@
 (define-syntax-rule (residualize expr)
   (parameterize ((pe-history (cons '() (pe-history))))
     (define av expr)
-    (wrap-era (car (pe-history)) (codegen-absval av))))
+    (define ast (codegen-absval av))
+    (wrap-era (car (pe-history)) ast (free-names ast))))
 
-(define (wrap-era h body)
+(define (wrap-era h body outstanding)
   (match h
     ['() body]
-    [(cons (list id ast av) h)
-     (if (equal? body (Ref id))
-         (wrap-era h ast)
-         (wrap-era h (Bind id ast body)))]))
+    [(cons (list id pure-or-effect ast av) h)
+     (if (or (eq? pure-or-effect 'effect)
+             (set-member? outstanding id))
+         (let ((outstanding (set-remove (set-union (free-names ast) outstanding) id)))
+           (if (equal? body (Ref id))
+               (wrap-era h ast outstanding)
+               (wrap-era h (Bind id ast body) outstanding)))
+         (wrap-era h body (set-remove outstanding id)))]))
 
-(define-syntax-rule (emit [id ast-expr] av-expr)
-  (let* ((id (next-id 'id))
-         (ast ast-expr)
-         (av av-expr))
-    (match-define (cons h hs) (pe-history))
-    (pe-history (cons (cons (list id ast av) h) hs))
-    av))
+(define-syntax-rule (emit pure-or-effect [id ast-expr] av-expr)
+  (let ((ast ast-expr)) ;; `id` is NOT in scope for `ast-expr`
+    (define purity (match 'pure-or-effect ;; `pure-or-effect` must be a literal symbol
+                     ['pure 'pure]
+                     ['effect 'effect]))
+    (or (historical-match purity ast)
+        (let* ((id (next-id 'id)) ;; `id` must be a literal symbol
+               (av av-expr)) ;; `id` is in scope for `av-expr`
+          (emit* purity id ast av)))))
+
+(define (historical-match purity ast)
+  ;; TODO: BUG re soundness likely: not enough alpha-renaming!
+  (and (eq? purity 'pure)
+       (let search-histories ((hs (pe-history)))
+         (match hs
+           ['() #f]
+           [(cons era hs)
+            (let search-era ((era era))
+              (match era
+                ['() (search-histories hs)]
+                [(cons (list id 'pure (== ast) av) _)
+                 (pretty-write `(historical-match (sought ,ast) (found ,id ,av)))
+                 av]
+                [(cons _ era)
+                 (search-era era)]))]))))
+
+(define (emit* purity id ast av)
+  (match-define (cons h hs) (pe-history))
+  (define entry (list id purity ast av))
+  (D `(emitting ,entry))
+  (pe-history (cons (cons entry h) hs))
+  av)
 
 (define (codegen-absval absval)
   (match absval
@@ -188,8 +218,9 @@
     [(Closure formals body env) (Lambda formals body)]))
 
 (define INDENT (make-parameter 0))
+(define noisy? #f)
 (define (D x)
-  (when #f ;; #t
+  (when noisy?
     (display (make-string (INDENT) #\space))
     (display x)
     (newline)))
@@ -208,7 +239,8 @@
        [(Known (Atom #f)) (pe false env)]
        [(Known _) (pe true env)]
        [(Unknown test-id)
-        (emit [if-id (If (Ref test-id)
+        (emit pure
+              [if-id (If (Ref test-id)
                          (residualize (pe true env))
                          (residualize (pe false env)))]
               (Unknown if-id))])]
@@ -219,7 +251,8 @@
      (define cloenv (extend-env '() captured (for/list [(c captured)] (lookup-env env c))))
      (define new-body (residualize (pe body (extend-env cloenv formals (map Unknown formals)))))
      (define clo (Closure formals new-body cloenv))
-     (emit [lam-id (codegen-desc clo)]
+     (emit pure
+           [lam-id (codegen-desc clo)]
            (Runtime lam-id clo))]
 
     [(Apply rator rands)
@@ -227,13 +260,14 @@
      (define rands-vs (for/list [(rand rands)] (pe rand env)))
      (match rator-v
        [(Known (Closure formals body cloenv))
-        (D `(--> closure ,body))
+        (D `(--> closure body ,body))
         (pe body (extend-env cloenv formals rands-vs))]
        [(Known (and prim (Prim _name handler)))
         (D `(--> prim ,_name ,@rands-vs))
         (apply handler prim rands-vs)]
        [(Unknown rator-id)
-        (emit [app-id (Apply (Ref rator-id) (map codegen-absval rands-vs))]
+        (emit effect ;; conservative
+              [app-id (Apply (Ref rator-id) (map codegen-absval rands-vs))]
               (Unknown app-id))])]
 
     [(Bind formal init body)
@@ -246,48 +280,56 @@
 
 ;;---------------------------------------------------------------------------
 
-(define (prim-app prim . args)
-  (emit [app-id (Apply prim (map codegen-absval args))]
+(define (prim-app/pure prim . args)
+  (emit pure
+        [app-id (Apply prim (map codegen-absval args))]
         (Unknown app-id)))
 
-(define (lift-residualize f)
+(define (prim-app/effect prim . args)
+  (emit effect
+        [app-id (Apply prim (map codegen-absval args))]
+        (Unknown app-id)))
+
+(define (lift-residualize/pure f)
   (lambda (self . args)
     (if (andmap known? args)
         (Compiletime (Atom (apply f (map unatom args))))
-        (apply prim-app self args))))
+        (apply prim-app/pure self args))))
 
-(define (lift-residualize* f)
+(define (lift-residualize/pure* f)
   (lambda (self . args)
     (if (andmap known? args)
         (Compiletime (Atom (apply f args)))
-        (apply prim-app self args))))
+        (apply prim-app/pure self args))))
 
-(define (lift-commutative-associative-binop f identity)
+(define (lift-commutative-associative-binop/pure f identity)
   (lambda (self . vals)
     (define-values (known unknown) (partition known? vals))
     (define part-val (apply f (map unatom known)))
     (define part (Compiletime (Atom part-val)))
     (cond [(null? unknown) part]
-          [(= identity part-val) (apply prim-app self unknown)]
-          [else (apply prim-app self part unknown)])))
+          [(= identity part-val) (apply prim-app/pure self unknown)]
+          [else (apply prim-app/pure self part unknown)])))
 
 (define CONS-prim (Prim 'cons (lambda (self a d)
-                                (emit [pair-id (Apply CONS-prim (map codegen-absval (list a d)))]
+                                (emit pure
+                                      [pair-id (Apply CONS-prim (map codegen-absval (list a d)))]
                                       (Runtime pair-id (Pair a d))))))
 
 (for-each (lambda (p) (hash-set! *globals* (Prim-name p) (box (Compiletime p))))
           (list
-           (Prim '+ (lift-commutative-associative-binop + 0))
-           (Prim '* (lift-commutative-associative-binop * 1))
-           (Prim '- (lift-residualize -))
-           (Prim '< (lift-residualize <))
+           (Prim '+ (lift-commutative-associative-binop/pure + 0))
+           (Prim '* (lift-commutative-associative-binop/pure * 1))
+           (Prim '- (lift-residualize/pure -))
+           (Prim '< (lift-residualize/pure <))
 
            CONS-prim
 
-           (Prim 'null? (lift-residualize* (match-lambda [(Known (Atom '())) #t] [_ #f])))
-           (Prim 'pair? (lift-residualize* (match-lambda [(Known (Pair _ _)) #t] [_ #f])))
+           (Prim 'null? (lift-residualize/pure* (match-lambda [(Known (Atom '())) #t] [_ #f])))
+           (Prim 'pair? (lift-residualize/pure* (match-lambda [(Known (Pair _ _)) #t] [_ #f])))
 
-           (Prim 'error prim-app) ;; strictly residualized
+           (Prim 'error prim-app/effect) ;; strictly residualized
+           (Prim 'write prim-app/effect) ;; strictly residualized
 
            ;; (Prim 'number? (lift-residualize* 'number? (lambda (x) (and (Lit? x) (number? (Lit-value x))))))
            ;; (Prim 'zero? (lift-residualize 'zero? zero?))
@@ -300,11 +342,11 @@
            (Prim 'PRIMcar (lambda (self x)
                             (match x
                               [(Known (Pair a _)) a]
-                              [_ (prim-app self x)])))
+                              [_ (prim-app/pure self x)])))
            (Prim 'PRIMcdr (lambda (self x)
                             (match x
                               [(Known (Pair _ d)) d]
-                              [_ (prim-app self x)])))
+                              [_ (prim-app/pure self x)])))
            ))
 
 (define (extend-globals! entry)
@@ -372,6 +414,7 @@
 ;;---------------------------------------------------------------------------
 
 ;; (require racket/trace) (trace pe)
+(set! noisy? #t)
 
 (module+ test
   (define compose-exp
@@ -407,7 +450,7 @@
   (define (T e)
     (define ast (residualize (time (pe (parse e) '()))))
     ;; (pretty-display ast)
-    (pretty-display (reconstruct ast)))
+    (pretty-write (reconstruct ast)))
 
   (define add1-to-123-exp
     '((lambda (x) (+ x 1)) 123))
@@ -455,4 +498,45 @@
        (if (p x)
            (f (g x))
            (g (f x)))))
+
+  (define computation-duplication-exp
+    `(let ((p (cons 1 2))
+           (q (cons 1 2)))
+       (write p)
+       (write q)
+       (write (car p))
+       (write (car p))
+       (cons p q)))
+
+  ;; (T computation-duplication-exp)
+
+  ;; 2018-07-11 12:00:26 Currently (T try-to-confuse-historical-match) yields:
+  ;; (lambda (x)
+  ;;   (lambda (x)
+  ;;     (let* ((pair-id22441 (#%cons x '22)))
+  ;;       (#%cons pair-id22441 pair-id22441))))
+  ;; ... which is wrong, and which should be more like (note the renaming to x1!):
+  ;; (lambda (x)
+  ;;   (lambda (x1)
+  ;;     (let* ((pair-id22500 (#%cons x '22))
+  ;;            (pair-id22501 (#%cons x1 '22)))
+  ;;       (#%cons pair-id22500 pair-id22501))))
+  (define try-to-confuse-historical-match
+    '(lambda (x)
+       (let ((f (lambda () (cons x 22))))
+         (lambda (x)
+           (let ((g (lambda () (cons x 22))))
+             (cons (f) (g)))))))
+
+  ;; (T try-to-confuse-historical-match)
+
+  ;; 2018-07-11 12:03:39 Currently (T enough-alpha-renaming-exp) yields:
+  ;; (lambda (x) (lambda (x) x))
+  ;; ... which is super wrong.
+  (define enough-alpha-renaming-exp
+    '(lambda (x)
+       (let ((f (lambda () x)))
+         (lambda (x) (f)))))
+
+  (T enough-alpha-renaming-exp)
   )
