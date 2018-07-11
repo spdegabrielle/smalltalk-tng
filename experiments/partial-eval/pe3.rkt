@@ -284,10 +284,11 @@
 
            CONS-prim
 
-           ;; (Prim 'null? (lift-residualize* 'null? (lambda (x) (and (Lit? x) (null? (Lit-value x))))))
-           ;; (Prim 'pair? (lift-residualize* 'pair? (lambda (x)
-           ;;                                          (or (Cons? x)
-           ;;                                              (and (Lit? x) (pair? (Lit-value x)))))))
+           (Prim 'null? (lift-residualize* (match-lambda [(Known (Atom '())) #t] [_ #f])))
+           (Prim 'pair? (lift-residualize* (match-lambda [(Known (Pair _ _)) #t] [_ #f])))
+
+           (Prim 'error prim-app) ;; strictly residualized
+
            ;; (Prim 'number? (lift-residualize* 'number? (lambda (x) (and (Lit? x) (number? (Lit-value x))))))
            ;; (Prim 'zero? (lift-residualize 'zero? zero?))
            ;; (Prim 'eq? (lambda (x y)
@@ -304,6 +305,68 @@
                             (match x
                               [(Known (Pair _ d)) d]
                               [_ (prim-app self x)])))
+           ))
+
+(define (extend-globals! entry)
+  (match-define (list global-name global-source) entry)
+  (parameterize ((pe-history (cons '() (pe-history))))
+    (match (pe (parse global-source) '())
+      [(Unknown _)
+       (error 'extend-globals! "Global ~v produced unknown result" global-name)]
+      [(Known (? Closure? c))
+       (when (not (set-empty? (free-names (codegen-desc c))))
+         (error 'extend-globals! "Global ~v produced non-empty closure: ~a"
+                global-name
+                (free-names (codegen-desc c))))
+       (hash-set! *globals* (car entry) (box (Runtime global-name c)))]
+      [(Known other)
+       (error 'extend-globals! "Global ~v produced non-closure: ~v" global-name other)])))
+
+(for-each extend-globals!
+          (list
+           (list 'car '(lambda (x)
+                         (if (pair? x)
+                             (PRIMcar x)
+                             (error "Not a pair in car" x))))
+           (list 'cdr '(lambda (x)
+                         (if (pair? x)
+                             (PRIMcdr x)
+                             (error "Not a pair in cdr" x))))
+
+           ;; (list 'reverse '(lambda (x)
+           ;;                   #:filter 'unfold
+           ;;                   (let loop ((x x) (acc '()))
+           ;;                     (if (null? x)
+           ;;                         acc
+           ;;                         (loop (cdr x) (cons (car x) acc))))))
+           ;; (list 'fold '(lambda (f acc x)
+           ;;                #:filter (if (sval-known? f) 'unfold '(#f #f #f))
+           ;;                (let loop ((x x) (acc acc))
+           ;;                  (if (null? x)
+           ;;                      acc
+           ;;                      (loop (cdr x) (f (car x) acc))))))
+           ;; (list 'fold-right '(lambda (f acc x)
+           ;;                      #:filter (if (sval-known? f) 'unfold '(#f #f #f))
+           ;;                      (let loop ((x x))
+           ;;                        (if (null? x)
+           ;;                            acc
+           ;;                            (let ((head (car x)))
+           ;;                              (f head (loop (cdr x))))))))
+           ;; (list 'list? '(lambda (xs)
+           ;;                 (let loop ((xs xs))
+           ;;                   (if (null? xs)
+           ;;                       #t
+           ;;                       (if (pair? xs)
+           ;;                           (loop (cdr xs))
+           ;;                           #f)))))
+           ;; (list 'map '(lambda (f x)
+           ;;               #:filter 'unfold
+           ;;               (fold-right (lambda (v c)
+           ;;                             #:filter 'unfold
+           ;;                             (cons (f v) c)) '() x)))
+           ;; (list 'append '(lambda (a b)
+           ;;                  #:filter 'unfold
+           ;;                  (fold-right cons b a)))
            ))
 
 ;;---------------------------------------------------------------------------
@@ -346,35 +409,44 @@
     ;; (pretty-display ast)
     (pretty-display (reconstruct ast)))
 
-  ;; (T '((lambda (x) (+ x 1)) 123))
-  ;; (T `(let ((c (lambda (f) (f 123))))
-  ;;       (c (lambda (x) (+ x 1)))))
+  (define add1-to-123-exp
+    '((lambda (x) (+ x 1)) 123))
 
-  ;; (T `(let ((p (cons 1 2))) (PRIMcdr (PRIMcar (cons p p)))))
+  (define add1-to-123-exp1
+    `(let ((c (lambda (f) (f 123))))
+       (c (lambda (x) (+ x 1)))))
 
-  (T compose-exp)
+  (define cdar-exp `(let ((p (cons 1 2))) (PRIMcdr (PRIMcar (cons p p)))))
+  (define cdar-exp1 `(let ((p (cons 1 2))) (cdr (car (cons p p)))))
+  (define cdar-exp2 `(lambda (p) (cdr (car (cons p p)))))
 
-  ;; (T
-  ;;  '(lambda (do-something-with bb)
-  ;;     ((((lambda (a)
-  ;;          (lambda (b)
-  ;;            (lambda (c)
-  ;;              (do-something-with a b c))))
-  ;;        'aa)
-  ;;       (bb))
-  ;;      'cc)))
+  (define curried-exp
+    '(lambda (do-something-with bb)
+       ((((lambda (a)
+            (lambda (b)
+              (lambda (c)
+                (do-something-with a b c))))
+          'aa)
+         (bb))
+        'cc)))
 
-  ;; (T
-  ;;  '(lambda (do-something-with bb)
-  ;;     ((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
-  ;;      (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
-  ;;                                        'cc))
-  ;;                       (bb)))
-  ;;      'aa)))
+  (define curried-cps-exp
+    '(lambda (do-something-with bb)
+       ((lambda (k a) (k (lambda (k b) (k (lambda (k c) (do-something-with k a b c))))))
+        (lambda (bf) (bf (lambda (cf) (cf (lambda (x) (begin x))
+                                          'cc))
+                         (bb)))
+        'aa)))
 
-  ;; (T
-  ;;  '(lambda (bb)
-  ;;     ((lambda (k b) (k (lambda () b)))
-  ;;      (lambda (f) (f))
-  ;;      (bb))))
+  (define shrunk-curried-exp
+    '(lambda (bb)
+       ((lambda (k b) (k (lambda () b)))
+        (lambda (f) (f))
+        (bb))))
+
+  (define code-duplication-exp
+    '(lambda (f g h a b c)
+       (let ((x (f a b c)))
+         (let ((y (g x x)))
+           (h y y)))))
   )
