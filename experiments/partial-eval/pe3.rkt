@@ -192,7 +192,7 @@
               (match era
                 ['() (search-histories hs)]
                 [(cons (list id 'pure (== ast) av) _)
-                 (pretty-write `(historical-match (sought ,ast) (found ,id ,av)))
+                 ;; (pretty-write `(historical-match (sought ,ast) (found ,id ,av)))
                  av]
                 [(cons _ era)
                  (search-era era)]))]))))
@@ -200,7 +200,7 @@
 (define (emit* purity id ast av)
   (match-define (cons h hs) (pe-history))
   (define entry (list id purity ast av))
-  (D `(emitting ,entry))
+  ;; (D `(emitting ,entry))
   (pe-history (cons (cons entry h) hs))
   av)
 
@@ -248,7 +248,17 @@
     [(Lambda formals body)
      (define (non-global? id) (assq id env))
      (define captured (filter non-global? (set->list (free-names pexp))))
-     (define cloenv (extend-env '() captured (for/list [(c captured)] (lookup-env env c))))
+     ;; This step is akin to allocating spill slots for actual
+     ;; arguments. It takes the place of alpha-renaming, making sure
+     ;; that we don't run into shadowing problems as seen in e.g. the
+     ;; comment against `enough-alpha-renaming-exp` below.
+     (define captured-vals (for/list [(c captured)]
+                             (emit pure [cap-id (Ref c)]
+                                   (match (lookup-env env c)
+                                     [(? Compiletime? av) av]
+                                     [(Runtime _ d) (Runtime cap-id d)]
+                                     [(Unknown _) (Unknown cap-id)]))))
+     (define cloenv (extend-env '() captured captured-vals))
      (define new-body (residualize (pe body (extend-env cloenv formals (map Unknown formals)))))
      (define clo (Closure formals new-body cloenv))
      (emit pure
@@ -272,7 +282,11 @@
 
     [(Bind formal init body)
      (define init-v (pe init env))
-     (pe body (extend-env env (list formal) (list init-v)))]
+     (pe body (extend-env env
+                          (list formal)
+                          ;; v Use `emit*` to preserve this bind in the output.
+                          ;;   TODO: Think harder about why this is required.
+                          (list (emit* 'pure formal (codegen-absval init-v) init-v))))]
 
     [(Letrec formals inits body)
      (error 'pe "Unimplemented: Letrec")])
@@ -414,7 +428,7 @@
 ;;---------------------------------------------------------------------------
 
 ;; (require racket/trace) (trace pe)
-(set! noisy? #t)
+;; (set! noisy? #t)
 
 (module+ test
   (define compose-exp
@@ -450,7 +464,8 @@
   (define (T e)
     (define ast (residualize (time (pe (parse e) '()))))
     ;; (pretty-display ast)
-    (pretty-write (reconstruct ast)))
+    (define r (reconstruct ast))
+    r)
 
   (define add1-to-123-exp
     '((lambda (x) (+ x 1)) 123))
@@ -500,15 +515,16 @@
            (g (f x)))))
 
   (define computation-duplication-exp
-    `(let ((p (cons 1 2))
-           (q (cons 1 2)))
-       (write p)
-       (write q)
-       (write (car p))
-       (write (car p))
-       (cons p q)))
-
-  ;; (T computation-duplication-exp)
+    `(lambda (r)
+       (let ((p (cons 1 2))
+             (q (cons 1 2)))
+         (write p)
+         (write q)
+         (write (car p))
+         (write (car p))
+         (write (car r))
+         (write (car r))
+         (cons p q))))
 
   ;; 2018-07-11 12:00:26 Currently (T try-to-confuse-historical-match) yields:
   ;; (lambda (x)
@@ -521,6 +537,16 @@
   ;;     (let* ((pair-id22500 (#%cons x '22))
   ;;            (pair-id22501 (#%cons x1 '22)))
   ;;       (#%cons pair-id22500 pair-id22501))))
+  ;;
+  ;; 2018-07-11 17:02:42 Fixed, I think, with the uses of `emit` in
+  ;; `captured-vals` in the `Lambda` case of `pe`, producing output
+  ;; like:
+  ;; (lambda (x)
+  ;;   (let* ((cap-id39848 x))
+  ;;     (lambda (x)
+  ;;       (let* ((pair-id39852 (#%cons cap-id39848 '22))
+  ;;              (pair-id39853 (#%cons x '22)))
+  ;;         (#%cons pair-id39852 pair-id39853)))))
   (define try-to-confuse-historical-match
     '(lambda (x)
        (let ((f (lambda () (cons x 22))))
@@ -528,15 +554,17 @@
            (let ((g (lambda () (cons x 22))))
              (cons (f) (g)))))))
 
-  ;; (T try-to-confuse-historical-match)
-
   ;; 2018-07-11 12:03:39 Currently (T enough-alpha-renaming-exp) yields:
   ;; (lambda (x) (lambda (x) x))
   ;; ... which is super wrong.
+  ;;
+  ;; 2018-07-11 17:02:42 Fixed, I think, with the uses of `emit` in
+  ;; `captured-vals` in the `Lambda` case of `pe`, producing output
+  ;; like:
+  ;; (lambda (x) (let* ((cap-id39400 x)) (lambda (x) cap-id39400)))
   (define enough-alpha-renaming-exp
     '(lambda (x)
        (let ((f (lambda () x)))
          (lambda (x) (f)))))
 
-  (T enough-alpha-renaming-exp)
   )
