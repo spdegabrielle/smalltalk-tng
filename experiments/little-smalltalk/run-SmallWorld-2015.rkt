@@ -531,6 +531,9 @@
               (add-w south vp)
               vp)
             (mkffiv class (list 'border-panel create-border-panel-in)))]
+         [80 ;; content of text area
+          (primitive-action [(unffiv (list textarea _factory)) class]
+            (mkbv class (string->bytes/utf-8 (send textarea get-text))))]
          [81 ;; content of selected text area
           (primitive-action [(unffiv (list textarea _factory)) class]
             (define start (box 0))
