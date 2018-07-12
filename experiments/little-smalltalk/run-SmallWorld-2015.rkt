@@ -628,6 +628,8 @@
          ;; END GUI
          ;;---------------------------------------------------------------------------
 
+         [119 (push-and-continue (inexact->exact (round (current-inexact-milliseconds))))]
+
          [_ (error 'execute "Unimplemented primitive: ~a stack: ~a"
                    primitive-number
                    (obj-slots stack))])]
