@@ -194,14 +194,15 @@
   ;; Runs block in a new thread
   (define ctx (clone-array block))
   (lambda args
-    (define argument-location (slotAt ctx 7))
-    (for [(i (in-naturals)) (arg (in-list args))]
-      (slotAtPut (slotAt ctx 2) i arg))
-    (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
-    (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
-    (slotAtPut ctx 5 0) ;; zero stack-top
-    (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
-    (thread (lambda () (execute vm ctx)))))
+    (let ((ctx (clone-array ctx)))
+      (define argument-location (slotAt ctx 7))
+      (for [(i (in-naturals)) (arg (in-list args))]
+        (slotAtPut (slotAt ctx 2) i arg))
+      (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
+      (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
+      (slotAtPut ctx 5 0) ;; zero stack-top
+      (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
+      (thread (lambda () (execute vm ctx))))))
 
 (define smalltalk-frame%
   (class frame%
