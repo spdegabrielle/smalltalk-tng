@@ -4,7 +4,7 @@
 ;; descendant.
 
 (require racket/struct)
-(require racket/async-channel)
+(require "oneshot.rkt")
 
 (define-logger vm)
 (define-logger vm/gui)
@@ -593,15 +593,11 @@
                                [callback (lambda args (queue-callback callback))])))
             menu)]
          [100 (primitive-action [class]
-                (define ch (make-async-channel))
-                (mkffiv class ch))]
-         [101 (primitive-action [(unffiv ch)]
-                (define v (async-channel-get ch))
-                (async-channel-put ch v)
-                v)]
-         [102 (primitive-action [v (unffiv ch)]
-                (async-channel-try-get ch)
-                (async-channel-put ch v)
+                (mkffiv class (oneshot)))]
+         [101 (primitive-action [(unffiv o)]
+                (oneshot-ref o))]
+         [102 (primitive-action [v (unffiv o)]
+                (oneshot-set! o v)
                 v)]
          [117 (exit)]
          [118 ;; "onWindow close b"
