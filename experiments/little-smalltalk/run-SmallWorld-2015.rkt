@@ -20,7 +20,7 @@
   #:methods gen:custom-write
   [(define write-proc
      (make-constructor-style-printer (lambda (o) (format "bv:~a" (obj-class-name o)))
-                                     (lambda (o) (list (format "~v" (bv-bytes o))))))])
+                                     (lambda (o) (list (bv-bytes o)))))])
 
 (struct ffiv obj (value)
   #:methods gen:custom-write
@@ -498,12 +498,15 @@
                             [parent parent]
                             [choices (for/list [(c (obj-slots data))] (match-define (unstr t) c) t)]
                             [callback (lambda _args
-                                        (log-vm/gui-debug "_args: ~v for listpanel ~a" _args data)
+                                        (log-vm/gui-debug "_args: ~v for listpanel ~a"
+                                                          _args
+                                                          (eq-hash-code lb))
                                         (queue-callback
                                          (lambda ()
                                            (define s (send lb get-selection))
                                            (log-vm/gui-debug "Item selected ~v" s)
                                            (callback (if s (+ s 1) 0)))))]))
+              (log-vm/gui-debug "The result is ~a" (eq-hash-code lb))
               lb)
             (mkffiv class (list (lambda () lb) create-list-panel-in)))]
          [76 ;; new border panel
@@ -548,8 +551,8 @@
             (if s (+ s 1) 0))]
          [84 ;; set list data
           (primitive-action [data (unffiv* lbv (list get-lb _factory))]
-            (log-vm/gui-debug "Update list data ~v" data)
             (define lb (get-lb))
+            (log-vm/gui-debug "Update list ~a data ~v" (eq-hash-code lb) data)
             (send lb clear)
             (for [(c (obj-slots data))] (match-define (unstr t) c) (send lb append t))
             lbv)]
