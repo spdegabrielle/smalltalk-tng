@@ -336,7 +336,7 @@
               (push-and-continue (boolean->obj vm (< i j)))]
              [1 ;; <=
               (push-and-continue (boolean->obj vm (<= i j)))]
-             [2 ;; <=
+             [2 ;; +
               ;; TODO: overflow to bignum arithmetic
               (push-and-continue (+ i j))])
            (let ((new-arguments (mkobj (VM-Array vm) i j))
