@@ -192,9 +192,8 @@
 
 (define (block-callback vm block)
   ;; Runs block in a new thread
-  (define ctx (clone-array block))
   (lambda args
-    (let ((ctx (clone-array ctx)))
+    (let ((ctx (clone-array block)))
       (define argument-location (slotAt ctx 7))
       (for [(i (in-naturals)) (arg (in-list args))]
         (slotAtPut (slotAt ctx 2) i arg))
