@@ -492,6 +492,7 @@
             (define callback (block-callback vm action))
             (log-vm/gui-debug "Schedule listpanel ~a" data)
             (define lb #f)
+            (define old-selection #f)
             (define (create-list-panel-in parent)
               (log-vm/gui-debug "Create listpanel ~a" data)
               (set! lb (new list-box%
@@ -502,11 +503,13 @@
                                         (log-vm/gui-debug "_args: ~v for listpanel ~a"
                                                           _args
                                                           (eq-hash-code lb))
-                                        (queue-callback
-                                         (lambda ()
-                                           (define s (send lb get-selection))
-                                           (log-vm/gui-debug "Item selected ~v" s)
-                                           (callback (if s (+ s 1) 0)))))]))
+                                        (define selection (send lb get-selection))
+                                        (when (not (equal? old-selection selection))
+                                          (set! old-selection selection)
+                                          (queue-callback
+                                           (lambda ()
+                                             (log-vm/gui-debug "Item selected ~v" selection)
+                                             (callback (if selection (+ selection 1) 0))))))]))
               (log-vm/gui-debug "The result is ~a" (eq-hash-code lb))
               lb)
             (mkffiv class (list (lambda () lb) create-list-panel-in)))]
