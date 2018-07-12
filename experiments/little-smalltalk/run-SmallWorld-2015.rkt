@@ -12,35 +12,32 @@
 (struct obj ([class #:mutable] slots)
   #:methods gen:custom-write
   [(define write-proc
-     (make-constructor-style-printer (lambda (o)
-                                       (format "obj:~a" (obj-class-name o)))
-                                     (lambda (o)
-                                       (if (equal? #"Array" (obj-class-name o))
-                                           (list (vector->list (obj-slots o)))
-                                           '()))))])
+     (make-constructor-style-printer (lambda (o) (format "obj:~a" (obj-class-name o)))
+                                     (lambda (o) (if (equal? #"Array" (obj-class-name o))
+                                                     (list (vector->list (obj-slots o)))
+                                                     '()))))])
 (struct bv obj (bytes)
   #:methods gen:custom-write
   [(define write-proc
-     (make-constructor-style-printer (lambda (o)
-                                       (format "bv:~a" (obj-class-name o)))
-                                     (lambda (o)
-                                       (list (format "~v" (bv-bytes o))))))])
+     (make-constructor-style-printer (lambda (o) (format "bv:~a" (obj-class-name o)))
+                                     (lambda (o) (list (format "~v" (bv-bytes o))))))])
 
 (struct ffiv obj (value)
   #:methods gen:custom-write
   [(define write-proc
-     (make-constructor-style-printer (lambda (o)
-                                       (format "ffiv:~a" (obj-class-name o)))
-                                     (lambda (o)
-                                       (list (ffiv-value o)))))])
+     (make-constructor-style-printer (lambda (o) (format "ffiv:~a" (obj-class-name o)))
+                                     (lambda (o) (list (ffiv-value o)))))])
 
-(define-match-expander unbv (syntax-rules () [(_ bytes-pat) (bv _ _ bytes-pat)]))
-(define-match-expander unbv* (syntax-rules () [(_ this-pat bytes-pat)
-                                               (and this-pat (bv _ _ bytes-pat))]))
-(define-match-expander unstr (syntax-rules () [(_ str-pat) (bv _ _ (app bytes->string/utf-8 str-pat))]))
-(define-match-expander unffiv (syntax-rules () [(_ val-pat) (ffiv _ _ val-pat)]))
-(define-match-expander unffiv* (syntax-rules () [(_ this-pat val-pat)
-                                                 (and this-pat (ffiv _ _ val-pat))]))
+(define-match-expander unbv
+  (syntax-rules () [(_ bytes-pat) (bv _ _ bytes-pat)]))
+(define-match-expander unbv*
+  (syntax-rules () [(_ this-pat bytes-pat) (and this-pat (bv _ _ bytes-pat))]))
+(define-match-expander unstr
+  (syntax-rules () [(_ str-pat) (bv _ _ (app bytes->string/utf-8 str-pat))]))
+(define-match-expander unffiv
+  (syntax-rules () [(_ val-pat) (ffiv _ _ val-pat)]))
+(define-match-expander unffiv*
+  (syntax-rules () [(_ this-pat val-pat) (and this-pat (ffiv _ _ val-pat))]))
 
 (define (obj-class-name o)
   (define c (obj-class o))
@@ -49,18 +46,9 @@
       (bv-bytes (slotAt c 0))
       #"???"))
 
-(struct VM (nil
-            true
-            false
-            Array
-            Block
-            Context
-            Integer))
+(struct VM (nil true false Array Block Context Integer))
 
 (define (read-image fh)
-
-  (define (next-byte)
-    (read-byte fh))
 
   (define (maybe-next-int #:signed? [signed? #f])
     (define bs (read-bytes 4 fh))
@@ -70,9 +58,8 @@
 
   (define (next-int #:signed? [signed? #f])
     (define i (maybe-next-int #:signed? signed?))
-    (if (eof-object? i)
-        (error 'read-image "Early EOF")
-        i))
+    (when (eof-object? i) (error 'read-image "Early EOF"))
+    i)
 
   (let ((image-version (next-int))
         (expected-version 1))
@@ -124,7 +111,7 @@
 (define (slotAt o i) (vector-ref (obj-slots o) i))
 (define (slotAtPut o i v) (vector-set! (obj-slots o) i v))
 
-(define (outer-lookup-method c name-bytes)
+(define (search-class-method-dictionary c name-bytes)
   (define methods (slotAt c 2))
   (for/first [(m (obj-slots methods))
               #:when (equal? name-bytes (bv-bytes (slotAt m 0)))]
@@ -167,7 +154,7 @@
   (define name-bytes (bv-bytes selector))
   (let search ((class class))
     (and (not (eq? class (VM-nil vm)))
-         (or (outer-lookup-method class name-bytes)
+         (or (search-class-method-dictionary class name-bytes)
              (search (slotAt class 1))))))
 
 (define (store-registers! ctx ip stack-top)
@@ -257,6 +244,10 @@
   (define (peek)
     (slotAt stack (- stack-top 1)))
 
+  (define (pop-multiple! count)
+    (set! stack-top (- stack-top count))
+    (clone-array stack stack-top count))
+
   (define-syntax-rule (primitive-action [arg-pat ...] body ...)
     (match-let* ([arg-pat (pop!)] ...) (push-and-continue (let () body ...))))
 
@@ -288,57 +279,34 @@
     (define-values (high low) (decode!))
     (log-vm-debug "> ~a ~a ~a" high low (vector-copy (obj-slots stack) 0 stack-top))
     (match high
-      [1 ;; PushInstance
-       (push-and-continue (slotAt receiver low))]
-      [2 ;; PushArgument
-       (push-and-continue (slotAt arguments low))]
-      [3 ;; PushTemporary
-       (push-and-continue (slotAt temporaries low))]
-      [4 ;; PushLiteral
-       (push-and-continue (slotAt literals low))]
-      [5 ;; PushConstant
-       (match low
-         [(or 0 1 2 3 4 5 6 7 8 9) ;; small integers
-          (push-and-continue low)]
-         [10 (push-and-continue (VM-nil vm))]
-         [11 (push-and-continue (VM-true vm))]
-         [12 (push-and-continue (VM-false vm))])]
-
-      [6 ;; AssignInstance
-       (slotAtPut receiver low (peek))
-       (interpret)]
-      [7 ;; AssignTemporary
-       (slotAtPut temporaries low (peek))
-       (interpret)]
-
-      [8 ;; MarkArguments
-       (define new-arguments (clone-array stack (- stack-top low) low))
-       (set! stack-top (- stack-top low))
-       (push-and-continue new-arguments)]
-
+      [1 (push-and-continue (slotAt receiver low))] ;; PushInstance
+      [2 (push-and-continue (slotAt arguments low))] ;; PushArgument
+      [3 (push-and-continue (slotAt temporaries low))] ;; PushTemporary
+      [4 (push-and-continue (slotAt literals low))] ;; PushLiteral
+      [5 (match low
+           [(or 0 1 2 3 4 5 6 7 8 9) (push-and-continue low)]
+           [10 (push-and-continue (VM-nil vm))]
+           [11 (push-and-continue (VM-true vm))]
+           [12 (push-and-continue (VM-false vm))])]
+      [6 (slotAtPut receiver low (peek)) (interpret)] ;; AssignInstance
+      [7 (slotAtPut temporaries low (peek)) (interpret)] ;; AssignTemporary
+      [8 (push-and-continue (pop-multiple! low))] ;; MarkArguments
       [9 ;; SendMessage
        (define new-arguments (pop!))
        (send-message vm ctx ip stack-top new-arguments (slotAt literals low))]
 
-      [10 ;; SendUnary
-       (match low
-         [0 ;; isNil
-          (push-and-continue (boolean->obj vm (eq? (VM-nil vm) (pop!))))]
-         [1 ;; notNil
-          (push-and-continue (boolean->obj vm (not (eq? (VM-nil vm) (pop!)))))])]
+      [10 (match low
+            [0 (push-and-continue (boolean->obj vm (eq? (VM-nil vm) (pop!))))] ;; isNil
+            [1 (push-and-continue (boolean->obj vm (not (eq? (VM-nil vm) (pop!)))))])] ;; notNil
 
       [11 ;; SendBinary
        (define j (pop!))
        (define i (pop!))
        (if (and (number? i) (number? j))
            (match low
-             [0 ;; <
-              (push-and-continue (boolean->obj vm (< i j)))]
-             [1 ;; <=
-              (push-and-continue (boolean->obj vm (<= i j)))]
-             [2 ;; +
-              ;; TODO: overflow to bignum arithmetic
-              (push-and-continue (+ i j))])
+             [0 (push-and-continue (boolean->obj vm (< i j)))]
+             [1 (push-and-continue (boolean->obj vm (<= i j)))]
+             [2 (push-and-continue (+ i j))]) ;; TODO: overflow to bignum arithmetic
            (let ((new-arguments (mkobj (VM-Array vm) i j))
                  (selector (match low
                              [0 (mkbv (VM-nil vm) #"<")]
@@ -347,22 +315,36 @@
              (send-message vm ctx ip stack-top new-arguments selector)))]
 
       [12 ;; PushBlock
-       ;; "low is argument location"
-       ;; "next byte is goto value"
        (define target (next-byte!))
        (log-vm-debug "pushblock; temporaries = ~a" temporaries)
        (push-and-go target
-                    (mkobj (VM-Block vm)
-                           method
-                           arguments
-                           temporaries
-                           stack ;; ! "later replaced"
-                           ip
-                           0
-                           previous-ctx
-                           low
-                           ctx
-                           ip))]
+        (mkobj (VM-Block vm) method arguments temporaries stack ip 0 previous-ctx low ctx ip))]
+
+      [14 (push-and-continue (slotAt (obj-class* vm receiver) (+ low 5)))] ;; PushClassVariable
+      [15 ;; Do Special
+       (match low
+         [1 (resume-context vm previous-ctx receiver)]
+         [2 (resume-context vm previous-ctx (pop!))]
+         [3 (resume-context vm (slotAt (slotAt ctx 8) 6) (pop!))]
+         [4 (push-and-continue (peek))]
+         [5 (pop!) (interpret)]
+         [6 (continue-from (next-byte!))]
+         [7 ;; branch if true
+          (define target (next-byte!))
+          (if (eq? (pop!) (VM-true vm))
+              (continue-from target)
+              (interpret))]
+         [8 ;; branch if false
+          (define target (next-byte!))
+          (if (eq? (pop!) (VM-false vm))
+              (continue-from target)
+              (interpret))]
+         [11 ;; send to super
+          (define selector (slotAt literals (next-byte!)))
+          (define new-arguments (pop!))
+          (define defining-class (slotAt method 5)) ;; method's defining class
+          (define super (slotAt defining-class 1)) ;; defining class's superclass
+          (send-message* vm ctx ip stack-top new-arguments super selector)])]
 
       [13 ;; Primitive; low = arg count; next byte = primitive number
        (define primitive-number (next-byte!))
@@ -370,11 +352,10 @@
        (match primitive-number
          [1 (primitive-action [a b] (boolean->obj vm (eq? a b)))]
          [2 (primitive-action [x] (obj-class* vm x))]
-         [4 (primitive-action [o]
-              (cond [(bv? o) (bytes-length (bv-bytes o))]
-                    [(obj? o) (slotCount o)]
-                    [(number? o) 0]
-                    [else (error 'execute "Primitive 4 failed")]))]
+         [4 (primitive-action [o] (cond [(bv? o) (bytes-length (bv-bytes o))]
+                                        [(obj? o) (slotCount o)]
+                                        [(number? o) 0]
+                                        [else (error 'execute "Primitive 4 failed")]))]
          [5 (primitive-action [index target value]
               (slotAtPut target (- index 1) value)
               target)]
@@ -420,13 +401,9 @@
                      [(bytes>? a b) 1]))]
          [30 (primitive-action [index source] (slotAt source (- index 1)))]
          [31 (primitive-action [o v] (obj (obj-class o) (vector-append (obj-slots o) (vector v))))]
-         [34 ;; "thread kill"
-          (VM-nil vm)]
+         [34 (VM-nil vm)] ;; "thread kill"
          [35 (push-and-continue ctx)]
-         [36 ;; "fast array creation" - almost the same as bytecode 8, MarkArguments
-          (define result (clone-array stack (- stack-top low) low))
-          (set! stack-top (- stack-top low))
-          (push-and-continue result)]
+         [36 (push-and-continue (pop-multiple! low))] ;; "fast array creation"
 
          ;;---------------------------------------------------------------------------
          ;; GUI
@@ -632,42 +609,7 @@
 
          [_ (error 'execute "Unimplemented primitive: ~a stack: ~a"
                    primitive-number
-                   (obj-slots stack))])]
-
-      [14 ;; PushClassVariable
-       (push-and-continue (slotAt (obj-class* vm receiver) (+ low 5)))]
-
-      [15 ;; Do Special
-       (match low
-         [1 ;; self return
-          (resume-context vm previous-ctx receiver)]
-         [2 ;; stack return
-          (resume-context vm previous-ctx (pop!))]
-         [3 ;; block return
-          (resume-context vm (slotAt (slotAt ctx 8) 6) (pop!))]
-         [4 ;; dup
-          (push-and-continue (peek))]
-         [5 ;; pop
-          (pop!)
-          (interpret)]
-         [6 ;; branch
-          (continue-from (next-byte!))]
-         [7 ;; branch if true
-          (define target (next-byte!))
-          (if (eq? (pop!) (VM-true vm))
-              (continue-from target)
-              (interpret))]
-         [8 ;; branch if false
-          (define target (next-byte!))
-          (if (eq? (pop!) (VM-false vm))
-              (continue-from target)
-              (interpret))]
-         [11 ;; send to super
-          (define selector (slotAt literals (next-byte!)))
-          (define new-arguments (pop!))
-          (define defining-class (slotAt method 5)) ;; method's defining class
-          (define super (slotAt defining-class 1)) ;; defining class's superclass
-          (send-message* vm ctx ip stack-top new-arguments super selector)])]))
+                   (obj-slots stack))])]))
 
   (interpret))
 
@@ -675,7 +617,7 @@
   (define true-class (obj-class (VM-true vm))) ;; class True
   (define name (slotAt true-class 0)) ;; "a known string", namely the name of class True
   (define string-class (obj-class name)) ;; class String
-  (define doIt-method (outer-lookup-method string-class #"doIt"))
+  (define doIt-method (search-class-method-dictionary string-class #"doIt"))
   (when (not doIt-method)
     (error 'doIt "Can't find doIt method via class True etc"))
   (define source (mkbv string-class (string->bytes/utf-8 task)))
