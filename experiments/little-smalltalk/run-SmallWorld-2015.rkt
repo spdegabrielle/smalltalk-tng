@@ -195,7 +195,7 @@
   (lambda args
     (let ((ctx (clone-array block)))
       (define argument-location (slotAt ctx 7))
-      (for [(i (in-naturals)) (arg (in-list args))]
+      (for [(i (in-naturals argument-location)) (arg (in-list args))]
         (slotAtPut (slotAt ctx 2) i arg))
       (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
       (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
