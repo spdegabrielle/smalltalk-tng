@@ -559,8 +559,7 @@
           (primitive-action [data (unffiv* lbv (list get-lb _factory))]
             (define lb (get-lb))
             (log-vm/gui-debug "Update list ~a data ~v" (eq-hash-code lb) data)
-            (send lb clear)
-            (for [(c (obj-slots data))] (match-define (unstr t) c) (send lb append t))
+            (send lb set (for/list [(c (obj-slots data))] (match-define (unstr t) c) t))
             lbv)]
          [89 ;; set selected text area
           (primitive-action [(and textv (unstr text)) (unffiv (list textarea _factory))]
