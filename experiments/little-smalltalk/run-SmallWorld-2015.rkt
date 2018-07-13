@@ -46,7 +46,7 @@
       (bv-bytes (slotAt c 0))
       #"???"))
 
-(struct VM (nil true false Array Block Context Integer))
+(struct VM (nil true false Array Block Context Integer cache))
 
 (define (read-image fh)
 
@@ -100,7 +100,8 @@
       (vector-ref object-table 3)
       (vector-ref object-table 4)
       (vector-ref object-table 5)
-      (vector-ref object-table 6)))
+      (vector-ref object-table 6)
+      (make-weak-hasheq)))
 
 (define (slotCount o) (vector-length (obj-slots o)))
 (define (slotAt o i) (vector-ref (obj-slots o) i))
@@ -145,6 +146,14 @@
 (define (boolean->obj vm b)
   (if b (VM-true vm) (VM-false vm)))
 
+(define (lookup-method/cache vm class selector)
+  (define name-bytes (bv-bytes selector))
+  (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
+  (hash-ref! class-cache
+             name-bytes
+             (lambda ()
+               (lookup-method vm class selector))))
+
 (define (lookup-method vm class selector)
   (define name-bytes (bv-bytes selector))
   (let search ((class class))
@@ -158,9 +167,9 @@
 
 (define (send-message* vm ctx ip stack-top arguments class selector)
   (store-registers! ctx ip stack-top)
-  (match (lookup-method vm class selector)
+  (match (lookup-method/cache vm class selector)
     [#f
-     (match (lookup-method vm class (mkbv (obj-class selector) #"doesNotUnderstand:"))
+     (match (lookup-method/cache vm class (mkbv (obj-class selector) #"doesNotUnderstand:"))
        [#f
         (error 'send-message* "Unhandled selector ~a at class ~a" selector class)]
        [dnu-method
