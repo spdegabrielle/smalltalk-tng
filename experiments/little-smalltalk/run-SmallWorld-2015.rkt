@@ -50,16 +50,11 @@
 
 (define (read-image fh)
 
-  (define (maybe-next-int #:signed? [signed? #f])
+  (define (next-int #:signed? [signed? #f] #:eof-ok? [eof-ok? #f])
     (define bs (read-bytes 4 fh))
     (if (eof-object? bs)
-        bs
+        (if eof-ok? bs (error 'read-image "Early EOF"))
         (integer-bytes->integer bs signed? #t)))
-
-  (define (next-int #:signed? [signed? #f])
-    (define i (maybe-next-int #:signed? signed?))
-    (when (eof-object? i) (error 'read-image "Early EOF"))
-    i)
 
   (let ((image-version (next-int))
         (expected-version 1))
@@ -71,7 +66,7 @@
   (define object-table
     (let loop ((acc '()))
       (define (emit x) (loop (cons x acc)))
-      (match (maybe-next-int)
+      (match (next-int #:eof-ok? #t)
         [(? eof-object?) (list->vector (reverse acc))]
         [obj-length
          (define type-code (next-int))
