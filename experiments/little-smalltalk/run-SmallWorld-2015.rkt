@@ -384,11 +384,13 @@
                              (slotAt block 7)
                              (slotAt block 8)
                              (slotAt block 9)))]
+         [10 (primitive-action [a b] (+ a b))] ;; TODO: overflow
          [11 (primitive-action [d n] (quotient n d))]
          [12 (primitive-action [d n] (modulo n d))]
          [14 (primitive-action [a b] (boolean->obj vm (= a b)))]
          [15 (primitive-action [a b] (* a b))]
          [16 (primitive-action [b a] (- a b))] ;; NB. ordering
+         [18 (primitive-action [v] (log-vm-info "DEBUG: value ~v class ~v" v (obj-class* vm v)))]
          [20 (primitive-action [count class] (mkbv class (make-bytes count)))]
          [21 (primitive-action [index source] (bytes-ref (bv-bytes source) (- index 1)))]
          [22 (primitive-action [index target value]
