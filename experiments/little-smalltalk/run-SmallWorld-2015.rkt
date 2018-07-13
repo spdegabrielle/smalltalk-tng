@@ -4,6 +4,7 @@
 ;; descendant.
 
 (require racket/struct)
+(require racket/bytes)
 (require "oneshot.rkt")
 
 (define-logger vm)
@@ -46,11 +47,11 @@
       (bv-bytes (slotAt c 0))
       #"???"))
 
-(struct VM (nil true false Array Block Context Integer cache))
+(struct VM (nil true false Array Block Context Integer cache image-filename))
 
-(define (read-image fh)
+(define (read-image image-filename fh)
 
-  (define (next-int #:signed? [signed? #f] #:eof-ok? [eof-ok? #f])
+  (define (next-int #:signed? [signed? #t] #:eof-ok? [eof-ok? #f])
     (define bs (read-bytes 4 fh))
     (if (eof-object? bs)
         (if eof-ok? bs (error 'read-image "Early EOF"))
@@ -101,7 +102,64 @@
       (vector-ref object-table 4)
       (vector-ref object-table 5)
       (vector-ref object-table 6)
-      (make-weak-hasheq)))
+      (make-weak-hasheq)
+      image-filename))
+
+(define (serialize-image vm)
+  (define indices (make-hasheq))
+  (define output-rev '())
+  (define worklist-rev '())
+  (define next-index 0)
+
+  (define (push-bytes! item) (set! output-rev (cons item output-rev)))
+  (define (push-int! n) (push-bytes! (integer->integer-bytes n 4 #t #t)))
+
+  (define (object->index o)
+    (if (ffiv? o)
+        (object->index (VM-nil vm))
+        (hash-ref! indices o (lambda ()
+                               (begin0 next-index
+                                 (set! next-index (+ next-index 1))
+                                 (set! worklist-rev (cons o worklist-rev)))))))
+
+  (push-int! 1) ;; version number
+  (object->index (VM-nil vm))
+  (object->index (VM-true vm))
+  (object->index (VM-false vm))
+  (object->index (VM-Array vm))
+  (object->index (VM-Block vm))
+  (object->index (VM-Context vm))
+  (object->index (VM-Integer vm))
+  (for [(i 10)] (object->index i))
+
+  (let loop ()
+    (define worklist (reverse worklist-rev))
+    (set! worklist-rev '())
+    (when (pair? worklist)
+      (for [(o worklist)]
+        (match o
+          [(? number?)
+           (push-int! 5)
+           (push-int! 0)
+           (push-int! (object->index (VM-Integer vm)))
+           (push-int! 0)
+           (push-int! o)]
+          [(bv class slots bytes)
+           (push-int! (+ (bytes-length bytes) (vector-length slots) 4)) ;; weird
+           (push-int! 1)
+           (push-int! (object->index class))
+           (push-int! (vector-length slots))
+           (for [(s slots)] (push-int! (object->index s)))
+           (push-bytes! bytes)]
+          [(obj class slots)
+           (push-int! (+ (vector-length slots) 4)) ;; weird
+           (push-int! 2)
+           (push-int! (object->index class))
+           (push-int! (vector-length slots))
+           (for [(s slots)] (push-int! (object->index s)))]))
+      (loop)))
+
+  (bytes-append* (reverse output-rev)))
 
 (define (slotCount o) (vector-length (obj-slots o)))
 (define (slotAt o i) (vector-ref (obj-slots o) i))
@@ -604,6 +662,8 @@
          [102 (primitive-action [v (unffiv o)]
                 (oneshot-set! o v)
                 v)]
+         [116 (let ((image-bytes (serialize-image vm)))
+                (display-to-file image-bytes (VM-image-filename vm) #:exists 'replace))]
          [117 (exit)]
          [118 ;; "onWindow close b"
           (primitive-action [action (unffiv* wv window)]
@@ -635,7 +695,8 @@
   (define ctx (build-context vm (VM-nil vm) args doIt-method))
   (execute vm ctx))
 
-(let ((vm (call-with-input-file "SmallWorld/src/image" read-image)))
+(let* ((image-filename "SmallWorld/src/image")
+       (vm (call-with-input-file image-filename (lambda (fh) (read-image image-filename fh)))))
   (printf "Sending 'SmallWorld startUp'...\n")
   (thread-wait (thread (lambda ()
                          (define result (doIt vm "SmallWorld startUp"))
