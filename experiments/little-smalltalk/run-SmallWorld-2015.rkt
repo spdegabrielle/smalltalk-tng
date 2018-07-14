@@ -535,6 +535,22 @@
                    [parent parent]
                    [callback (lambda args (queue-callback callback))]))
             (mkffiv class (list 'button create-button-in)))]
+         [72 ;; new text line
+          (primitive-action [class]
+            (log-vm/gui-debug "Schedule textfield")
+            (define textfield-editor #f)
+            (define (add-textfield-to parent)
+              (set! textfield-editor (send (new text-field% [label #f] [parent parent]) get-editor))
+              textfield-editor)
+            (mkffiv class (list (lambda () textfield-editor) add-textfield-to)))]
+         [73 ;; new text area
+          (primitive-action [class]
+            (log-vm/gui-debug "Schedule textarea")
+            (define editor (new text%))
+            (define (add-editor-to frame)
+              (log-vm/gui-debug "Create textarea")
+              (new editor-canvas% [parent frame] [editor editor]))
+            (mkffiv class (list (lambda () editor) add-editor-to)))]
          [74 ;; new grid panel
           (primitive-action [data height width class]
             (log-vm/gui-debug "Schedule grid panel ~ax~a ~a" width height data)
@@ -550,14 +566,6 @@
                       [(unffiv (list _ factory)) (factory hp)]))))
               vp)
             (mkffiv class (list 'grid create-grid-in)))]
-         [73 ;; new text area
-          (primitive-action [class]
-            (log-vm/gui-debug "Schedule textarea")
-            (define editor (new text%))
-            (define (add-editor-to frame)
-              (log-vm/gui-debug "Create textarea")
-              (new editor-canvas% [parent frame] [editor editor]))
-            (mkffiv class (list editor add-editor-to)))]
          [75 ;; new list panel
           (primitive-action [action data class]
             (define callback (block-callback vm action))
@@ -603,23 +611,23 @@
               vp)
             (mkffiv class (list 'border-panel create-border-panel-in)))]
          [80 ;; content of text area
-          (primitive-action [(unffiv (list textarea _factory)) class]
-            (mkbv class (string->bytes/utf-8 (send textarea get-text))))]
+          (primitive-action [(unffiv (list get-textarea _factory)) class]
+            (mkbv class (string->bytes/utf-8 (send (get-textarea) get-text))))]
          [81 ;; content of selected text area
-          (primitive-action [(unffiv (list textarea _factory)) class]
+          (primitive-action [(unffiv (list get-textarea _factory)) class]
             (define start (box 0))
             (define end (box 0))
-            (send textarea get-position start end)
+            (send (get-textarea) get-position start end)
             (define has-selection (not (= (unbox start) (unbox end))))
             (mkbv class
-                  (string->bytes/utf-8 (send textarea get-text
+                  (string->bytes/utf-8 (send (get-textarea) get-text
                                              (if has-selection (unbox start) 0)
                                              (if has-selection (unbox end) 'eof)))))]
          [82 ;; set text area
-          (primitive-action [(and textv (unstr text)) (unffiv (list textarea _factory))]
+          (primitive-action [(and textv (unstr text)) (unffiv (list get-textarea _factory))]
             (log-vm/gui-debug "Update textarea ~v" text)
-            (send textarea erase)
-            (send textarea insert text)
+            (send (get-textarea) erase)
+            (send (get-textarea) insert text)
             textv)]
          [83 ;; get selected index
           (primitive-action [(unffiv (list get-lb _factory))]
@@ -634,15 +642,15 @@
             (send lb set (for/list [(c (obj-slots data))] (match-define (unstr t) c) t))
             lbv)]
          [89 ;; set selected text area
-          (primitive-action [(and textv (unstr text)) (unffiv (list textarea _factory))]
+          (primitive-action [(and textv (unstr text)) (unffiv (list get-textarea _factory))]
             (define start (box 0))
             (define end (box 0))
-            (send textarea get-position start end)
+            (send (get-textarea) get-position start end)
             (define has-selection (not (= (unbox start) (unbox end))))
             (if has-selection
-                (send textarea insert text (unbox start) (unbox end))
-                (begin (send textarea erase)
-                       (send textarea insert text)))
+                (send (get-textarea) insert text (unbox start) (unbox end))
+                (begin (send (get-textarea) erase)
+                       (send (get-textarea) insert text)))
             textv)]
          [90 ;; new menu
           (primitive-action [(unstr title) class]
