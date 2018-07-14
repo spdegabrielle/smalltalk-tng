@@ -96,13 +96,13 @@
       [`(let* ((,name ,init) ,more ...) ,es ...)
        (walk `(let ((,name ,init)) (let* ,more ,@es)))]
 
-      [`(,rator ,rands ...)
-       (Apply (walk rator) (map walk rands))]
-
       [`(letrec ((,names ,inits) ...) ,es ...)
        (if (null? names)
            (walk `(begin ,@es))
            (Letrec names (map walk inits) (walk `(begin ,@es))))]
+
+      [`(,rator ,rands ...)
+       (Apply (walk rator) (map walk rands))]
 
       [_ (Lit exp)])))
 
@@ -289,7 +289,14 @@
                           (list (emit* 'pure formal (codegen-absval init-v) init-v))))]
 
     [(Letrec formals inits body)
-     (error 'pe "Unimplemented: Letrec")])
+     ;; TODO: finish this. At the moment it's just a sketch of an
+     ;; implementation, quite likely far off base.
+     (define stubenv (extend-env env formals (map Unknown formals)))
+     (emit pure
+           [letrec-id (Letrec formals
+                              (for/list [(init inits)] (residualize (pe init stubenv)))
+                              (residualize (pe body stubenv)))]
+           (Unknown letrec-id))])
   ))
 
 ;;---------------------------------------------------------------------------
@@ -389,12 +396,12 @@
                              (PRIMcdr x)
                              (error "Not a pair in cdr" x))))
 
-           ;; (list 'reverse '(lambda (x)
-           ;;                   #:filter 'unfold
-           ;;                   (let loop ((x x) (acc '()))
-           ;;                     (if (null? x)
-           ;;                         acc
-           ;;                         (loop (cdr x) (cons (car x) acc))))))
+           (list 'reverse '(lambda (x)
+                             (let loop ((x x) (acc '()))
+                               (if (null? x)
+                                   acc
+                                   (loop (cdr x) (cons (car x) acc))))))
+
            ;; (list 'fold '(lambda (f acc x)
            ;;                #:filter (if (sval-known? f) 'unfold '(#f #f #f))
            ;;                (let loop ((x x) (acc acc))
@@ -454,6 +461,10 @@
        `(,(reconstruct rator) ,@(map reconstruct rands))]
       [(Bind formal init body)
        (reconstruct-binds (list (list formal (reconstruct init))) body)]
+      [(Letrec formals inits body)
+       `(letrec ,(for/list [(formal formals) (init inits)]
+                   (list formal (reconstruct init)))
+          ,(reconstruct body))]
       ))
 
   (define (reconstruct-binds bs body)
