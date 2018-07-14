@@ -709,6 +709,9 @@
   (thread-wait (thread (lambda ()
                          (define result (doIt vm "SmallWorld startUp"))
                          (log-vm-info "Final startUp result: ~a" result)
+                         (for [(a (current-command-line-arguments))]
+                           (log-vm-info "Filing in ~a" a)
+                           (doIt vm (format "(File openRead: '~a') fileIn" a)))
                          (yield))))
   (printf "... terminating.\n"))
 
