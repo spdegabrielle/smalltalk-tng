@@ -468,6 +468,14 @@
          [34 (VM-nil vm)] ;; "thread kill"
          [35 (push-and-continue ctx)]
          [36 (push-and-continue (pop-multiple! low))] ;; "fast array creation"
+         [41 (primitive-action [(unstr filename) class]
+               (mkffiv class (open-output-file filename #:exists 'replace)))]
+         [42 (primitive-action [(unstr filename) class]
+               (mkffiv class (open-input-file filename)))]
+         [44 (primitive-action [(unffiv fh) class]
+               (match (read-bytes-line fh)
+                 [(? eof-object?) (VM-nil vm)]
+                 [bs (mkbv class bs)]))]
 
          ;;---------------------------------------------------------------------------
          ;; GUI
