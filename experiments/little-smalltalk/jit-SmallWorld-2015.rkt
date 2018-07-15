@@ -1061,7 +1061,7 @@
 
 (let* ((image-filename "SmallWorld/src/image")
        (vm (call-with-input-file image-filename (lambda (fh) (read-image image-filename fh)))))
-  (printf "Sending 'SmallWorld startUp'...\n")
+  (log-vm-info "Sending 'SmallWorld startUp'...")
   (thread-wait (thread (lambda ()
                          (define result (doIt vm "SmallWorld startUp"))
                          (log-vm-info "Final startUp result: ~a" result)
@@ -1069,7 +1069,7 @@
                            (log-vm-info "Filing in ~a" a)
                            (doIt vm (format "(File openRead: '~a') fileIn" a)))
                          (yield))))
-  (printf "... terminating.\n"))
+  (log-vm-info "... terminating."))
 
 ;;; Local Variables:
 ;;; eval: (put 'primitive-action 'scheme-indent-function 1)
