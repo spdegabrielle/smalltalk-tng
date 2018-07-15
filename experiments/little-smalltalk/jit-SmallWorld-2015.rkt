@@ -391,9 +391,9 @@
       [14 (let@ [n (gensym 'clsvar) `(slotAt (obj-class* vm self) ,(+ arg 5))]
                 (translate ip (cons n stack)))]
       [15 (match arg
-            [1 `(resume-jit-context method k self)]
-            [2 `(resume-jit-context method k ,(car stack))]
-            [3 `(resume-jit-context method outer-k ,(car stack))]
+            [1 `(k self)]
+            [2 `(k ,(car stack))]
+            [3 `(outer-k ,(car stack))]
             [5 (translate ip (cdr stack))]
             [6 (jump-to-label (next-byte!) stack)]
             [7 (let ((target (next-byte!)))
@@ -545,12 +545,6 @@
     (define/augment (on-close)
       (close-handler this))
     (super-new)))
-
-(define (resume-jit-context method k result)
-  (log-vm-debug "resuming (jit, from method ~v): ~a"
-                (bv->string (slotAt method 0))
-                result)
-  (k result))
 
 (define (resume-context vm ctx result)
   (if (eq? (VM-nil vm) ctx)
