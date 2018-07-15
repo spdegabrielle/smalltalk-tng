@@ -1037,7 +1037,7 @@
 (define-primitive vm [116]
   (let ((image-bytes (serialize-image vm)))
     (display-to-file image-bytes (VM-image-filename vm) #:exists 'replace)))
-(define-primitive vm [117] (exit))
+(define-primitive vm [117 _self] (exit))
 (define-primitive vm [118 (unffiv* wv window) action] ;; "onWindow close b"
   (define callback (block-callback vm action))
   (send window set-close-handler (lambda (_frame) (queue-callback callback) (sleep 0.2)))
