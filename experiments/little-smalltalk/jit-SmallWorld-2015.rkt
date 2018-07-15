@@ -377,7 +377,9 @@
                                  k ;; not (lambda (,v) ,(translate ip (cons v (drop stack argc))))
                                  ;; ^ reason being the image BUGGILY relies on primitive 8
                                  ;; immediately returning to the surrounding context!!
-                                 ,@(reverse (take stack argc)))]))]
+                                 ,@(reverse (take stack argc)))]
+                    [(obj (== BLOCK) _)
+                     (k ((block->thunk vm ,block (list ,@(reverse (take stack argc))))))]))]
             [34 'NIL]
             [35 (let@ [n (gensym 'ctx) (build-jit-context-exp ip stack)]
                       (translate ip (cons n stack)))]
@@ -512,22 +514,28 @@
   (log-vm-debug "sending: ~a ~a" selector arguments)
   (send-message* vm ctx arguments (obj-class* vm (slotAt arguments 0)) selector))
 
+(define (block->thunk vm block args) ;; Expects a real bytecode block, not an ffiv one
+  (let ((ctx (clone-array block)))
+    (define argument-location (slotAt ctx 7))
+    (for [(i (in-naturals argument-location)) (arg (in-list args))]
+      (slotAtPut (slotAt ctx 2) i arg))
+    (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
+    (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
+    (slotAtPut ctx 5 0) ;; zero stack-top
+    (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
+    (lambda () (execute vm ctx))))
+
 (define (block-callback vm block)
   ;; Runs block in a new thread
   (lambda args
     (match block
       [(unffiv block-proc)
-       (apply block-proc vm (case-lambda [() (VM-nil vm)] [(result) (void)]) args)]
+       (thread (lambda () (apply block-proc
+                                 vm
+                                 (case-lambda [() (VM-nil vm)] [(result) (void)])
+                                 args)))]
       [_
-       (let ((ctx (clone-array block)))
-         (define argument-location (slotAt ctx 7))
-         (for [(i (in-naturals argument-location)) (arg (in-list args))]
-           (slotAtPut (slotAt ctx 2) i arg))
-         (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
-         (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
-         (slotAtPut ctx 5 0) ;; zero stack-top
-         (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
-         (thread (lambda () (execute vm ctx))))])))
+       (thread (block->thunk vm block args))])))
 
 (define smalltalk-frame%
   (class frame%
