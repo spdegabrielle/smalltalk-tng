@@ -1,3 +1,11 @@
+2018-07-13 22:30:40 tonyg on hop: 0 tinyBenchmarks 411861 bytecodes/sec; 65707 sends/sec
+
+Added simplest possible method lookup cache; the result:
+2018-07-13 22:43:12 tonyg on hop: 0 tinyBenchmarks 859845 bytecodes/sec; 106388 sends/sec
+
+For comparison, on the same machine (hop), SqueakJS running Mini Squeak 2.2
+in Firefox Quantum 61.0.1 gets 38787878 bytecodes/sec; 698205 sends/sec
+
 2018-07-14 16:52:47 tonyg on leap: 0 tinyBenchmarks 2228412 bytecodes/sec; 270007 sends/sec
 
 Split out perform-primitive into separate routine
@@ -27,3 +35,5 @@ at startup:
 in a workspace:
     19765287 bytecodes/sec; 3482507 sends/sec
     19476567 bytecodes/sec; 3422322 sends/sec
+
+2018-07-15 11:12:26 tonyg on hop: 0 tinyBenchmarks 7816316 bytecodes/sec; 1313400 sends/sec
