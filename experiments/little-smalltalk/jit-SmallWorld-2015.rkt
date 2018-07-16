@@ -312,7 +312,7 @@
     (define-values (opcode arg) (decode!))
     (log-vm/jit-debug " ~a: ~a ~a" ip0 opcode arg)
     (match opcode
-      [1 (let@ [n (mksym "slot~a_" arg) `(vector-ref (obj-slots self) ,arg)]
+      [1 (let@ [n (mksym "slot~a_" arg) `(slotAt self ,arg)]
                (translate ip (cons n stack)))]
       [2 (translate ip (cons (vector-ref argnames arg) stack))]
       [3 (let@ [n (mksym "tmp~a_" arg) (vector-ref tmpnames arg)]
