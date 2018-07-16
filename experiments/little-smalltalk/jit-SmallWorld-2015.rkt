@@ -272,10 +272,14 @@
                         (vector ,@(vector->list tmpnames))
                         (vector ,@(reverse stack))))
 
-  (define-syntax-rule (let@ [n n-exp n-code-exp] body-code-exp)
-    (let ((n n-exp))
-      `(let ((,n ,n-code-exp))
-         ,body-code-exp)))
+  (define-syntax let@
+    (syntax-rules ()
+      [(_ [n n-code-exp] body-code-exp)
+       (let@ [n (gensym 'n) n-code-exp] body-code-exp)]
+      [(_ [n n-exp n-code-exp] body-code-exp)
+       (let ((n (gensym n-exp)))
+         `(let ((,n ,n-code-exp))
+            ,body-code-exp))]))
 
   (define labels (make-hash))
 
@@ -308,10 +312,10 @@
     (define-values (opcode arg) (decode!))
     (log-vm/jit-debug " ~a: ~a ~a" ip0 opcode arg)
     (match opcode
-      [1 (let@ [n (mksym "slot~a" arg) `(vector-ref (obj-slots self) ,arg)]
+      [1 (let@ [n (mksym "slot~a_" arg) `(vector-ref (obj-slots self) ,arg)]
                (translate ip (cons n stack)))]
       [2 (translate ip (cons (vector-ref argnames arg) stack))]
-      [3 (let@ [n (gensym 'tmpcopy) (vector-ref tmpnames arg)]
+      [3 (let@ [n (mksym "tmp~a_" arg) (vector-ref tmpnames arg)]
                (translate ip (cons n stack)))]
       [4 (translate ip (cons (vector-ref litnames arg) stack))]
       [5 (match arg
@@ -354,14 +358,13 @@
       ;;                     ,(vector-ref litnames arg)))]
 
       [10 (match arg
-            [0 (let@ [n (gensym 'isNil) `(boolean->obj vm (eq? NIL ,(car stack)))]
-                     (translate ip (cons n (cdr stack))))]
-            [1 (let@ [n (gensym 'notNil) `(boolean->obj vm (not (eq? NIL ,(car stack))))]
-                     (translate ip (cons n (cdr stack))))])]
+            [0 (let@ [isNil `(boolean->obj vm (eq? NIL ,(car stack)))]
+                     (translate ip (cons isNil (cdr stack))))]
+            [1 (let@ [notNil `(boolean->obj vm (not (eq? NIL ,(car stack))))]
+                     (translate ip (cons notNil (cdr stack))))])]
       [11 (match stack
             [(list* j i stack)
-             (let@ [binop-k (gensym 'binop-k)
-                            (let ((binop-result (gensym 'binop-result)))
+             (let@ [binop-k (let ((binop-result (gensym 'binop-result)))
                               `(case-lambda
                                  [() ,(build-jit-context-exp ip stack)]
                                  [(,binop-result) ,(translate ip (cons binop-result stack))]))]
@@ -378,8 +381,7 @@
                                                    [1 #"<="]
                                                    [2 #"+"])))))])]
       [12 (let ((target (next-byte!)))
-            (let@ [block (gensym 'block)
-                         `(mkffiv BLOCK
+            (let@ [block `(mkffiv BLOCK
                                   (lambda (_vm k . block-arguments)
                                     ,(let loop ((i arg))
                                        (if (>= i temp-count)
@@ -407,21 +409,20 @@
                     [(obj (== BLOCK) _)
                      (k ((block->thunk vm ,block (list ,@(reverse (take stack argc))))))]))]
             [34 'NIL]
-            [35 (let@ [n (gensym 'ctx) (build-jit-context-exp ip stack)]
-                      (translate ip (cons n stack)))]
-            [36 (let@ [n (gensym 'arr) `(mkobj ARRAY ,@(reverse (take stack arg)))]
-                      (translate ip (cons n (drop stack arg))))]
-            [_ (let@ [v (gensym 'primresult)
-                        (let ((generator (hash-ref *primitive-code-snippets*
-                                                   primitive-number
-                                                   (lambda ()
-                                                     (error 'compile-native-proc
-                                                            "Unknown primitive: ~a"
-                                                            primitive-number)))))
-                          (generator 'vm (reverse (take stack arg))))]
-                     (translate ip (cons v (drop stack arg))))])]
-      [14 (let@ [n (gensym 'clsvar) `(slotAt (obj-class* vm self) ,(+ arg 5))]
-                (translate ip (cons n stack)))]
+            [35 (let@ [ctxref (build-jit-context-exp ip stack)]
+                      (translate ip (cons ctxref stack)))]
+            [36 (let@ [arr `(mkobj ARRAY ,@(reverse (take stack arg)))]
+                      (translate ip (cons arr (drop stack arg))))]
+            [_ (let@ [primresult (let ((generator (hash-ref *primitive-code-snippets*
+                                                            primitive-number
+                                                            (lambda ()
+                                                              (error 'compile-native-proc
+                                                                     "Unknown primitive: ~a"
+                                                                     primitive-number)))))
+                                   (generator 'vm (reverse (take stack arg))))]
+                     (translate ip (cons primresult (drop stack arg))))])]
+      [14 (let@ [clsvar `(slotAt (obj-class* vm self) ,(+ arg 5))]
+                (translate ip (cons clsvar stack)))]
       [15 (match arg
             [1 `(k self)]
             [2 `(k ,(car stack))]
