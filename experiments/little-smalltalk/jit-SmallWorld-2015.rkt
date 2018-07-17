@@ -297,6 +297,17 @@
     (begin0 mic-count
       (set! mic-count (+ mic-count 1))))
 
+  (define (gen-send-k ip stack)
+    (define result (gensym 'result))
+    `(case-lambda [() ,(build-jit-context-exp ip stack)]
+                  [(,result) ,(translate ip (cons result stack))]))
+
+  (define (gen-send class-exp selector-exp k-exp arg-exps)
+    (define mic-index (next-mic!))
+    (define mc (mksym "mic~a-class" mic-index))
+    (define mm (mksym "mic~a-method" mic-index))
+    `((lookup-message/jit vm ,mc ,mm ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
+
   (define (translate ip stack)
     (define (next-byte!)
       (begin0 (bytes-ref bytecode ip)
@@ -327,25 +338,15 @@
       [7 `(begin (set! ,(vector-ref tmpnames arg) ,(car stack)) ,(translate ip stack))]
       [8 (let* ((arg-count arg)
                 (args (reverse (take stack arg-count)))
-                (stack (drop stack arg-count))
-                (mic-index (next-mic!))
-                (result (gensym 'result)))
+                (stack (drop stack arg-count)))
            (define-values (selector-literal-index class-exp)
              (match/values (decode!)
                [(9 selector-literal-index)
                 (values selector-literal-index `(obj-class* vm ,(car args)))]
                [(15 11)
                 (values (next-byte!) `super)]))
-           `((lookup-message/jit vm
-                                 ,(mksym "mic~a-class" mic-index)
-                                 ,(mksym "mic~a-method" mic-index)
-                                 ,class-exp
-                                 ,(vector-ref litnames selector-literal-index))
-             vm
-             (case-lambda
-               [() ,(build-jit-context-exp ip stack)]
-               [(,result) ,(translate ip (cons result stack))])
-             ,@args))]
+           (define k (gen-send-k ip stack))
+           (gen-send class-exp (vector-ref litnames selector-literal-index) k args))]
 
       ;; [9 (let ((args (car stack))
       ;;          (result (gensym 'result)))
@@ -364,22 +365,16 @@
                      (translate ip (cons notNil (cdr stack))))])]
       [11 (match stack
             [(list* j i stack)
-             (let@ [binop-k (let ((binop-result (gensym 'binop-result)))
-                              `(case-lambda
-                                 [() ,(build-jit-context-exp ip stack)]
-                                 [(,binop-result) ,(translate ip (cons binop-result stack))]))]
+             (let@ [binop-k (gen-send-k ip stack)]
                    `(if (and (number? ,i) (number? ,j))
                         ,(match arg
                            [0 `(,binop-k (boolean->obj vm (< ,i ,j)))]
                            [1 `(,binop-k (boolean->obj vm (<= ,i ,j)))]
                            [2 `(,binop-k (+ ,i ,j))])
-                        (send-message vm
-                                      ,binop-k
-                                      (mkobj ARRAY ,i ,j)
-                                      (mkbv NIL ,(match arg
-                                                   [0 #"<"]
-                                                   [1 #"<="]
-                                                   [2 #"+"])))))])]
+                        ,(gen-send `(obj-class* vm ,i)
+                                   `(mkbv NIL ,(match arg [0 #"<"] [1 #"<="] [2 #"+"]))
+                                   binop-k
+                                   (list i j))))])]
       [12 (let ((target (next-byte!)))
             (let@ [block `(mkffiv BLOCK
                                   (lambda (_vm k . block-arguments)
