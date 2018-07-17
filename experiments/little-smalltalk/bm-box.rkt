@@ -8,6 +8,8 @@
 (define-namespace-anchor ns-anchor)
 (define ns (namespace-anchor->namespace ns-anchor))
 
+(define epoch 0)
+
 (define (main)
   (define N 50000000)
 
@@ -34,6 +36,21 @@
     (for/fold [(x 0)] [(n (in-range N))] (f x)))
 
   (for [(i 5)] (time (by-embedding)))
-  (newline))
+  (newline)
+
+  (define (by-unboxing-with-check)
+    (define f (eval `(letrec ((b (box (lambda (x)
+                                        (if (> epoch ,epoch)
+                                            (begin (set-box! b (lambda (x) (+ x 2)))
+                                                   ((unbox b) x))
+                                            (+ x 1))))))
+                       b)
+                    ns))
+    (for/fold [(x 0)] [(n (in-range N))] ((unbox f) x)))
+
+  (for [(i 5)] (time (by-unboxing-with-check)))
+  (newline)
+
+  )
 
 (module+ main (main))
