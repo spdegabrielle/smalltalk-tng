@@ -456,7 +456,8 @@
   (log-vm/jit-info "Final proc: ~a" final-proc)
   final-proc)
 
-(define (install-native-proc! vm class name-bytes native-proc)
+(define (install-native-proc! vm class name-bytes method)
+  (define native-proc (compile-native-proc vm method))
   (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
   (hash-set! class-cache name-bytes native-proc)
   native-proc)
@@ -482,10 +483,7 @@
     (set-box! mic-class class)
     (set! method (lookup-method/cache vm class (bv-bytes selector)))
     (when (and method (not (procedure? method)))
-      (set! method (install-native-proc! vm
-                                         class
-                                         (bv-bytes selector)
-                                         (compile-native-proc vm method))))
+      (set! method (install-native-proc! vm class (bv-bytes selector) method)))
     (set-box! mic-method method))
   (or method
       (lambda (vm ctx . args)
@@ -521,7 +519,7 @@
   (define native-proc
     (if (procedure? method)
         method
-        (install-native-proc! vm class (bv-bytes selector) (compile-native-proc vm method))))
+        (install-native-proc! vm class (bv-bytes selector) method)))
   (apply native-proc
          vm
          (if (procedure? ctx)
