@@ -34,6 +34,8 @@
      (make-constructor-style-printer (lambda (o) (format "ffiv:~a" (obj-class-name o)))
                                      (lambda (o) (list (ffiv-value o)))))])
 
+(struct mic ([class #:mutable] [method #:mutable]))
+
 (define-match-expander unbv
   (syntax-rules () [(_ bytes-pat) (bv _ _ bytes-pat)]))
 (define-match-expander unbv*
@@ -304,9 +306,8 @@
 
   (define (gen-send class-exp selector-exp k-exp arg-exps)
     (define mic-index (next-mic!))
-    (define mc (mksym "mic~a-class" mic-index))
-    (define mm (mksym "mic~a-method" mic-index))
-    `((lookup-message/jit vm ,mc ,mm ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
+    (define m (mksym "mic~a" mic-index))
+    `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
 
   (define (translate ip stack)
     (define (next-byte!)
@@ -433,8 +434,7 @@
   (define code
     (let ((inner (jump-to-label 0 '())))
       `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(vector->list litnames))
-         ,@(for/list [(i mic-count)] `(define ,(mksym "mic~a-class" i) (box NIL)))
-         ,@(for/list [(i mic-count)] `(define ,(mksym "mic~a-method" i) (box NIL)))
+         ,@(for/list [(i mic-count)] `(define ,(mksym "mic~a" i) (mic NIL NIL)))
          (lambda (vm k ,@(vector->list argnames))
            (let ((outer-k k)
                  ,@(for/list [(t tmpnames)] `(,t NIL)))
@@ -476,15 +476,15 @@
   (slotAtPut ctx 4 ip)
   (slotAtPut ctx 5 stack-top))
 
-(define (lookup-message/jit vm mic-class mic-method class selector)
-  (define method (unbox mic-method))
-  (when (or (not (eq? (unbox mic-class) class))
+(define (lookup-message/jit vm mic class selector)
+  (define method (mic-method mic))
+  (when (or (not (eq? (mic-class mic) class))
             (not method))
-    (set-box! mic-class class)
+    (set-mic-class! mic class)
     (set! method (lookup-method/cache vm class (bv-bytes selector)))
     (when (and method (not (procedure? method)))
       (set! method (install-native-proc! vm class (bv-bytes selector) method)))
-    (set-box! mic-method method))
+    (set-mic-method! mic method))
   (or method
       (lambda (vm ctx . args)
         (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))))
