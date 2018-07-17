@@ -456,19 +456,16 @@
   (log-vm/jit-info "Final proc: ~a" final-proc)
   final-proc)
 
-(define (install-native-proc! vm class selector native-proc)
-  (define name-bytes (bv-bytes selector))
+(define (install-native-proc! vm class name-bytes native-proc)
   (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
   (hash-set! class-cache name-bytes native-proc)
   native-proc)
 
-(define (lookup-method/cache vm class selector)
-  (define name-bytes (bv-bytes selector))
+(define (lookup-method/cache vm class name-bytes)
   (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
-  (hash-ref! class-cache name-bytes (lambda () (lookup-method vm class selector))))
+  (hash-ref! class-cache name-bytes (lambda () (lookup-method vm class name-bytes))))
 
-(define (lookup-method vm class selector)
-  (define name-bytes (bv-bytes selector))
+(define (lookup-method vm class name-bytes)
   (let search ((class class))
     (and (not (eq? class (VM-nil vm)))
          (or (search-class-method-dictionary class name-bytes)
@@ -483,11 +480,11 @@
   (when (or (not (eq? (unbox mic-class) class))
             (not method))
     (set-box! mic-class class)
-    (set! method (lookup-method/cache vm class selector))
+    (set! method (lookup-method/cache vm class (bv-bytes selector)))
     (when (and method (not (procedure? method)))
       (set! method (install-native-proc! vm
                                          class
-                                         selector
+                                         (bv-bytes selector)
                                          (compile-native-proc vm method))))
     (set-box! mic-method method))
   (or method
@@ -495,13 +492,13 @@
         (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))))
 
 (define (send-dnu vm ctx arguments class selector)
-  (define dnu-selector (mkbv (obj-class selector) #"doesNotUnderstand:"))
-  (match (lookup-method/cache vm class dnu-selector)
+  (define dnu-name-bytes #"doesNotUnderstand:")
+  (match (lookup-method/cache vm class dnu-name-bytes)
     [#f (error 'send-message* "Unhandled selector ~a at class ~a" selector class)]
     [dnu-method
      (log-vm-warning "DNU -- arguments ~a class ~a selector ~a" arguments class selector)
      (apply-method class
-                   dnu-selector
+                   (mkbv (obj-class selector) dnu-name-bytes)
                    dnu-method
                    vm
                    ctx
@@ -511,7 +508,7 @@
                                 (clone-array arguments))))]))
 
 (define (send-message* vm ctx arguments class selector)
-  (match (lookup-method/cache vm class selector)
+  (match (lookup-method/cache vm class (bv-bytes selector))
     [#f (send-dnu vm ctx arguments class selector)]
     [new-method (apply-method class
                               selector
@@ -524,7 +521,7 @@
   (define native-proc
     (if (procedure? method)
         method
-        (install-native-proc! vm class selector (compile-native-proc vm method))))
+        (install-native-proc! vm class (bv-bytes selector) (compile-native-proc vm method))))
   (apply native-proc
          vm
          (if (procedure? ctx)
