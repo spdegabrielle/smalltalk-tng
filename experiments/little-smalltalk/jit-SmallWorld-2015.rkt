@@ -408,14 +408,13 @@
                       (translate ip (cons ctxref stack)))]
             [36 (let@ [arr `(mkobj ARRAY ,@(reverse (take stack arg)))]
                       (translate ip (cons arr (drop stack arg))))]
-            [_ (let@ [primresult (let ((generator (hash-ref *primitive-code-snippets*
-                                                            primitive-number
-                                                            (lambda ()
-                                                              (error 'compile-native-proc
-                                                                     "Unknown primitive: ~a"
-                                                                     primitive-number)))))
-                                   (generator 'vm (reverse (take stack arg))))]
-                     (translate ip (cons primresult (drop stack arg))))])]
+            [_ (let ((generator (hash-ref *primitive-code-snippets*
+                                          primitive-number
+                                          (lambda () (error 'compile-native-proc
+                                                            "Unknown primitive: ~a"
+                                                            primitive-number)))))
+                 (let@ [primresult (generator 'vm (reverse (take stack arg)))]
+                       (translate ip (cons primresult (drop stack arg)))))])]
       [14 (let@ [clsvar `(slotAt (obj-class* vm self) ,(+ arg 5))]
                 (translate ip (cons clsvar stack)))]
       [15 (match arg
