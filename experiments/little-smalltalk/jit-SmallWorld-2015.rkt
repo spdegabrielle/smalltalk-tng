@@ -160,7 +160,7 @@
            (for [(s slots)] (push-int! (object->index s)))
            (push-bytes! bytes)]
           [(obj class slots)
-           (push-int! (+ (vector-length slots) 4)) ;; weird
+           (push-int! (+ (vector-length slots) 4))
            (push-int! 2)
            (push-int! (object->index class))
            (push-int! (vector-length slots))
@@ -347,17 +347,7 @@
                 (values (next-byte!) `super)]))
            (define k (gen-send-k ip stack))
            (gen-send class-exp (vector-ref litnames selector-literal-index) k args))]
-
-      ;; [9 (let ((args (car stack))
-      ;;          (result (gensym 'result)))
-      ;;      (log-vm/jit-debug "send of ~a" (slotAt literals arg))
-      ;;      `(send-message vm
-      ;;                     (case-lambda
-      ;;                       [() ,(build-jit-context-exp ip (cdr stack))]
-      ;;                       [(,result) ,(translate ip (cons result (cdr stack)))])
-      ;;                     (obj ARRAY (list->vector ,args))
-      ;;                     ,(vector-ref litnames arg)))]
-
+      ;; 9 inlined in the processing of bytecode 8
       [10 (match arg
             [0 (let@ [isNil `(boolean->obj vm (eq? NIL ,(car stack)))]
                      (translate ip (cons isNil (cdr stack))))]
@@ -433,16 +423,7 @@
                  `(if (eq? ,(car stack) FALSE)
                       ,(jump-to-label target (cdr stack))
                       ,(jump-to-label ip (cdr stack))))]
-            ;; [11 (let ((args (car stack))
-            ;;           (result (gensym 'result))
-            ;;           (selector-literal (next-byte!)))
-            ;;       `(send-message* vm
-            ;;                       (case-lambda
-            ;;                         [() ,(build-jit-context-exp ip (cdr stack))]
-            ;;                         [(,result) ,(translate ip (cons result (cdr stack)))])
-            ;;                       (obj ARRAY (list->vector ,args))
-            ;;                       super
-            ;;                       ,(vector-ref litnames selector-literal)))]
+            ;; 11 inlined in the processing of bytecode 8
             [_ (error 'compile-native-proc "Unhandled do-special case ~v" arg)])]
       [_ (error 'compile-native-proc "Method ~v - unhandled opcode ~v, arg ~v"
                 selector
@@ -496,21 +477,6 @@
 (define (store-registers! ctx ip stack-top)
   (slotAtPut ctx 4 ip)
   (slotAtPut ctx 5 stack-top))
-
-;; (define (lookup-message/jit vm mic-class mic-method class selector)
-;;   (when (not (eq? (unbox mic-class) class))
-;;     (set-box! mic-class class)
-;;     (set-box! mic-method #f))
-;;   (when (not (unbox mic-method))
-;;     (set-box! mic-method (lookup-method/cache vm class selector))
-;;     (when (not (procedure? (unbox mic-method)))
-;;       (set-box! mic-method (install-native-proc! vm
-;;                                                  class
-;;                                                  selector
-;;                                                  (compile-native-proc vm (unbox mic-method))))))
-;;   (or (unbox mic-method)
-;;       (lambda (vm ctx . args)
-;;         (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))))
 
 (define (lookup-message/jit vm mic-class mic-method class selector)
   (define method (unbox mic-method))
