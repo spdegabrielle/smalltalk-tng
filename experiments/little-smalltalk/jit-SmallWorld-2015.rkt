@@ -34,7 +34,8 @@
      (make-constructor-style-printer (lambda (o) (format "ffiv:~a" (obj-class-name o)))
                                      (lambda (o) (list (ffiv-value o)))))])
 
-(struct mic ([class #:mutable] [method #:mutable]))
+(define pic-entry-count 3)
+(define (pic) (vector #f #f #f #f #f #f)) ;; pic-entry-count times two - one each for class & method
 
 (define-match-expander unbv
   (syntax-rules () [(_ bytes-pat) (bv _ _ bytes-pat)]))
@@ -294,10 +295,10 @@
       (hash-set! labels ip actual-label))
     `(,(mksym "label~a" ip) k ,@stack))
 
-  (define mic-count 0)
-  (define (next-mic!)
-    (begin0 mic-count
-      (set! mic-count (+ mic-count 1))))
+  (define pic-count 0)
+  (define (next-pic!)
+    (begin0 pic-count
+      (set! pic-count (+ pic-count 1))))
 
   (define (gen-send-k ip stack)
     (define result (gensym 'result))
@@ -305,8 +306,8 @@
                   [(,result) ,(translate ip (cons result stack))]))
 
   (define (gen-send class-exp selector-exp k-exp arg-exps)
-    (define mic-index (next-mic!))
-    (define m (mksym "mic~a" mic-index))
+    (define pic-index (next-pic!))
+    (define m (mksym "pic~a" pic-index))
     `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
 
   (define (translate ip stack)
@@ -434,7 +435,7 @@
   (define code
     (let ((inner (jump-to-label 0 '())))
       `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(vector->list litnames))
-         ,@(for/list [(i mic-count)] `(define ,(mksym "mic~a" i) (mic NIL NIL)))
+         ,@(for/list [(i pic-count)] `(define ,(mksym "pic~a" i) (pic)))
          (lambda (vm k ,@(vector->list argnames))
            (let ((outer-k k)
                  ,@(for/list [(t tmpnames)] `(,t NIL)))
@@ -476,18 +477,26 @@
   (slotAtPut ctx 4 ip)
   (slotAtPut ctx 5 stack-top))
 
-(define (lookup-message/jit vm mic class selector)
-  (define method (mic-method mic))
-  (when (or (not (eq? (mic-class mic) class))
-            (not method))
-    (set-mic-class! mic class)
-    (set! method (lookup-method/cache vm class (bv-bytes selector)))
-    (when (and method (not (procedure? method)))
-      (set! method (install-native-proc! vm class (bv-bytes selector) method)))
-    (set-mic-method! mic method))
-  (or method
-      (lambda (vm ctx . args)
-        (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))))
+(define (lookup-message/jit vm pic class selector)
+  (let search-pic ((slot-index 0))
+    (define this-class (vector-ref pic (* slot-index 2)))
+    (if (eq? this-class class)
+        (vector-ref pic (+ (* slot-index 2) 1))
+        (let* ((next-slot-index (+ slot-index 1))
+               (more-slots-to-check? (< next-slot-index pic-entry-count)))
+          (if more-slots-to-check?
+              (search-pic next-slot-index)
+              (let ((method (lookup-method/cache vm class (bv-bytes selector))))
+                (if (not method)
+                    (lambda (vm ctx . args)
+                      (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))
+                    (let ((slot-empty? (not this-class)))
+                      (when (not (procedure? method))
+                        (set! method (install-native-proc! vm class (bv-bytes selector) method)))
+                      (when slot-empty?
+                        (vector-set! pic (* slot-index 2) class)
+                        (vector-set! pic (+ (* slot-index 2) 1) method))
+                      method))))))))
 
 (define (send-dnu vm ctx arguments class selector)
   (define dnu-name-bytes #"doesNotUnderstand:")
