@@ -173,4 +173,20 @@ Francisco, California, 1992. https://doi.org/10.1145/143095.143114.
 2018-07-18 18:15:23 On leap:
  - from startup: 19115890 bytecodes/sec; 2378566 sends/sec
  - in a workspace: 15267175 bytecodes/sec; 2258839 sends/sec
-Switching to pics has slowed it down.
+
+... but later measurement shows it running a bit faster (see table
+below), so basically benchmarking on this laptop is difficult and
+futile and I shouldn't be doing it.
+
+Command:
+    racket jit-SmallWorld-2015.rkt t.st
+and t.st contains:
+    EVAL [ 0 tinyBenchmarks. Transcript show: 0 tinyBenchmarks ] value
+
+At rev 377:8accd6d3f51d (startup):  6884681 bytecodes/sec;  856333 sends/sec
+At rev 378:2a35e7fcba59 (startup):  7168458 bytecodes/sec;  896649 sends/sec
+At rev 379:e5e063ac93ef (startup): 20618556 bytecodes/sec; 2569214 sends/sec
+At rev 392:618244a1ee07 (startup): 19358741 bytecodes/sec; 2825302 sends/sec
+At rev 394:97ec29b53c47 (startup): 18648018 bytecodes/sec; 2573311 sends/sec
+At rev 395:3979401d44c1 (startup): 17887087 bytecodes/sec; 2562715 sends/sec
+At rev 396:3bfb9afdbd9d (startup): 18823529 bytecodes/sec; 2684483 sends/sec
