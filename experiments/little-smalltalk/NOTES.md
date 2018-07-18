@@ -38,8 +38,8 @@ in a workspace:
 
 2018-07-15 11:12:26 tonyg on hop: 0 tinyBenchmarks 7816316 bytecodes/sec; 1313400 sends/sec
 
-2018-07-15 12:30:53 Reading some of "the classics" [1,2] to refresh my
-memory. The first of the two [1] presents the techniques of
+2018-07-15 12:30:53 Reading some of "the classics" [1,2,3] to refresh
+my memory. The first paper [1] presents the techniques of
 *customization*, *inlining*, and *splitting*:
 
  - *Customization* means compiling a specific version of each method
@@ -84,7 +84,7 @@ memory. The first of the two [1] presents the techniques of
    producing the `true` and `false` values, we get to inline the
    constant blocks that are its arguments.
 
-They also mention [1] other techniques:
+It also mentions other techniques:
 
  - "type prediction" based on hand-coded heuristics about common uses
    of certain selectors. Our `jit-SmallWorld-2015.rkt` (and the pure
@@ -104,23 +104,56 @@ They also mention [1] other techniques:
    hoist some loop invariants from a loop body into its header,
    apparently.
 
-They describe their "adaptive recompilation" technique of the time.
-Two compilers are used; the non-optimizing compiler adds code to
-increment a per-method (presumably, a *customized* method?) counter on
-each entry to the unoptimized routine. Later checking of the counters
-identifies hot spots.
+The authors briefly describe their "adaptive recompilation" technique
+of the time. Two compilers are used; the non-optimizing compiler adds
+code to increment a per-method (presumably, a *customized* method?)
+counter on each entry to the unoptimized routine. Later checking of
+the counters identifies hot spots.
 
 QUESTIONS: How does it figure out which receiver-type to optimize for?
 How many counters per implementation are there - one per
 receivertype/implementation pair, or just one for the implementation
 itself?
 
-On to the second paper [2]. At the end of the introduction, they claim
-that their new system runs 1.5 times faster than their old system,
+On to the second paper [2], on *type feedback*, the use of information
+about concrete implementation types gathered at runtime to improve the
+outcome of recompilation. At the end of the introduction, the paper
+claims that the new system runs 1.5 times faster than the old system,
 despite the simplicity of the new system, because of the power of type
 feedback.
 
- - The built-in PICs
+ - The built-in PICs are used to gather type profile information at
+   each call site. A list of receiver types, with optional invocation
+   counts, for each send site is all that is required for the type
+   feedback technique.
+
+ - A fairly simple mechanism (p.3) is used to find "hot" methods.
+   Then, to decide what to recompile (not simply the hot method!), the
+   system walks the call chain. A caller is recompiled if it "performs
+   many calls to unoptimized or small methods", or if it creates
+   closures, since these often encode control.
+
+ - It recompiles multiple activation records at once, in general: it
+   is able to inline already-active routines into a recompiled
+   "great-grand-caller". The paper remarks that this is the inverse of
+   "dynamic deoptimization" [3].
+
+ - The results of recompilation are checked, and if the improvement
+   (in terms of non-inlined sends) is zero, a recompiled method is
+   marked so that future optimization attempts don't waste work
+   re-recompiling it.
+
+ - "Small" methods are inlined, so long as the overall method isn't
+   growing "too large". Estimates of the cost of inlining depend not
+   only on the size of the source text to be inlined *inter alia*, but
+   on previously-compiled object code for the to-be-inlined method.
+
+Ultimately, customization and type feedback seem very similar.
+Customization allows static knowledge of the receiver type for
+self-sends. Type feedback allows (probabilistic) static knowledge of
+the receiver type for other sends.
+
+Moving on to the third paper [3]. ((TBD))
 
 [1] Ungar, David, Randall B. Smith, Craig Chambers, and Urs Hölzle.
 “Object, Message, and Performance: How They Coexist in Self.” Computer
@@ -131,3 +164,13 @@ Calls with Run-Time Type Feedback.” In Proceedings of the ACM SIGPLAN
 1994 Conference on Programming Language Design and Implementation,
 p:326–336. ACM New York, NY, USA, 1994.
 http://portal.acm.org/citation.cfm?id=178478.
+
+[3] Hölzle, Urs, Craig Chambers, and David Ungar. ‘Debugging Optimized
+Code with Dynamic Deoptimization’. In Proceedings of the ACM SIGPLAN
+1992 Conference on Programming Language Design and Implementation. San
+Francisco, California, 1992. https://doi.org/10.1145/143095.143114.
+
+2018-07-18 18:15:23 On leap:
+ - from startup: 19115890 bytecodes/sec; 2378566 sends/sec
+ - in a workspace: 15267175 bytecodes/sec; 2258839 sends/sec
+Switching to pics has slowed it down.
