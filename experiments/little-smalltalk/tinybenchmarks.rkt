@@ -21,8 +21,20 @@
 (define f+ +)
 (define f- -)
 
+(define kont (make-parameter '()))
+
+(define-syntax-rule (with-k x b)
+  (parameterize ((kont (cons x (kont)))) b))
+
 (define int%
   (class object%
+    (define/public (benchfib/k n)
+      (if (with-k 'if (< n 2))
+          1
+          (+ (with-k 'b1 (send this benchfib/k (with-k '-1 (- n 1))))
+             (with-k 'add (+ (with-k 'b2 (send this benchfib/k (with-k '-2 (- n 2))))
+                             1)))))
+
     (define/public (benchfib* n k)
       (send this <* n 2
             (lambda (is-lt-2)
@@ -70,9 +82,11 @@
   (check-equal? (send (make-object int%) benchfib 1) 1)
   (check-equal? (send (make-object int%) benchfib 10) 177)
   (check-equal? (send (make-object int%) benchfib* 10 values) 177)
-  (check-equal? (send (make-object int%) benchfib** 10) 177))
+  (check-equal? (send (make-object int%) benchfib** 10) 177)
+  (check-equal? (send (make-object int%) benchfib/k 10) 177))
 
 (time (benchfib 28))
 (time (send (make-object int%) benchfib 28))
 (time (send (make-object int%) benchfib* 28 values))
 (time (send (make-object int%) benchfib** 28))
+(time (send (make-object int%) benchfib/k 28))
