@@ -53,7 +53,7 @@
 (define-syntax let@
   (syntax-rules ()
     [(_ [n n-code-exp] body-code-exp)
-     (let@ [n (gensym 'n) n-code-exp] body-code-exp)]
+     (let@ [n 'n n-code-exp] body-code-exp)]
     [(_ [n n-exp n-code-exp] body-code-exp)
      (let ((n (gensym n-exp)))
        `(let ((,n ,n-code-exp))
