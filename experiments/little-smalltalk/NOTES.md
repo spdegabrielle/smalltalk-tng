@@ -190,3 +190,6 @@ At rev 392:618244a1ee07 (startup): 19358741 bytecodes/sec; 2825302 sends/sec
 At rev 394:97ec29b53c47 (startup): 18648018 bytecodes/sec; 2573311 sends/sec
 At rev 395:3979401d44c1 (startup): 17887087 bytecodes/sec; 2562715 sends/sec
 At rev 396:3bfb9afdbd9d (startup): 18823529 bytecodes/sec; 2684483 sends/sec
+
+2018-07-19 19:17:27 On leap, running the Java SmallWorld
+`0 tinyBenchmarks`, I get 2388059 bytecodes/sec; 299492 sends/sec.
