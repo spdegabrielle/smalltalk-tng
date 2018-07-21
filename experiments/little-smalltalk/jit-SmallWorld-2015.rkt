@@ -25,7 +25,7 @@
                  [_
                   (block->thunk vm action args)]))))])
 
-(struct compilation (method litnames argnames labels [pic-count #:mutable]))
+(struct compilation (vm receiver-class method litnames argnames labels [pic-count #:mutable]))
 
 (define (build-jit-context vm previous-context args method ip stack-top temporaries stack)
   (define max-stack (slotAt method 3))
@@ -59,7 +59,7 @@
        `(let ((,n ,n-code-exp))
           ,body-code-exp))]))
 
-(define (new-compilation method)
+(define (new-compilation compile-time-vm receiver-class method)
   (define selector (slotAt method 0))
   (define arity (selector-string-arity (bv->string selector)))
   (define bytecode (bv-bytes (slotAt method 1)))
@@ -70,9 +70,10 @@
   (define method-source (slotAt method 6))
 
   (log-vm/jit-info
-   "Compiling ~v defined in ~v, arity ~a, literals ~a, bytecode ~a, text:\n----\n~a\n----"
+   "Compiling ~v defined in ~v, to be run in ~v, arity ~a, literals ~a, bytecode ~a, text:\n----\n~a\n----"
    (bv->string selector)
    defining-class
+   receiver-class
    arity
    literals
    (bytes->hex-string bytecode)
@@ -85,7 +86,9 @@
                          (mksym "lit~a" i))))
   (define argnames (for/vector [(i arity)] (if (zero? i) 'self (mksym "arg~a" (- i 1)))))
 
-  (compilation method
+  (compilation compile-time-vm
+               receiver-class
+               method
                litnames
                argnames
                (make-hash)
@@ -222,7 +225,7 @@
                       (translate ip (cons arr (drop stack arg))))]
             [_ (let ((generator (hash-ref *primitive-code-snippets*
                                           primitive-number
-                                          (lambda () (error 'compile-method-proc
+                                          (lambda () (error 'gen-code
                                                             "Unknown primitive: ~a"
                                                             primitive-number)))))
                  (let@ [primresult (generator 'vm (reverse (take stack arg)))]
@@ -246,8 +249,8 @@
                       ,(gen-jump-to-label c target (cdr stack))
                       ,(gen-jump-to-label c ip (cdr stack))))]
             ;; 11 inlined in the processing of bytecode 8
-            [_ (error 'compile-method-proc "Unhandled do-special case ~v" arg)])]
-      [_ (error 'compile-method-proc "Method ~v - unhandled opcode ~v, arg ~v"
+            [_ (error 'gen-code "Unhandled do-special case ~v" arg)])]
+      [_ (error 'gen-code "Method ~v - unhandled opcode ~v, arg ~v"
                 (slotAt (compilation-method c) 0) ;; selector
                 opcode
                 arg)])))
@@ -282,7 +285,8 @@
                             actual-temporaries
                             argument-location
                             initial-ip)
-  (define c (new-compilation method))
+  (define class (obj-class* compile-time-vm (car outer-args)))
+  (define c (new-compilation compile-time-vm class method))
   (define body-code (gen-block c argument-location initial-ip)) ;; imperative!
   (define inner-code
     `(lambda (temporaries ,@(vector->list (compilation-argnames c)))
@@ -292,8 +296,8 @@
          actual-temporaries
          outer-args))
 
-(define (compile-method-proc compile-time-vm method)
-  (define c (new-compilation method))
+(define (compile-method-proc compile-time-vm class method)
+  (define c (new-compilation compile-time-vm class method))
   (define body-code (gen-jump-to-label c 0 '())) ;; imperative!
   (define temp-count (slotAt method 4))
   (define inner-code
@@ -309,7 +313,7 @@
              name-bytes
              (lambda ()
                (define m (lookup-method vm class name-bytes))
-               (and m (compile-method-proc vm m)))))
+               (and m (compile-method-proc vm class m)))))
 
 (define (lookup-message/jit vm pic class selector)
   (let search-pic ((slot-index 0))
@@ -357,10 +361,9 @@
 (define-primitive vm [6 inner-ctx] ;; "new context execute"
   (when (not (zero? (slotAt inner-ctx 5))) (error 'execute "Cannot execute from nonempty stack"))
   (when (not (zero? (slotAt inner-ctx 4))) (error 'execute "Cannot execute from nonzero IP"))
-  (apply (compile-method-proc vm (slotAt inner-ctx 0))
-         vm
-         (outermost-k vm)
-         (vector->list (obj-slots (slotAt inner-ctx 1)))))
+  (define args (slotAt inner-ctx 1))
+  (define f (compile-method-proc vm (obj-class* vm (slotAt args 0)) (slotAt inner-ctx 0)))
+  (apply f vm (outermost-k vm) (vector->list (obj-slots args))))
 
 (define-primitive vm [116]
   (let ((image-bytes (serialize-image vm)))
