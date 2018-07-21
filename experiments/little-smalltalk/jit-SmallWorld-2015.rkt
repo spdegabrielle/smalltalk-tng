@@ -252,6 +252,11 @@
                 opcode
                 arg)])))
 
+(define (gen-label-definitions c body-exp)
+  `(letrec (,@(for/list [((ip label) (in-hash (compilation-labels c)))]
+                `(,(mksym "label~a" ip) ,label)))
+     ,body-exp))
+
 (define (finish-compilation c compile-time-vm inner-code)
   (define code
     `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(vector->list (compilation-litnames c)))
@@ -259,10 +264,8 @@
        ,inner-code))
 
   (log-vm/jit-debug "Resulting code:\n~a" (pretty-format code))
-
   (define literals (slotAt (compilation-method c) 2))
   (define defining-class (slotAt (compilation-method c) 5))
-
   (apply (eval code ns)
          (compilation-method c)
          (slotAt defining-class 1) ;; defining class's superclass
@@ -284,9 +287,7 @@
   (define inner-code
     `(lambda (temporaries ,@(vector->list (compilation-argnames c)))
        (let ((outer-k (outermost-k vm)))
-         (letrec (,@(for/list [((ip label) (in-hash (compilation-labels c)))]
-                      `(,(mksym "label~a" ip) ,label)))
-           ,body-code))))
+         ,(gen-label-definitions c body-code))))
   (apply (finish-compilation c compile-time-vm inner-code)
          actual-temporaries
          outer-args))
@@ -299,9 +300,7 @@
     `(lambda (vm k ,@(vector->list (compilation-argnames c)))
        (let ((outer-k k)
              (temporaries ,(if (zero? temp-count) `'#() `(make-vector ,temp-count NIL))))
-         (letrec (,@(for/list [((ip label) (in-hash (compilation-labels c)))]
-                      `(,(mksym "label~a" ip) ,label)))
-           ,body-code))))
+         ,(gen-label-definitions c body-code))))
   (finish-compilation c compile-time-vm inner-code))
 
 (define (lookup-method/cache vm class name-bytes)
