@@ -194,18 +194,6 @@
 (define (mkarray vm count [init (VM-nil vm)])
   (obj (VM-Array vm) (make-vector count init)))
 
-(define (build-context vm previous-context args method)
-  (define temp-count (slotAt method 4))
-  (define max-stack (slotAt method 3))
-  (mkobj (VM-Context vm)
-         method
-         args
-         (mkarray vm temp-count)
-         (mkarray vm max-stack)
-         0 ;; IP
-         0 ;; stack top
-         previous-context))
-
 (define (build-jit-context vm previous-context args method ip stack-top temporaries stack)
   (define max-stack (slotAt method 3))
   (mkobj (VM-Context vm)
@@ -217,12 +205,6 @@
          ip
          stack-top
          previous-context))
-
-(define (clone-array a [start 0] [count (- (slotCount a) start)])
-  (define b (obj (obj-class a) (make-vector count)))
-  (for [(i (in-range count))]
-    (slotAtPut b i (slotAt a (+ i start))))
-  b)
 
 (define (boolean->obj vm b)
   (if b (VM-true vm) (VM-false vm)))
@@ -236,13 +218,26 @@
 (define-namespace-anchor ns-anchor)
 (define ns (namespace-anchor->namespace ns-anchor))
 
-(define (compile-native-proc compile-time-vm method)
+(define (mksym fmt . args) (string->symbol (apply format fmt args)))
+
+(define-syntax let@
+  (syntax-rules ()
+    [(_ [n n-code-exp] body-code-exp)
+     (let@ [n (gensym 'n) n-code-exp] body-code-exp)]
+    [(_ [n n-exp n-code-exp] body-code-exp)
+     (let ((n (gensym n-exp)))
+       `(let ((,n ,n-code-exp))
+          ,body-code-exp))]))
+
+(struct compilation (method litnames argnames labels [pic-count #:mutable]))
+
+(define (new-compilation method)
   (define selector (slotAt method 0))
   (define arity (selector-string-arity (bv->string selector)))
   (define bytecode (bv-bytes (slotAt method 1)))
   (define literals (slotAt method 2))
   (define max-stack (slotAt method 3))
-  (define temp-count (slotAt method 4))
+  ;; (define temp-count (slotAt method 4))
   (define defining-class (slotAt method 5))
   (define method-source (slotAt method 6))
 
@@ -255,62 +250,67 @@
    (bytes->hex-string bytecode)
    (bv->string method-source))
 
-  (define (mksym fmt . args) (string->symbol (apply format fmt args)))
-
   (define litnames (for/vector [(i (slotCount literals))]
                      (define lit (slotAt literals i))
                      (if (bv? lit)
                          (mksym "lit~a-~a" i (bv->string lit))
                          (mksym "lit~a" i))))
-  (define tmpnames (for/vector [(i temp-count)] (mksym "tmp~a" i)))
   (define argnames (for/vector [(i arity)] (if (zero? i) 'self (mksym "arg~a" (- i 1)))))
 
-  (define (build-jit-context-exp ip stack)
-    `(build-jit-context vm
-                        (k)
-                        (vector ,@(vector->list argnames))
-                        method
-                        ,ip
-                        ,(length stack)
-                        (vector ,@(vector->list tmpnames))
-                        (vector ,@(reverse stack))))
+  (compilation method
+               litnames
+               argnames
+               (make-hash)
+               0))
 
-  (define-syntax let@
-    (syntax-rules ()
-      [(_ [n n-code-exp] body-code-exp)
-       (let@ [n (gensym 'n) n-code-exp] body-code-exp)]
-      [(_ [n n-exp n-code-exp] body-code-exp)
-       (let ((n (gensym n-exp)))
-         `(let ((,n ,n-code-exp))
-            ,body-code-exp))]))
+(define (gen-jump-to-label c ip stack)
+  (define labels (compilation-labels c))
+  (when (not (hash-has-key? labels ip))
+    (hash-set! labels ip 'placeholder)
+    (define actual-label
+      (let ((newstack (for/list [(i (length stack))] (mksym "stack~a" i))))
+        `(lambda (k ,@newstack) ,(gen-code c ip newstack))))
+    (hash-set! labels ip actual-label))
+  `(,(mksym "label~a" ip) k ,@stack))
 
-  (define labels (make-hash))
+(define (gen-build-jit-context c ip stack)
+  `(build-jit-context vm
+                      (k)
+                      (vector ,@(vector->list (compilation-argnames c)))
+                      method
+                      ,ip
+                      ,(length stack)
+                      temporaries
+                      (vector ,@(reverse stack))))
 
-  (define (jump-to-label ip stack)
-    (when (not (hash-has-key? labels ip))
-      (hash-set! labels ip 'placeholder)
-      (define actual-label
-        (let ((newstack (for/list [(i (length stack))] (mksym "stack~a" i))))
-          `(lambda (k ,@newstack) ,(translate ip newstack))))
-      (hash-set! labels ip actual-label))
-    `(,(mksym "label~a" ip) k ,@stack))
+(define (gen-send-k c ip stack)
+  (define result (gensym 'result))
+  `(case-lambda [() ,(gen-build-jit-context c ip stack)]
+                [(,result) ,(gen-jump-to-label c ip (cons result stack))]))
 
-  (define pic-count 0)
-  (define (next-pic!)
-    (begin0 pic-count
-      (set! pic-count (+ pic-count 1))))
+(define (gen-send c class-exp selector-exp k-exp arg-exps)
+  (define pic-index (compilation-pic-count c))
+  (set-compilation-pic-count! c (+ pic-index 1))
+  (define m (mksym "pic~a" pic-index))
+  `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
 
-  (define (gen-send-k ip stack)
-    (define result (gensym 'result))
-    `(case-lambda [() ,(build-jit-context-exp ip stack)]
-                  [(,result) ,(translate ip (cons result stack))]))
+(define (gen-block c argument-location ip)
+  (define temp-count (slotAt (compilation-method c) 4))
+  `(lambda (vm k . block-arguments)
+     ,(let loop ((i argument-location))
+        (if (>= i temp-count)
+            `(void)
+            `(when (pair? block-arguments)
+               (vector-set! temporaries ,i (car block-arguments))
+               (let ((block-arguments (cdr block-arguments)))
+                 ,(loop (+ i 1))))))
+     ,(gen-code c ip '())))
 
-  (define (gen-send class-exp selector-exp k-exp arg-exps)
-    (define pic-index (next-pic!))
-    (define m (mksym "pic~a" pic-index))
-    `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
-
-  (define (translate ip stack)
+(define (gen-code c ip stack)
+  (define bytecode (bv-bytes (slotAt (compilation-method c) 1)))
+  (define litnames (compilation-litnames c))
+  (define argnames (compilation-argnames c))
+  (let translate ((ip ip) (stack stack))
     (define (next-byte!)
       (begin0 (bytes-ref bytecode ip)
         (set! ip (+ ip 1))))
@@ -328,7 +328,7 @@
       [1 (let@ [n (mksym "slot~a_" arg) `(slotAt self ,arg)]
                (translate ip (cons n stack)))]
       [2 (translate ip (cons (vector-ref argnames arg) stack))]
-      [3 (let@ [n (mksym "tmp~a_" arg) (vector-ref tmpnames arg)]
+      [3 (let@ [n (mksym "tmp~a_" arg) `(vector-ref temporaries ,arg)]
                (translate ip (cons n stack)))]
       [4 (translate ip (cons (vector-ref litnames arg) stack))]
       [5 (match arg
@@ -337,7 +337,7 @@
            [11 (translate ip (cons `TRUE stack))]
            [12 (translate ip (cons `FALSE stack))])]
       [6 `(begin (slotAtPut self ,arg ,(car stack)) ,(translate ip stack))]
-      [7 `(begin (set! ,(vector-ref tmpnames arg) ,(car stack)) ,(translate ip stack))]
+      [7 `(begin (vector-set! temporaries ,arg ,(car stack)) ,(translate ip stack))]
       [8 (let* ((arg-count arg)
                 (args (reverse (take stack arg-count)))
                 (stack (drop stack arg-count)))
@@ -347,8 +347,8 @@
                 (values selector-literal-index `(obj-class* vm ,(car args)))]
                [(15 11)
                 (values (next-byte!) `super)]))
-           (define k (gen-send-k ip stack))
-           (gen-send class-exp (vector-ref litnames selector-literal-index) k args))]
+           (define k (gen-send-k c ip stack))
+           (gen-send c class-exp (vector-ref litnames selector-literal-index) k args))]
       ;; 9 inlined in the processing of bytecode 8
       [10 (match arg
             [0 (let@ [isNil `(boolean->obj vm (eq? NIL ,(car stack)))]
@@ -357,27 +357,19 @@
                      (translate ip (cons notNil (cdr stack))))])]
       [11 (match stack
             [(list* j i stack)
-             (let@ [binop-k (gen-send-k ip stack)]
+             (let@ [binop-k (gen-send-k c ip stack)]
                    `(if (and (number? ,i) (number? ,j))
                         ,(match arg
                            [0 `(,binop-k (boolean->obj vm (< ,i ,j)))]
                            [1 `(,binop-k (boolean->obj vm (<= ,i ,j)))]
                            [2 `(,binop-k (+ ,i ,j))])
-                        ,(gen-send `(obj-class* vm ,i)
+                        ,(gen-send c
+                                   `(obj-class* vm ,i)
                                    `(mkbv NIL ,(match arg [0 #"<"] [1 #"<="] [2 #"+"]))
                                    binop-k
                                    (list i j))))])]
       [12 (let ((target (next-byte!)))
-            (let@ [block `(mkffiv BLOCK
-                                  (lambda (_vm k . block-arguments)
-                                    ,(let loop ((i arg))
-                                       (if (>= i temp-count)
-                                           `(void)
-                                           `(when (pair? block-arguments)
-                                              (set! ,(vector-ref tmpnames i) (car block-arguments))
-                                              (let ((block-arguments (cdr block-arguments)))
-                                                ,(loop (+ i 1))))))
-                                    ,(translate ip '())))]
+            (let@ [block `(mkffiv BLOCK ,(gen-block c arg ip))]
                   (translate target (cons block stack))))]
       [13 (define primitive-number (next-byte!))
           (match primitive-number
@@ -390,19 +382,19 @@
                      (block-proc vm
                                  ;; TODO vvv : use case-lambda to translate the context chain
                                  k ;; not (lambda (,v) ,(translate ip (cons v (drop stack argc))))
-                                 ;; ^ reason being the image BUGGILY relies on primitive 8
+                                 ;; ^ reason being the image BUGGILY (?!?) relies on primitive 8
                                  ;; immediately returning to the surrounding context!!
                                  ,@(reverse (take stack argc)))]
                     [(obj (== BLOCK) _)
                      (k ((block->thunk vm ,block (list ,@(reverse (take stack argc))))))]))]
             [34 'NIL]
-            [35 (let@ [ctxref (build-jit-context-exp ip stack)]
+            [35 (let@ [ctxref (gen-build-jit-context c ip stack)]
                       (translate ip (cons ctxref stack)))]
             [36 (let@ [arr `(mkobj ARRAY ,@(reverse (take stack arg)))]
                       (translate ip (cons arr (drop stack arg))))]
             [_ (let ((generator (hash-ref *primitive-code-snippets*
                                           primitive-number
-                                          (lambda () (error 'compile-native-proc
+                                          (lambda () (error 'compile-method-proc
                                                             "Unknown primitive: ~a"
                                                             primitive-number)))))
                  (let@ [primresult (generator 'vm (reverse (take stack arg)))]
@@ -414,39 +406,38 @@
             [2 `(k ,(car stack))]
             [3 `(outer-k ,(car stack))]
             [5 (translate ip (cdr stack))]
-            [6 (jump-to-label (next-byte!) stack)]
+            [6 (gen-jump-to-label c (next-byte!) stack)]
             [7 (let ((target (next-byte!)))
                  (log-vm/jit-debug "if ~a true jump to ~a, else continue at ~a" (car stack) target ip)
                  `(if (eq? ,(car stack) TRUE)
-                      ,(jump-to-label target (cdr stack))
-                      ,(jump-to-label ip (cdr stack))))]
+                      ,(gen-jump-to-label c target (cdr stack))
+                      ,(gen-jump-to-label c ip (cdr stack))))]
             [8 (let ((target (next-byte!)))
                  (log-vm/jit-debug "if ~a false jump to ~a, else continue at ~a" (car stack) target ip)
                  `(if (eq? ,(car stack) FALSE)
-                      ,(jump-to-label target (cdr stack))
-                      ,(jump-to-label ip (cdr stack))))]
+                      ,(gen-jump-to-label c target (cdr stack))
+                      ,(gen-jump-to-label c ip (cdr stack))))]
             ;; 11 inlined in the processing of bytecode 8
-            [_ (error 'compile-native-proc "Unhandled do-special case ~v" arg)])]
-      [_ (error 'compile-native-proc "Method ~v - unhandled opcode ~v, arg ~v"
-                selector
+            [_ (error 'compile-method-proc "Unhandled do-special case ~v" arg)])]
+      [_ (error 'compile-method-proc "Method ~v - unhandled opcode ~v, arg ~v"
+                (slotAt (compilation-method c) 0) ;; selector
                 opcode
-                arg)]))
+                arg)])))
 
+(define (finish-compilation c compile-time-vm inner-code)
   (define code
-    (let ((inner (jump-to-label 0 '())))
-      `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(vector->list litnames))
-         ,@(for/list [(i pic-count)] `(define ,(mksym "pic~a" i) (pic)))
-         (lambda (vm k ,@(vector->list argnames))
-           (let ((outer-k k)
-                 ,@(for/list [(t tmpnames)] `(,t NIL)))
-             (letrec (,@(for/list [((ip label) (in-hash labels))]
-                          `(,(mksym "label~a" ip)
-                            ,label)))
-               ,inner))))))
+    `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(vector->list (compilation-litnames c)))
+       ,@(for/list [(i (compilation-pic-count c))] `(define ,(mksym "pic~a" i) (pic)))
+       ,inner-code))
+
   (log-vm/jit-info "Resulting code:\n~a" (pretty-format code))
+
+  (define literals (slotAt (compilation-method c) 2))
+  (define defining-class (slotAt (compilation-method c) 5))
+
   (define final-proc
     (apply (eval code ns)
-           method
+           (compilation-method c)
            (slotAt defining-class 1) ;; defining class's superclass
            (VM-nil compile-time-vm) ;; assuming this VM is the one that will be used at call time!
            (VM-true compile-time-vm)
@@ -454,28 +445,54 @@
            (VM-Array compile-time-vm)
            (VM-Block compile-time-vm)
            (vector->list (obj-slots literals))))
+
   (log-vm/jit-info "Final proc: ~a" final-proc)
   final-proc)
 
-(define (install-native-proc! vm class name-bytes method)
-  (define native-proc (compile-native-proc vm method))
-  (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
-  (hash-set! class-cache name-bytes native-proc)
-  native-proc)
+(define (compile-block-proc compile-time-vm
+                            method
+                            outer-args
+                            actual-temporaries
+                            argument-location
+                            initial-ip)
+  (define c (new-compilation method))
+  (define body-code (gen-block c argument-location initial-ip)) ;; imperative!
+  (define inner-code
+    `(lambda (temporaries ,@(vector->list (compilation-argnames c)))
+       (let ((outer-k (outermost-k vm)))
+         (letrec (,@(for/list [((ip label) (in-hash (compilation-labels c)))]
+                      `(,(mksym "label~a" ip) ,label)))
+           ,body-code))))
+  (apply (finish-compilation c compile-time-vm inner-code)
+         actual-temporaries
+         outer-args))
+
+(define (compile-method-proc compile-time-vm method)
+  (define c (new-compilation method))
+  (define body-code (gen-jump-to-label c 0 '())) ;; imperative!
+  (define temp-count (slotAt method 4))
+  (define inner-code
+    `(lambda (vm k ,@(vector->list (compilation-argnames c)))
+       (let ((outer-k k)
+             (temporaries ,(if (zero? temp-count) `'#() `(make-vector ,temp-count NIL))))
+         (letrec (,@(for/list [((ip label) (in-hash (compilation-labels c)))]
+                      `(,(mksym "label~a" ip) ,label)))
+           ,body-code))))
+  (finish-compilation c compile-time-vm inner-code))
 
 (define (lookup-method/cache vm class name-bytes)
   (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
-  (hash-ref! class-cache name-bytes (lambda () (lookup-method vm class name-bytes))))
+  (hash-ref! class-cache
+             name-bytes
+             (lambda ()
+               (define m (lookup-method vm class name-bytes))
+               (and m (compile-method-proc vm m)))))
 
 (define (lookup-method vm class name-bytes)
   (let search ((class class))
     (and (not (eq? class (VM-nil vm)))
          (or (search-class-method-dictionary class name-bytes)
              (search (slotAt class 1))))))
-
-(define (store-registers! ctx ip stack-top)
-  (slotAtPut ctx 4 ip)
-  (slotAtPut ctx 5 stack-top))
 
 (define (lookup-message/jit vm pic class selector)
   (let search-pic ((slot-index 0))
@@ -491,8 +508,6 @@
                     (lambda (vm ctx . args)
                       (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))
                     (let ((slot-empty? (not this-class)))
-                      (when (not (procedure? method))
-                        (set! method (install-native-proc! vm class (bv-bytes selector) method)))
                       (when slot-empty?
                         (vector-set! pic (* slot-index 2) class)
                         (vector-set! pic (+ (* slot-index 2) 1) method))
@@ -504,253 +519,41 @@
     [#f (error 'send-message* "Unhandled selector ~a at class ~a" selector class)]
     [dnu-method
      (log-vm-warning "DNU -- arguments ~a class ~a selector ~a" arguments class selector)
-     (apply-method class
-                   (mkbv (obj-class selector) dnu-name-bytes)
-                   dnu-method
-                   vm
-                   ctx
-                   (list (slotAt arguments 0)
-                         (mkobj (VM-Array vm)
-                                selector
-                                (clone-array arguments))))]))
+     (dnu-method vm ctx (slotAt arguments 0) (mkobj (VM-Array vm)
+                                                    selector
+                                                    arguments))]))
 
-(define (send-message* vm ctx arguments class selector)
-  (match (lookup-method/cache vm class (bv-bytes selector))
-    [#f (send-dnu vm ctx arguments class selector)]
-    [new-method (apply-method class
-                              selector
-                              new-method
-                              vm
-                              ctx
-                              (vector->list (obj-slots arguments)))]))
-
-(define (apply-method class selector method vm ctx arglist)
-  (define native-proc
-    (if (procedure? method)
-        method
-        (install-native-proc! vm class (bv-bytes selector) method)))
-  (apply native-proc
-         vm
-         (if (procedure? ctx)
-             ctx
-             (case-lambda
-               [() ctx]
-               [(result) (resume-context vm ctx result)]))
-         arglist))
 
 (define (obj-class* vm o)
   (if (number? o)
       (VM-Integer vm)
       (obj-class o)))
 
-(define (send-message vm ctx arguments selector)
-  (log-vm-debug "sending: ~a ~a" selector arguments)
-  (send-message* vm ctx arguments (obj-class* vm (slotAt arguments 0)) selector))
-
 (define (block->thunk vm block args) ;; Expects a real bytecode block, not an ffiv one
-  (let ((ctx (clone-array block)))
-    (define argument-location (slotAt ctx 7))
-    (for [(i (in-naturals argument-location)) (arg (in-list args))]
-      (slotAtPut (slotAt ctx 2) i arg))
-    (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
-    (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
-    (slotAtPut ctx 5 0) ;; zero stack-top
-    (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
-    (lambda () (execute vm ctx))))
+  (lambda ()
+    (define method (slotAt block 0))
+    (define outer-args (vector->list (obj-slots (slotAt block 1))))
+    (define temporaries (obj-slots (slotAt block 2)))
+    (define argument-location (slotAt block 7))
+    (define block-ip (slotAt block 9))
+    (apply (compile-block-proc vm method outer-args temporaries argument-location block-ip)
+           vm
+           (outermost-k vm)
+           args)))
+
+(define (outermost-k vm)
+  (case-lambda [() (VM-nil vm)]
+               [(result) result]))
 
 (define (block-callback vm block)
   ;; Runs block in a new thread
   (lambda args
-    (match block
-      [(unffiv block-proc)
-       (thread (lambda () (apply block-proc
-                                 vm
-                                 (case-lambda [() (VM-nil vm)] [(result) (void)])
-                                 args)))]
-      [_
-       (thread (block->thunk vm block args))])))
-
-(define smalltalk-frame%
-  (class frame%
-    (field [close-handler void])
-    (define/public (set-close-handler new-handler)
-      (set! close-handler new-handler))
-    (define/augment (on-close)
-      (close-handler this))
-    (super-new)))
-
-(define (resume-context vm ctx result)
-  (if (eq? (VM-nil vm) ctx)
-      result
-      (let ((stack-top (slotAt ctx 5)))
-        (slotAtPut (slotAt ctx 3) stack-top result)
-        (slotAtPut ctx 5 (+ stack-top 1))
-        (log-vm-debug "resuming: ~a" result)
-        (execute vm ctx))))
-
-(define (execute vm ctx)
-  (define method (slotAt ctx 0))
-  (define arguments (slotAt ctx 1))
-  (define temporaries (slotAt ctx 2))
-  (define stack (slotAt ctx 3))
-  (define ip (slotAt ctx 4))
-  (define stack-top (slotAt ctx 5))
-  (define previous-ctx (slotAt ctx 6))
-
-  (define receiver (slotAt arguments 0))
-
-  (define bytecode (bv-bytes (slotAt method 1)))
-  (define literals (slotAt method 2))
-
-  (log-vm-info "Interpreter bytecode, ctx slotcount ~a, method name ~a: ~a"
-               (slotCount ctx)
-               (bv->string (slotAt method 0))
-               (bytes->hex-string bytecode))
-
-  (define (push! v)
-    (slotAtPut stack stack-top v)
-    (set! stack-top (+ stack-top 1)))
-  (define (pop!)
-    (set! stack-top (- stack-top 1))
-    (slotAt stack stack-top))
-  (define (peek)
-    (slotAt stack (- stack-top 1)))
-
-  (define (pop-multiple! count)
-    (set! stack-top (- stack-top count))
-    (clone-array stack stack-top count))
-
-  (define (continue-from next-ip)
-    (set! ip next-ip)
-    (interpret))
-
-  (define (push-and-go next-ip v)
-    (push! v)
-    (continue-from next-ip))
-
-  (define (push-and-continue v)
-    (push! v)
-    (interpret))
-
-  (define (next-byte!)
-    (begin0 (bytes-ref bytecode ip)
-      (set! ip (+ ip 1))))
-
-  (define (decode!)
-    (define byte (next-byte!))
-    (define low (bitwise-and byte #x0f))
-    (define high (bitwise-and (arithmetic-shift byte -4) #x0f))
-    (if (zero? high)
-        (values low (next-byte!))
-        (values high low)))
-
-  (define (interpret)
-    (define-values (high low) (decode!))
-    (log-vm-debug "> ~a ~a ~a" high low (vector-copy (obj-slots stack) 0 stack-top))
-    (match high
-      [1 (push-and-continue (slotAt receiver low))] ;; PushInstance
-      [2 (push-and-continue (slotAt arguments low))] ;; PushArgument
-      [3 (push-and-continue (slotAt temporaries low))] ;; PushTemporary
-      [4 (push-and-continue (slotAt literals low))] ;; PushLiteral
-      [5 (match low
-           [(or 0 1 2 3 4 5 6 7 8 9) (push-and-continue low)]
-           [10 (push-and-continue (VM-nil vm))]
-           [11 (push-and-continue (VM-true vm))]
-           [12 (push-and-continue (VM-false vm))])]
-      [6 (slotAtPut receiver low (peek)) (interpret)] ;; AssignInstance
-      [7 (slotAtPut temporaries low (peek)) (interpret)] ;; AssignTemporary
-      [8 (push-and-continue (pop-multiple! low))] ;; MarkArguments
-      [9 ;; SendMessage
-       (define new-arguments (pop!))
-       (store-registers! ctx ip stack-top)
-       (send-message vm ctx new-arguments (slotAt literals low))]
-
-      [10 (match low
-            [0 (push-and-continue (boolean->obj vm (eq? (VM-nil vm) (pop!))))] ;; isNil
-            [1 (push-and-continue (boolean->obj vm (not (eq? (VM-nil vm) (pop!)))))])] ;; notNil
-
-      [11 ;; SendBinary
-       (define j (pop!))
-       (define i (pop!))
-       (if (and (number? i) (number? j))
-           (match low
-             [0 (push-and-continue (boolean->obj vm (< i j)))]
-             [1 (push-and-continue (boolean->obj vm (<= i j)))]
-             [2 (push-and-continue (+ i j))]) ;; TODO: overflow to bignum arithmetic
-           (let ((new-arguments (mkobj (VM-Array vm) i j))
-                 (selector (match low
-                             [0 (mkbv (VM-nil vm) #"<")]
-                             [1 (mkbv (VM-nil vm) #"<=")]
-                             [2 (mkbv (VM-nil vm) #"+")])))
-             (store-registers! ctx ip stack-top)
-             (send-message vm ctx new-arguments selector)))]
-
-      [12 ;; PushBlock
-       (define target (next-byte!))
-       (log-vm-debug "pushblock; temporaries = ~a" temporaries)
-       (push-and-go target
-        (mkobj (VM-Block vm) method arguments temporaries stack ip 0 previous-ctx low ctx ip))]
-
-      [13 ;; Primitive; low = arg count; next byte = primitive number
-       (define primitive-number (next-byte!))
-       (log-vm-debug "primitive ~a (arg count = ~a)" primitive-number low)
-       (match primitive-number
-         [8 ;; block invocation
-          (define block (pop!))
-          (define argument-location (slotAt block 7))
-          (define argument-count (- low 1)) ;; one of the primitive args is the block itself
-          (for [(i argument-count)]
-            (slotAtPut (slotAt block 2)
-                       (+ argument-location i)
-                       (slotAt stack (+ (- stack-top argument-count) i))))
-          (set! stack-top (- stack-top argument-count))
-          (store-registers! ctx ip stack-top)
-          (execute vm (mkobj (VM-Context vm)
-                             (slotAt block 0)
-                             (slotAt block 1)
-                             (slotAt block 2)
-                             (mkarray vm (slotCount (slotAt block 3))) ;; new stack (!)
-                             (slotAt block 9) ;; starting IP
-                             0 ;; stack top
-                             (slotAt ctx 6) ;; previous context
-                             (slotAt block 7)
-                             (slotAt block 8)
-                             (slotAt block 9)))]
-         [34 (VM-nil vm)] ;; "thread kill"
-         [35 (push-and-continue ctx)]
-         [36 (push-and-continue (pop-multiple! low))] ;; "fast array creation"
-
-         [_ (define args (pop-multiple! low))
-            (push-and-continue (perform-primitive vm primitive-number args))])]
-
-      [14 (push-and-continue (slotAt (obj-class* vm receiver) (+ low 5)))] ;; PushClassVariable
-      [15 ;; Do Special
-       (match low
-         [1 (resume-context vm previous-ctx receiver)]
-         [2 (resume-context vm previous-ctx (pop!))]
-         [3 (resume-context vm (slotAt (slotAt ctx 8) 6) (pop!))]
-         [4 (push-and-continue (peek))]
-         [5 (pop!) (interpret)]
-         [6 (continue-from (next-byte!))]
-         [7 ;; branch if true
-          (define target (next-byte!))
-          (if (eq? (pop!) (VM-true vm))
-              (continue-from target)
-              (interpret))]
-         [8 ;; branch if false
-          (define target (next-byte!))
-          (if (eq? (pop!) (VM-false vm))
-              (continue-from target)
-              (interpret))]
-         [11 ;; send to super
-          (define selector (slotAt literals (next-byte!)))
-          (define new-arguments (pop!))
-          (define defining-class (slotAt method 5)) ;; method's defining class
-          (define super (slotAt defining-class 1)) ;; defining class's superclass
-          (store-registers! ctx ip stack-top)
-          (send-message* vm ctx new-arguments super selector)])]))
-
-  (interpret))
+    (thread
+     (match block
+       [(unffiv block-proc)
+        (lambda () (apply block-proc vm (outermost-k vm) args))]
+       [_
+        (block->thunk vm block args)]))))
 
 (define *primitive-handlers* (make-hash))
 (define *primitive-code-snippets* (make-hash))
@@ -766,14 +569,6 @@
                       `(match* [,vm-exp ,@arg-exps]
                          [[vm arg-pat ...] (let () body ...)])))))
 
-(define (perform-primitive vm primitive-number args)
-  ((hash-ref *primitive-handlers*
-             primitive-number
-             (lambda () (error 'perform-primitive "Unimplemented primitive: ~a args: ~a"
-                               primitive-number
-                               (obj-slots args))))
-   vm args))
-
 ;;===========================================================================
 
 (define-primitive vm [1 b a] (boolean->obj vm (eq? a b)))
@@ -786,7 +581,14 @@
   (slotAtPut target (- index 1) value)
   target)
 (define-primitive vm [6 inner-ctx] ;; "new context execute"
-  (execute vm inner-ctx))
+  (when (not (zero? (slotAt inner-ctx 5)))
+    (error 'execute "Cannot execute from nonempty stack"))
+  (when (not (zero? (slotAt inner-ctx 4)))
+    (error 'execute "Cannot execute from nonzero IP"))
+  (apply (compile-method-proc vm (slotAt inner-ctx 0))
+         vm
+         (outermost-k vm)
+         (vector->list (obj-slots (slotAt inner-ctx 1)))))
 (define-primitive vm [7 class count]
   (obj class (make-vector count (VM-nil vm))))
 
@@ -825,6 +627,15 @@
 ;;---------------------------------------------------------------------------
 ;; GUI
 ;;---------------------------------------------------------------------------
+
+(define smalltalk-frame%
+  (class frame%
+    (field [close-handler void])
+    (define/public (set-close-handler new-handler)
+      (set! close-handler new-handler))
+    (define/augment (on-close)
+      (close-handler this))
+    (super-new)))
 
 (define-primitive vm [60 class] ;; make window
   (log-vm/gui-debug "Creating window")
@@ -1022,7 +833,7 @@
   (define string-class (obj-class name)) ;; class String
   (define source (mkbv string-class (string->bytes/utf-8 task)))
   (define args (mkobj (VM-Array vm) source))
-  (send-message vm (VM-nil vm) args (mkbv (VM-nil vm) #"doIt")))
+  ((lookup-method/cache vm string-class #"doIt") vm (outermost-k vm) source))
 
 (let* ((image-filename "SmallWorld/src/image")
        (vm (call-with-input-file image-filename (lambda (fh) (read-image image-filename fh)))))
