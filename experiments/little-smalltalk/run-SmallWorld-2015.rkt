@@ -5,180 +5,25 @@
 
 (require racket/struct)
 (require racket/bytes)
-(require "oneshot.rkt")
+(require "object-memory.rkt")
+(require "primitives.rkt")
 
 (define-logger vm)
-(define-logger vm/gui)
 
-(struct obj ([class #:mutable] slots)
-  #:methods gen:custom-write
-  [(define write-proc
-     (make-constructor-style-printer (lambda (o) (format "obj:~a" (obj-class-name o)))
-                                     (lambda (o) (if (equal? #"Array" (obj-class-name o))
-                                                     (list (vector->list (obj-slots o)))
-                                                     '()))))])
-(struct bv obj (bytes)
-  #:methods gen:custom-write
-  [(define write-proc
-     (make-constructor-style-printer (lambda (o) (format "bv:~a" (obj-class-name o)))
-                                     (lambda (o) (list (bv-bytes o)))))])
-
-(struct ffiv obj (value)
-  #:methods gen:custom-write
-  [(define write-proc
-     (make-constructor-style-printer (lambda (o) (format "ffiv:~a" (obj-class-name o)))
-                                     (lambda (o) (list (ffiv-value o)))))])
-
-(define-match-expander unbv
-  (syntax-rules () [(_ bytes-pat) (bv _ _ bytes-pat)]))
-(define-match-expander unbv*
-  (syntax-rules () [(_ this-pat bytes-pat) (and this-pat (bv _ _ bytes-pat))]))
-(define-match-expander unstr
-  (syntax-rules () [(_ str-pat) (bv _ _ (app bytes->string/utf-8 str-pat))]))
-(define-match-expander unffiv
-  (syntax-rules () [(_ val-pat) (ffiv _ _ val-pat)]))
-(define-match-expander unffiv*
-  (syntax-rules () [(_ this-pat val-pat) (and this-pat (ffiv _ _ val-pat))]))
-
-(define (obj-class-name o)
-  (define c (obj-class o))
-  (if (and (positive? (slotCount c))
-           (bv? (slotAt c 0)))
-      (bv-bytes (slotAt c 0))
-      #"???"))
-
-(struct VM (nil true false Array Block Context Integer cache image-filename))
-
-(define (read-image image-filename fh)
-
-  (define (next-int #:signed? [signed? #t] #:eof-ok? [eof-ok? #f])
-    (define bs (read-bytes 4 fh))
-    (if (eof-object? bs)
-        (if eof-ok? bs (error 'read-image "Early EOF"))
-        (integer-bytes->integer bs signed? #t)))
-
-  (let ((image-version (next-int))
-        (expected-version 1))
-    (when (not (= image-version expected-version))
-      (error 'read-image "Wrong image version: got ~a, expected ~a"
-             image-version
-             expected-version)))
-
-  (define object-table
-    (let loop ((acc '()))
-      (define (emit x) (loop (cons x acc)))
-      (match (next-int #:eof-ok? #t)
-        [(? eof-object?) (list->vector (reverse acc))]
-        [obj-length
-         (define type-code (next-int))
-         (define class-index (next-int))
-         (define slot-count (next-int))
-         (match type-code
-           [0 ;; SmallInt
-            (when (not (= obj-length 5))
-              (error 'read-image "Strange SmallInt obj-length: ~a" obj-length))
-            (when (not (zero? slot-count))
-              (error 'read-image "Strange SmallInt with ~a slots" slot-count))
-            (emit (next-int))]
-           [1 ;; SmallByteArray
-            (define byte-count (- obj-length slot-count 4))
-            (emit (bv class-index
-                      (for/vector [(i slot-count)] (next-int))
-                      (read-bytes byte-count fh)))]
-           [2 ;; SmallObject
-            (emit (obj class-index
-                       (for/vector [(i slot-count)] (next-int))))])])))
-
-  (for [(x object-table)]
-    (when (obj? x)
-      (set-obj-class! x (vector-ref object-table (obj-class x)))
-      (for [(i (vector-length (obj-slots x)))]
-        (vector-set! (obj-slots x) i (vector-ref object-table (vector-ref (obj-slots x) i))))))
-
-  (VM (vector-ref object-table 0)
-      (vector-ref object-table 1)
-      (vector-ref object-table 2)
-      (vector-ref object-table 3)
-      (vector-ref object-table 4)
-      (vector-ref object-table 5)
-      (vector-ref object-table 6)
-      (make-weak-hasheq)
-      image-filename))
-
-(define (serialize-image vm)
-  (define indices (make-hasheq))
-  (define output-rev '())
-  (define worklist-rev '())
-  (define next-index 0)
-
-  (define (push-bytes! item) (set! output-rev (cons item output-rev)))
-  (define (push-int! n) (push-bytes! (integer->integer-bytes n 4 #t #t)))
-
-  (define (object->index o)
-    (if (ffiv? o)
-        (object->index (VM-nil vm))
-        (hash-ref! indices o (lambda ()
-                               (begin0 next-index
-                                 (set! next-index (+ next-index 1))
-                                 (set! worklist-rev (cons o worklist-rev)))))))
-
-  (push-int! 1) ;; version number
-  (object->index (VM-nil vm))
-  (object->index (VM-true vm))
-  (object->index (VM-false vm))
-  (object->index (VM-Array vm))
-  (object->index (VM-Block vm))
-  (object->index (VM-Context vm))
-  (object->index (VM-Integer vm))
-  (for [(i 10)] (object->index i))
-
-  (let loop ()
-    (define worklist (reverse worklist-rev))
-    (set! worklist-rev '())
-    (when (pair? worklist)
-      (for [(o worklist)]
-        (match o
-          [(? number?)
-           (push-int! 5)
-           (push-int! 0)
-           (push-int! (object->index (VM-Integer vm)))
-           (push-int! 0)
-           (push-int! o)]
-          [(bv class slots bytes)
-           (push-int! (+ (bytes-length bytes) (vector-length slots) 4)) ;; weird
-           (push-int! 1)
-           (push-int! (object->index class))
-           (push-int! (vector-length slots))
-           (for [(s slots)] (push-int! (object->index s)))
-           (push-bytes! bytes)]
-          [(obj class slots)
-           (push-int! (+ (vector-length slots) 4)) ;; weird
-           (push-int! 2)
-           (push-int! (object->index class))
-           (push-int! (vector-length slots))
-           (for [(s slots)] (push-int! (object->index s)))]))
-      (loop)))
-
-  (bytes-append* (reverse output-rev)))
-
-(define (slotCount o) (vector-length (obj-slots o)))
-(define (slotAt o i) (vector-ref (obj-slots o) i))
-(define (slotAtPut o i v) (vector-set! (obj-slots o) i v))
-
-(define (search-class-method-dictionary c name-bytes)
-  (define methods (slotAt c 2))
-  (for/first [(m (obj-slots methods))
-              #:when (equal? name-bytes (bv-bytes (slotAt m 0)))]
-    m))
-
-(define (mkobj cls . fields)
-  (obj cls (list->vector fields)))
-
-(define (mkbv cls bs . fields)
-  (bv cls (list->vector fields) bs))
-
-(define (mkffiv cls value)
-  (ffiv cls '#() value))
+(struct int-VM VM (cache image-filename)
+  #:methods gen:vm-callback
+  [(define (vm-block-callback vm block)
+     ;; Runs block in a new thread
+     (lambda args
+       (let ((ctx (clone-array block)))
+         (define argument-location (slotAt ctx 7))
+         (for [(i (in-naturals argument-location)) (arg (in-list args))]
+           (slotAtPut (slotAt ctx 2) i arg))
+         (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
+         (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
+         (slotAtPut ctx 5 0) ;; zero stack-top
+         (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
+         (thread (lambda () (execute vm ctx))))))])
 
 (define (mkarray vm count [init (VM-nil vm)])
   (obj (VM-Array vm) (make-vector count init)))
@@ -201,23 +46,13 @@
     (slotAtPut b i (slotAt a (+ i start))))
   b)
 
-(define (boolean->obj vm b)
-  (if b (VM-true vm) (VM-false vm)))
-
 (define (lookup-method/cache vm class selector)
   (define name-bytes (bv-bytes selector))
-  (define class-cache (hash-ref! (VM-cache vm) class make-weak-hash))
+  (define class-cache (hash-ref! (int-VM-cache vm) class make-weak-hash))
   (hash-ref! class-cache
              name-bytes
              (lambda ()
-               (lookup-method vm class selector))))
-
-(define (lookup-method vm class selector)
-  (define name-bytes (bv-bytes selector))
-  (let search ((class class))
-    (and (not (eq? class (VM-nil vm)))
-         (or (search-class-method-dictionary class name-bytes)
-             (search (slotAt class 1))))))
+               (lookup-method vm class (bv-bytes selector)))))
 
 (define (store-registers! ctx ip stack-top)
   (slotAtPut ctx 4 ip)
@@ -243,36 +78,9 @@
     [new-method
      (execute vm (build-context vm ctx arguments new-method))]))
 
-(define (obj-class* vm o)
-  (if (number? o)
-      (VM-Integer vm)
-      (obj-class o)))
-
 (define (send-message vm ctx ip stack-top arguments selector)
   (log-vm-debug "sending: ~a ~a" selector arguments)
   (send-message* vm ctx ip stack-top arguments (obj-class* vm (slotAt arguments 0)) selector))
-
-(define (block-callback vm block)
-  ;; Runs block in a new thread
-  (lambda args
-    (let ((ctx (clone-array block)))
-      (define argument-location (slotAt ctx 7))
-      (for [(i (in-naturals argument-location)) (arg (in-list args))]
-        (slotAtPut (slotAt ctx 2) i arg))
-      (slotAtPut ctx 3 (mkarray vm (slotCount (slotAt ctx 3))))
-      (slotAtPut ctx 4 (slotAt ctx 9)) ;; reset IP to correct block offset
-      (slotAtPut ctx 5 0) ;; zero stack-top
-      (slotAtPut ctx 6 (VM-nil vm)) ;; no previous context
-      (thread (lambda () (execute vm ctx))))))
-
-(define smalltalk-frame%
-  (class frame%
-    (field [close-handler void])
-    (define/public (set-close-handler new-handler)
-      (set! close-handler new-handler))
-    (define/augment (on-close)
-      (close-handler this))
-    (super-new)))
 
 (define (resume-context vm ctx result)
   (if (eq? (VM-nil vm) ctx)
@@ -408,7 +216,8 @@
          [35 (push-and-continue ctx)]
 
          [_ (define args (pop-multiple! low))
-            (push-and-continue (perform-primitive vm primitive-number args))])]
+            (define handler (hash-ref *primitive-handlers* primitive-number))
+            (push-and-continue (handler vm args))])]
 
       [14 (push-and-continue (slotAt (obj-class* vm receiver) (+ low 5)))] ;; PushClassVariable
       [15 ;; Do Special
@@ -438,302 +247,25 @@
 
   (interpret))
 
-(define (perform-primitive vm primitive-number args)
-  (define-syntax-rule (primitive-action [arg-pat ...] body ...)
-    (match (obj-slots args) [(vector arg-pat ...) (let () body ...)]))
+;;===========================================================================
 
-  (match primitive-number
-    [1 (primitive-action [b a] (boolean->obj vm (eq? a b)))]
-    [2 (primitive-action [x] (obj-class* vm x))]
-    [4 (primitive-action [o] (cond [(bv? o) (bytes-length (bv-bytes o))]
-                                   [(obj? o) (slotCount o)]
-                                   [(number? o) 0]
-                                   [else (error 'execute "Primitive 4 failed")]))]
-    [5 (primitive-action [value target index]
-         (slotAtPut target (- index 1) value)
-         target)]
-    [6 (primitive-action [inner-ctx] ;; "new context execute"
-         (execute vm inner-ctx))]
-    [7 (primitive-action [class count]
-         (obj class (make-vector count (VM-nil vm))))]
+(define-primitive vm [6 inner-ctx] ;; "new context execute"
+  (execute vm inner-ctx))
 
-    [10 (primitive-action [b a] (+ a b))] ;; TODO: overflow
-    [11 (primitive-action [n d] (quotient n d))]
-    [12 (primitive-action [n d] (modulo n d))]
-    [14 (primitive-action [b a] (boolean->obj vm (= a b)))]
-    [15 (primitive-action [b a] (* a b))]
-    [16 (primitive-action [a b] (- a b))] ;; NB. ordering
+(define-primitive vm [116]
+  (let ((image-bytes (serialize-image vm)))
+    (display-to-file image-bytes (int-VM-image-filename vm) #:exists 'replace)))
 
-    [18 (primitive-action [v] (log-vm-info "DEBUG: value ~v class ~v" v (obj-class* vm v)))]
-
-    [20 (primitive-action [class count] (mkbv class (make-bytes count)))]
-    [21 (primitive-action [source index] (bytes-ref (bv-bytes source) (- index 1)))]
-    [22 (primitive-action [value target index]
-          (bytes-set! (bv-bytes target) (- index 1) value)
-          target)]
-    [24 (primitive-action [(unbv b) (unbv* av a)] (mkbv (obj-class av) (bytes-append a b)))]
-    [26 (primitive-action [(unbv a) (unbv b)] ;; NB. ordering
-          (cond [(bytes<? a b) -1]
-                [(bytes=? a b) 0]
-                [(bytes>? a b) 1]))]
-
-    [30 (primitive-action [source index] (slotAt source (- index 1)))]
-    [31 (primitive-action [v o] (obj (obj-class o) (vector-append (obj-slots o) (vector v))))]
-    [36 args] ;; "fast array creation"
-
-    [41 (primitive-action [class (unstr filename)]
-          (mkffiv class (open-output-file filename #:exists 'replace)))]
-    [42 (primitive-action [class (unstr filename)]
-          (mkffiv class (open-input-file filename)))]
-    [44 (primitive-action [class (unffiv fh)]
-          (match (read-bytes-line fh)
-            [(? eof-object?) (VM-nil vm)]
-            [bs (mkbv class bs)]))]
-
-    ;;---------------------------------------------------------------------------
-    ;; GUI
-    ;;---------------------------------------------------------------------------
-
-    [60 ;; make window
-     (primitive-action [class]
-       (log-vm/gui-debug "Creating window")
-       (mkffiv class (new smalltalk-frame% [label "Racket SmallWorld"])))]
-    [61 ;; show/hide text window
-     (primitive-action [(unffiv window) flag]
-       (log-vm/gui-debug "Show/hide window ~a" (eq? flag (VM-true vm)))
-       (send window show (eq? flag (VM-true vm)))
-       flag)]
-    [62 ;; set content pane
-     (primitive-action [(unffiv* wv window) (unffiv (list _item factory))]
-       (log-vm/gui-debug "Set content pane")
-       (factory window)
-       wv)]
-    [63 ;; set size
-     (primitive-action [(unffiv* wv window) height width]
-       (log-vm/gui-debug "Window resize ~ax~a" width height)
-       (send window resize width height)
-       wv)]
-    [64 ;; add menu to window
-     (primitive-action [(unffiv* wv window) (unffiv (list _queue-item add-menu-bar-to))]
-       (define mb (or (send window get-menu-bar)
-                      (new menu-bar% [parent window])))
-       (log-vm/gui-debug "Add menu to window")
-       (add-menu-bar-to mb)
-       wv)]
-    [65 ;; set title
-     (primitive-action [(unffiv* wv window) (unstr text)]
-       (log-vm/gui-debug "Set window title ~v" text)
-       (send window set-label text)
-       wv)]
-    [66 ;; repaint window
-     (primitive-action [window]
-       ;; nothing needed
-       window)]
-    [70 ;; new label panel
-     (primitive-action [class (unstr label)]
-       (log-vm/gui-debug "Schedule label panel ~v" label)
-       (define (create-label-in parent)
-         (log-vm/gui-debug "Create label panel ~v" label)
-         (new message% [parent parent] [label label]))
-       (mkffiv class (list 'label create-label-in)))]
-    [71 ;; new button
-     (primitive-action [class (unstr label) action]
-       (define callback (block-callback vm action))
-       (log-vm/gui-debug "Schedule button ~v" label)
-       (define (create-button-in parent)
-         (log-vm/gui-debug "Create button ~v" label)
-         (new button%
-              [label label]
-              [parent parent]
-              [callback (lambda args (queue-callback callback))]))
-       (mkffiv class (list 'button create-button-in)))]
-    [72 ;; new text line
-     (primitive-action [class]
-       (log-vm/gui-debug "Schedule textfield")
-       (define textfield-editor #f)
-       (define (add-textfield-to parent)
-         (set! textfield-editor (send (new text-field% [label #f] [parent parent]) get-editor))
-         textfield-editor)
-       (mkffiv class (list (lambda () textfield-editor) add-textfield-to)))]
-    [73 ;; new text area
-     (primitive-action [class]
-       (log-vm/gui-debug "Schedule textarea")
-       (define editor (new text%))
-       (define (add-editor-to frame)
-         (log-vm/gui-debug "Create textarea")
-         (new editor-canvas% [parent frame] [editor editor]))
-       (mkffiv class (list (lambda () editor) add-editor-to)))]
-    [74 ;; new grid panel
-     (primitive-action [class width height data]
-       (log-vm/gui-debug "Schedule grid panel ~ax~a ~a" width height data)
-       (define (create-grid-in parent)
-         (log-vm/gui-debug "Create grid panel ~ax~a ~a" width height data)
-         (define vp (new vertical-pane% [parent parent]))
-         (for [(row height)]
-           (define hp (new horizontal-pane% [parent vp]))
-           (for [(col width)]
-             (define i (+ col (* row width)))
-             (when (< i (slotCount data))
-               (match (slotAt data i)
-                 [(unffiv (list _ factory)) (factory hp)]))))
-         vp)
-       (mkffiv class (list 'grid create-grid-in)))]
-    [75 ;; new list panel
-     (primitive-action [class data action]
-       (define callback (block-callback vm action))
-       (log-vm/gui-debug "Schedule listpanel ~a" data)
-       (define lb #f)
-       (define old-selection #f)
-       (define (create-list-panel-in parent)
-         (log-vm/gui-debug "Create listpanel ~a" data)
-         (set! lb (new list-box%
-                       [label #f]
-                       [parent parent]
-                       [choices (for/list [(c (obj-slots data))] (match-define (unstr t) c) t)]
-                       [callback (lambda _args
-                                   (log-vm/gui-debug "_args: ~v for listpanel ~a"
-                                                     _args
-                                                     (eq-hash-code lb))
-                                   (define selection (send lb get-selection))
-                                   (when (not (equal? old-selection selection))
-                                     (set! old-selection selection)
-                                     (queue-callback
-                                      (lambda ()
-                                        (log-vm/gui-debug "Item selected ~v" selection)
-                                        (callback (if selection (+ selection 1) 0))))))]))
-         (log-vm/gui-debug "The result is ~a" (eq-hash-code lb))
-         lb)
-       (mkffiv class (list (lambda () lb) create-list-panel-in)))]
-    [76 ;; new border panel
-     (primitive-action [class north south east west center]
-       (log-vm/gui-debug "Schedule borderpanel")
-       (define (add-w w p)
-         (when (not (eq? (VM-nil vm) w))
-           (match w [(unffiv (list _ factory)) (factory p)])))
-       (define (create-border-panel-in parent)
-         (log-vm/gui-debug "Create borderpanel")
-         (define vp (new vertical-pane% [parent parent]))
-         (add-w north vp)
-         (when (for/or [(w (list west center east))] (not (eq? (VM-nil vm) w)))
-           (define hp (new horizontal-pane% [parent vp]))
-           (add-w west hp)
-           (add-w center hp)
-           (add-w east hp))
-         (add-w south vp)
-         vp)
-       (mkffiv class (list 'border-panel create-border-panel-in)))]
-    [80 ;; content of text area
-     (primitive-action [class (unffiv (list get-textarea _factory))]
-       (mkbv class (string->bytes/utf-8 (send (get-textarea) get-text))))]
-    [81 ;; content of selected text area
-     (primitive-action [class (unffiv (list get-textarea _factory))]
-       (define start (box 0))
-       (define end (box 0))
-       (send (get-textarea) get-position start end)
-       (define has-selection (not (= (unbox start) (unbox end))))
-       (mkbv class
-             (string->bytes/utf-8 (send (get-textarea) get-text
-                                        (if has-selection (unbox start) 0)
-                                        (if has-selection (unbox end) 'eof)))))]
-    [82 ;; set text area
-     (primitive-action [(unffiv (list get-textarea _factory)) (and textv (unstr text))]
-       (log-vm/gui-debug "Update textarea ~v" text)
-       (send (get-textarea) erase)
-       (send (get-textarea) insert text)
-       textv)]
-    [83 ;; get selected index
-     (primitive-action [(unffiv (list get-lb _factory))]
-       (log-vm/gui-debug "Get selected index")
-       (define lb (get-lb))
-       (define s (send lb get-selection))
-       (if s (+ s 1) 0))]
-    [84 ;; set list data
-     (primitive-action [(unffiv* lbv (list get-lb _factory)) data]
-       (define lb (get-lb))
-       (log-vm/gui-debug "Update list ~a data ~v" (eq-hash-code lb) data)
-       (send lb set (for/list [(c (obj-slots data))] (match-define (unstr t) c) t))
-       lbv)]
-    [89 ;; set selected text area
-     (primitive-action [(unffiv (list get-textarea _factory)) (and textv (unstr text))]
-       (define start (box 0))
-       (define end (box 0))
-       (send (get-textarea) get-position start end)
-       (define has-selection (not (= (unbox start) (unbox end))))
-       (if has-selection
-           (send (get-textarea) insert text (unbox start) (unbox end))
-           (begin (send (get-textarea) erase)
-                  (send (get-textarea) insert text)))
-       textv)]
-    [90 ;; new menu
-     (primitive-action [class (unstr title)]
-       (define pending-items '())
-       (define (queue-item i)
-         (set! pending-items (cons i pending-items)))
-       (define (add-menu-bar-to frame)
-         (define m (new menu% [parent frame] [label title]))
-         (for [(i (reverse pending-items))] (i m))
-         m)
-       (mkffiv class (list queue-item add-menu-bar-to)))]
-    [91 ;; new menu item
-     (primitive-action [(unffiv* menu (list queue-item _add-menu-bar-to)) (unstr title) action]
-       (define callback (block-callback vm action))
-       (queue-item (lambda (m)
-                     (new menu-item%
-                          [label title]
-                          [parent m]
-                          [callback (lambda args (queue-callback callback))])))
-       menu)]
-    [100 (primitive-action [class]
-           (mkffiv class (oneshot)))]
-    [101 (primitive-action [(unffiv o)]
-           (oneshot-ref o))]
-    [102 (primitive-action [(unffiv o) v]
-           (oneshot-set! o v)
-           v)]
-    [116 (primitive-action []
-           (let ((image-bytes (serialize-image vm)))
-             (display-to-file image-bytes (VM-image-filename vm) #:exists 'replace)))]
-    [117 (primitive-action [] (exit))]
-    [118 ;; "onWindow close b"
-     (primitive-action [(unffiv* wv window) action]
-       (define callback (block-callback vm action))
-       (send window set-close-handler (lambda (_frame) (queue-callback callback) (sleep 0.2)))
-       wv)]
-
-    ;;---------------------------------------------------------------------------
-    ;; END GUI
-    ;;---------------------------------------------------------------------------
-
-    [119 (primitive-action [] (inexact->exact (round (current-inexact-milliseconds))))]
-
-    [_ (error 'execute "Unimplemented primitive: ~a args: ~a"
-              primitive-number
-              (obj-slots args))]))
-
-(define (doIt vm task)
-  (define true-class (obj-class (VM-true vm))) ;; class True
-  (define name (slotAt true-class 0)) ;; "a known string", namely the name of class True
-  (define string-class (obj-class name)) ;; class String
-  (define doIt-method (search-class-method-dictionary string-class #"doIt"))
-  (when (not doIt-method)
-    (error 'doIt "Can't find doIt method via class True etc"))
-  (define source (mkbv string-class (string->bytes/utf-8 task)))
-  (define args (mkobj (VM-Array vm) source))
-  (define ctx (build-context vm (VM-nil vm) args doIt-method))
-  (execute vm ctx))
+;;===========================================================================
 
 (let* ((image-filename "SmallWorld/src/image")
-       (vm (call-with-input-file image-filename (lambda (fh) (read-image image-filename fh)))))
-  (printf "Sending 'SmallWorld startUp'...\n")
-  (thread-wait (thread (lambda ()
-                         (define result (doIt vm "SmallWorld startUp"))
-                         (log-vm-info "Final startUp result: ~a" result)
-                         (for [(a (current-command-line-arguments))]
-                           (log-vm-info "Filing in ~a" a)
-                           (doIt vm (format "(File openRead: '~a') fileIn" a)))
-                         (yield))))
-  (printf "... terminating.\n"))
-
-;;; Local Variables:
-;;; eval: (put 'primitive-action 'scheme-indent-function 1)
-;;; End:
+       (vm (call-with-input-file image-filename
+             (lambda (fh)
+               (read-image fh int-VM (list (make-weak-hasheq) image-filename))))))
+  (boot-image vm
+              (lambda (vm source)
+                (define args (mkobj (VM-Array vm) source))
+                (define doIt-method (search-class-method-dictionary (obj-class source) #"doIt"))
+                (when (not doIt-method) (error 'doIt "Can't find doIt method via class True etc"))
+                (execute vm (build-context vm (VM-nil vm) args doIt-method)))
+              (current-command-line-arguments)))
