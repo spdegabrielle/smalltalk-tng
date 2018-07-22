@@ -367,7 +367,8 @@
     (log-vm/jit/recompile-info "  ~a >> ~a"
                                (bv->string (slotAt receiver-class 0))
                                (bv->string selector))
-    (define compiled-method (lookup-method/cache vm receiver-class (bv-bytes selector)))
+    (define cached-method (lookup-method/cache vm receiver-class (bv-bytes selector)))
+    (define compiled-method (unwrap-cached-method vm cached-method))
     (when compiled-method
       (match-define (compiled-method-info bytecode-method pics) (compiled-method))
       (log-vm/jit/recompile-info "    has ~a bytes of bytecode"
@@ -418,13 +419,23 @@
             ,(gen-label-definitions c body-code))])))
   (finish-compilation c compile-time-vm inner-code))
 
+(struct cached-method (class name-bytes [bytecode-method #:mutable] [proc #:mutable]))
+
+(define (unwrap-cached-method vm cm)
+  (or (cached-method-proc cm)
+      (match cm
+        [(cached-method class name-bytes _bcm _proc)
+         (define bcm (lookup-method vm class name-bytes))
+         (define proc (and bcm (compile-method-proc vm class bcm)))
+         (set-cached-method-bytecode-method! cm bcm)
+         (set-cached-method-proc! cm proc)
+         proc])))
+
 (define (lookup-method/cache vm class name-bytes)
   (define class-cache (hash-ref! (jit-VM-cache vm) class make-weak-hash))
   (hash-ref! class-cache
              name-bytes
-             (lambda ()
-               (define m (lookup-method vm class name-bytes))
-               (and m (compile-method-proc vm class m)))))
+             (lambda () (cached-method class name-bytes #f #f))))
 
 (define (lookup-message/jit vm pic class selector)
   (define reserved 2)
@@ -439,7 +450,8 @@
                (more-slots-to-check? (and this-class (< next-slot-index pic-entry-count))))
           (if more-slots-to-check?
               (search-pic next-slot-index)
-              (let ((method (lookup-method/cache vm class (bv-bytes selector))))
+              (let ((method
+                     (unwrap-cached-method vm (lookup-method/cache vm class (bv-bytes selector)))))
                 (if (not method)
                     (lambda (vm ctx . args)
                       (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))
@@ -452,7 +464,7 @@
 
 (define (send-dnu vm ctx arguments class selector)
   (define dnu-name-bytes #"doesNotUnderstand:")
-  (match (lookup-method/cache vm class dnu-name-bytes)
+  (match (unwrap-cached-method vm (lookup-method/cache vm class dnu-name-bytes))
     [#f (error 'send-message* "Unhandled selector ~a at class ~a" selector class)]
     [dnu-method
      (log-vm-warning "DNU -- arguments ~a class ~a selector ~a" arguments class selector)
@@ -493,5 +505,7 @@
                (read-image fh jit-VM (list (make-weak-hasheq) image-filename))))))
   (boot-image vm
               (lambda (vm source)
-                ((lookup-method/cache vm (obj-class source) #"doIt") vm (outermost-k vm) source))
+                (define compiled-method
+                  (unwrap-cached-method vm (lookup-method/cache vm (obj-class source) #"doIt")))
+                (compiled-method vm (outermost-k vm) source))
               (current-command-line-arguments)))
