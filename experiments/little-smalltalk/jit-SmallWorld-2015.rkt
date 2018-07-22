@@ -10,9 +10,17 @@
 
 (define-logger vm)
 (define-logger vm/jit)
+(define-logger vm/jit/code)
+(define-logger vm/jit/recompile)
 
 (define pic-entry-count 3)
-(define (pic) (vector #f #f #f #f #f #f)) ;; pic-entry-count times two - one each for class & method
+(define (pic name-bytes send-ip)
+  ;; pic-entry-count times three - one each for class, method, and
+  ;; count - plus two, name-bytes and send-ip.
+  (vector name-bytes send-ip
+          #f #f 0
+          #f #f 0
+          #f #f 0))
 
 (struct jit-VM VM (cache image-filename)
   #:methods gen:vm-callback
@@ -25,8 +33,11 @@
                  [_
                   (block->thunk vm action args)]))))])
 
-(struct compilation-result (litmap [pic-count #:mutable]))
+(struct pic-info (name-bytes variable ip))
+(struct compilation-result (litmap [pic-list-rev #:mutable]))
 (struct compilation (depth vm receiver-class method argnames labels state))
+
+(struct compiled-method-info (bytecode-method pics))
 
 (define (build-jit-context vm previous-context args method ip stack-top temporaries stack)
   (define max-stack (slotAt method 3))
@@ -65,7 +76,7 @@
   (define arity (selector-string-arity (bv->string selector)))
   (define literals (slotAt method 2))
 
-  (log-vm/jit-info
+  (log-vm/jit/code-info
    "Compiling ~v defined in ~v, to be run in ~v (depth ~a), arity ~a, literals ~a, bytecode ~a, text:\n----\n~a\n----"
    (bv->string selector)
    (slotAt method 5)
@@ -89,7 +100,7 @@
                state))
 
 (define (top-compilation vm receiver-class method)
-  (compilation* 0 vm receiver-class method (compilation-result (make-hasheq) 0)))
+  (compilation* 0 vm receiver-class method (compilation-result (make-hasheq) '())))
 
 (define (inline-compilation c method)
   (match-define (compilation depth vm receiver-class _method _argnames _labels state) c)
@@ -132,16 +143,18 @@
     [0 `'#()]
     [temp-count `(make-vector ,temp-count NIL)]))
 
-(define (gen-send c class-exp name-bytes selector-exp k-exp arg-exps)
-  (define pic-index (compilation-result-pic-count (compilation-state c)))
-  (set-compilation-result-pic-count! (compilation-state c) (+ pic-index 1))
+(define (gen-send c send-ip class-exp name-bytes selector-exp k-exp arg-exps)
+  (define old-pics (compilation-result-pic-list-rev (compilation-state c)))
+  (define pic-index (length old-pics))
   (define m (mksym "pic~a" pic-index))
+  (define pi (pic-info name-bytes m send-ip))
+  (set-compilation-result-pic-list-rev! (compilation-state c) (cons pi old-pics))
   (match class-exp
     [`(obj-class* vm self) #:when (< (compilation-depth c) 2) ;; self send
      (define receiver-class (compilation-receiver-class c))
      (define method (lookup-method (compilation-vm c) receiver-class name-bytes))
      (define defining-class (slotAt method 5))
-     (log-info "Self-send of ~a to class ~a" name-bytes receiver-class)
+     (log-vm/jit/code-debug "Self-send of ~a to class ~a" name-bytes receiver-class)
      (define ic (inline-compilation c method))
      (define body-code (gen-jump-to-label ic 0 '()))
      (define litmap (compilation-result-litmap (compilation-state ic)))
@@ -155,7 +168,7 @@
             (let ((outer-k k)
                   (temporaries ,(gen-fresh-temps method)))
               ,(gen-label-definitions ic body-code)))))
-     (log-vm-info "INLINED:\n~a" (pretty-format inner-code))
+     (log-vm/jit/code-debug "INLINED:\n~a" (pretty-format inner-code))
      inner-code]
     [_
      `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps)]))
@@ -220,7 +233,7 @@
            (define k (gen-send-k c ip stack))
            (define selector (slotAt literals selector-literal-index))
            (define selector-exp (compilation-litname c selector))
-           (gen-send c class-exp (bv-bytes selector) selector-exp k args))]
+           (gen-send c ip0 class-exp (bv-bytes selector) selector-exp k args))]
       ;; 9 inlined in the processing of bytecode 8
       [10 (match arg
             [0 (let@ [isNil `(boolean->obj vm (eq? NIL ,(car stack)))]
@@ -237,6 +250,7 @@
                            [2 `(,binop-k (+ ,i ,j))])
                         ,(let ((name-bytes (match arg [0 #"<"] [1 #"<="] [2 #"+"])))
                            (gen-send c
+                                     ip0
                                      `(obj-class* vm ,i)
                                      name-bytes
                                      `(mkbv NIL ,name-bytes)
@@ -307,11 +321,13 @@
   (define litmap-list (hash->list (compilation-result-litmap (compilation-state c))))
   (define code
     `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(map cdr litmap-list))
-       ,@(for/list [(i (compilation-result-pic-count (compilation-state c)))]
-           `(define ,(mksym "pic~a" i) (pic)))
+       ,@(for/list [(pi (reverse (compilation-result-pic-list-rev (compilation-state c))))]
+           `(define ,(pic-info-variable pi)
+              (pic ,(pic-info-name-bytes pi)
+                   ,(pic-info-ip pi))))
        ,inner-code))
 
-  (log-vm/jit-info "Resulting code:\n~a" (pretty-format code))
+  (log-vm/jit/code-debug "Resulting code:\n~a" (pretty-format code))
   (define literals (slotAt (compilation-method c) 2))
   (define defining-class (slotAt (compilation-method c) 5))
   (apply (eval code ns)
@@ -341,14 +357,65 @@
          actual-temporaries
          outer-args))
 
+(define (dump-stack vm ctx)
+  (when (not (eq? (VM-nil vm) ctx))
+    (define method (slotAt ctx 0))
+    (define selector (slotAt method 0))
+    (define receiver (slotAt (slotAt ctx 1) 0))
+    (define receiver-class (obj-class* vm receiver))
+    (define next-ctx (slotAt ctx 6))
+    (log-vm/jit/recompile-info "  ~a >> ~a"
+                               (bv->string (slotAt receiver-class 0))
+                               (bv->string selector))
+    (define compiled-method (lookup-method/cache vm receiver-class (bv-bytes selector)))
+    (when compiled-method
+      (match-define (compiled-method-info bytecode-method pics) (compiled-method))
+      (log-vm/jit/recompile-info "    has ~a bytes of bytecode"
+                                 (bytes-length (bv-bytes (slotAt bytecode-method 1))))
+      (for [(pic pics)]
+        (define (pic-has-any-calls? pic)
+          (or (positive? (vector-ref pic 4))
+              (positive? (vector-ref pic 7))
+              (positive? (vector-ref pic 10))))
+        (when (pic-has-any-calls? pic)
+          (log-vm/jit/recompile-info "      ~a @~a ~a"
+                                     (vector-ref pic 0)
+                                     (vector-ref pic 1)
+                                     (for/list [(i (in-range 2 (vector-length pic) 3))]
+                                       (define c (vector-ref pic i))
+                                       (if c
+                                           (match ((vector-ref pic (+ i 1)))
+                                             [(compiled-method-info bcm _pics)
+                                              (list (bv->string (slotAt c 0))
+                                                    (vector-ref pic (+ i 2))
+                                                    (bytes-length (bv-bytes (slotAt bcm 1))))])
+                                           '-))))))
+    (dump-stack vm next-ctx)))
+
 (define (compile-method-proc compile-time-vm class method)
   (define c (top-compilation compile-time-vm class method))
   (define body-code (gen-jump-to-label c 0 '())) ;; imperative!
   (define inner-code
-    `(lambda (vm k ,@(vector->list (compilation-argnames c)))
-       (let ((outer-k k)
-             (temporaries ,(gen-fresh-temps method)))
-         ,(gen-label-definitions c body-code))))
+    `(let ((call-counter 0))
+       (case-lambda
+         [()
+          (compiled-method-info
+           method
+           (list
+            ,@(let ((pic-count (length (compilation-result-pic-list-rev (compilation-state c)))))
+                (for/list [(n (in-range pic-count))] (mksym "pic~a" n)))))]
+         [(vm k ,@(vector->list (compilation-argnames c)))
+          (set! call-counter (+ call-counter 1))
+          (when (= call-counter 1000)
+            (log-vm/jit/recompile-info "Method ~a of class ~a is hot"
+                                       ,(bv->string (slotAt method 0))
+                                       ,(bv->string (slotAt class 0)))
+            (dump-stack vm (k))
+            ;; (set! call-counter 0)
+            )
+          (let ((outer-k k)
+                (temporaries ,(gen-fresh-temps method)))
+            ,(gen-label-definitions c body-code))])))
   (finish-compilation c compile-time-vm inner-code))
 
 (define (lookup-method/cache vm class name-bytes)
@@ -360,10 +427,14 @@
                (and m (compile-method-proc vm class m)))))
 
 (define (lookup-message/jit vm pic class selector)
+  (define reserved 2)
+  (define (@ i o) (vector-ref pic (+ reserved o (* i 3))))
+  (define (@! i o v) (vector-set! pic (+ reserved o (* i 3)) v))
   (let search-pic ((slot-index 0))
-    (define this-class (vector-ref pic (* slot-index 2)))
+    (define this-class (@ slot-index 0))
     (if (eq? this-class class)
-        (vector-ref pic (+ (* slot-index 2) 1))
+        (begin (@! slot-index 2 (+ 1 (@ slot-index 2)))
+               (@ slot-index 1))
         (let* ((next-slot-index (+ slot-index 1))
                (more-slots-to-check? (and this-class (< next-slot-index pic-entry-count))))
           (if more-slots-to-check?
@@ -374,8 +445,9 @@
                       (send-dnu vm ctx (obj (VM-Array vm) (list->vector args)) class selector))
                     (let ((slot-empty? (not this-class)))
                       (when slot-empty?
-                        (vector-set! pic (* slot-index 2) class)
-                        (vector-set! pic (+ (* slot-index 2) 1) method))
+                        (@! slot-index 0 class)
+                        (@! slot-index 1 method)
+                        (@! slot-index 2 1))
                       method))))))))
 
 (define (send-dnu vm ctx arguments class selector)
