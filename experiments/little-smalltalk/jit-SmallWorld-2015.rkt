@@ -25,7 +25,8 @@
                  [_
                   (block->thunk vm action args)]))))])
 
-(struct compilation (vm receiver-class method litnames argnames labels [pic-count #:mutable]))
+(struct compilation-result (litmap [pic-count #:mutable]))
+(struct compilation (depth vm receiver-class method argnames labels state))
 
 (define (build-jit-context vm previous-context args method ip stack-top temporaries stack)
   (define max-stack (slotAt method 3))
@@ -59,40 +60,47 @@
        `(let ((,n ,n-code-exp))
           ,body-code-exp))]))
 
-(define (new-compilation compile-time-vm receiver-class method)
+(define (compilation* depth compile-time-vm receiver-class method state)
   (define selector (slotAt method 0))
   (define arity (selector-string-arity (bv->string selector)))
-  (define bytecode (bv-bytes (slotAt method 1)))
   (define literals (slotAt method 2))
-  (define max-stack (slotAt method 3))
-  ;; (define temp-count (slotAt method 4))
-  (define defining-class (slotAt method 5))
-  (define method-source (slotAt method 6))
 
   (log-vm/jit-info
-   "Compiling ~v defined in ~v, to be run in ~v, arity ~a, literals ~a, bytecode ~a, text:\n----\n~a\n----"
+   "Compiling ~v defined in ~v, to be run in ~v (depth ~a), arity ~a, literals ~a, bytecode ~a, text:\n----\n~a\n----"
    (bv->string selector)
-   defining-class
+   (slotAt method 5)
    receiver-class
+   depth
    arity
    literals
-   (bytes->hex-string bytecode)
-   (bv->string method-source))
+   (bytes->hex-string (bv-bytes (slotAt method 1)))
+   (bv->string (slotAt method 6)))
 
-  (define litnames (for/vector [(i (slotCount literals))]
-                     (define lit (slotAt literals i))
-                     (if (bv? lit)
-                         (mksym "lit~a-~a" i (bv->string lit))
-                         (mksym "lit~a" i))))
+  (define litmap (compilation-result-litmap state))
+  (for [(lit (obj-slots literals))] (gen-lit* litmap lit))
+
   (define argnames (for/vector [(i arity)] (if (zero? i) 'self (mksym "arg~a" (- i 1)))))
-
-  (compilation compile-time-vm
+  (compilation depth
+               compile-time-vm
                receiver-class
                method
-               litnames
                argnames
                (make-hash)
-               0))
+               state))
+
+(define (top-compilation vm receiver-class method)
+  (compilation* 0 vm receiver-class method (compilation-result (make-hasheq) 0)))
+
+(define (inline-compilation c method)
+  (match-define (compilation depth vm receiver-class _method _argnames _labels state) c)
+  (compilation* (+ depth 1) vm receiver-class method state))
+
+(define (gen-lit* litmap lit)
+  (hash-ref! litmap lit (lambda ()
+                          (define n (hash-count litmap))
+                          (if (bv? lit)
+                              (mksym "lit~a-~a" n (bv->string lit))
+                              (mksym "lit~a" n)))))
 
 (define (gen-jump-to-label c ip stack)
   (define labels (compilation-labels c))
@@ -119,11 +127,38 @@
   `(case-lambda [() ,(gen-build-jit-context c ip stack)]
                 [(,result) ,(gen-jump-to-label c ip (cons result stack))]))
 
-(define (gen-send c class-exp selector-exp k-exp arg-exps)
-  (define pic-index (compilation-pic-count c))
-  (set-compilation-pic-count! c (+ pic-index 1))
+(define (gen-fresh-temps method)
+  (match (slotAt method 4)
+    [0 `'#()]
+    [temp-count `(make-vector ,temp-count NIL)]))
+
+(define (gen-send c class-exp name-bytes selector-exp k-exp arg-exps)
+  (define pic-index (compilation-result-pic-count (compilation-state c)))
+  (set-compilation-result-pic-count! (compilation-state c) (+ pic-index 1))
   (define m (mksym "pic~a" pic-index))
-  `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps))
+  (match class-exp
+    [`(obj-class* vm self) #:when (< (compilation-depth c) 2) ;; self send
+     (define receiver-class (compilation-receiver-class c))
+     (define method (lookup-method (compilation-vm c) receiver-class name-bytes))
+     (define defining-class (slotAt method 5))
+     (log-info "Self-send of ~a to class ~a" name-bytes receiver-class)
+     (define ic (inline-compilation c method))
+     (define body-code (gen-jump-to-label ic 0 '()))
+     (define litmap (compilation-result-litmap (compilation-state ic)))
+     (define inner-code
+       `(let ((k ,k-exp)
+              (method ,(gen-lit* litmap method))
+              (super ,(gen-lit* litmap (slotAt defining-class 1))))
+          (let ,(for/list [(formal (vector->list (compilation-argnames ic)))
+                           (actual (in-list arg-exps))]
+                  `(,formal ,actual))
+            (let ((outer-k k)
+                  (temporaries ,(gen-fresh-temps method)))
+              ,(gen-label-definitions ic body-code)))))
+     (log-vm-info "INLINED:\n~a" (pretty-format inner-code))
+     inner-code]
+    [_
+     `((lookup-message/jit vm ,m ,class-exp ,selector-exp) vm ,k-exp ,@arg-exps)]))
 
 (define (gen-block c argument-location ip)
   (define temp-count (slotAt (compilation-method c) 4))
@@ -137,10 +172,13 @@
                  ,(loop (+ i 1))))))
      ,(gen-code c ip '())))
 
+(define (compilation-litname c literal)
+  (hash-ref (compilation-result-litmap (compilation-state c)) literal))
+
 (define (gen-code c ip stack)
-  (define bytecode (bv-bytes (slotAt (compilation-method c) 1)))
-  (define litnames (compilation-litnames c))
-  (define argnames (compilation-argnames c))
+  (define method (compilation-method c))
+  (define bytecode (bv-bytes (slotAt method 1)))
+  (define literals (slotAt method 2))
   (let translate ((ip ip) (stack stack))
     (define (next-byte!)
       (begin0 (bytes-ref bytecode ip)
@@ -158,10 +196,11 @@
     (match opcode
       [1 (let@ [n (mksym "slot~a_" arg) `(slotAt self ,arg)]
                (translate ip (cons n stack)))]
-      [2 (translate ip (cons (vector-ref argnames arg) stack))]
+      [2 (translate ip (cons (vector-ref (compilation-argnames c) arg) stack))]
       [3 (let@ [n (mksym "tmp~a_" arg) `(vector-ref temporaries ,arg)]
                (translate ip (cons n stack)))]
-      [4 (translate ip (cons (vector-ref litnames arg) stack))]
+      [4 (let ((name (compilation-litname c (slotAt literals arg))))
+           (translate ip (cons name stack)))]
       [5 (match arg
            [(or 0 1 2 3 4 5 6 7 8 9) (translate ip (cons arg stack))]
            [10 (translate ip (cons `NIL stack))]
@@ -179,7 +218,9 @@
                [(15 11)
                 (values (next-byte!) `super)]))
            (define k (gen-send-k c ip stack))
-           (gen-send c class-exp (vector-ref litnames selector-literal-index) k args))]
+           (define selector (slotAt literals selector-literal-index))
+           (define selector-exp (compilation-litname c selector))
+           (gen-send c class-exp (bv-bytes selector) selector-exp k args))]
       ;; 9 inlined in the processing of bytecode 8
       [10 (match arg
             [0 (let@ [isNil `(boolean->obj vm (eq? NIL ,(car stack)))]
@@ -194,11 +235,13 @@
                            [0 `(,binop-k (boolean->obj vm (< ,i ,j)))]
                            [1 `(,binop-k (boolean->obj vm (<= ,i ,j)))]
                            [2 `(,binop-k (+ ,i ,j))])
-                        ,(gen-send c
-                                   `(obj-class* vm ,i)
-                                   `(mkbv NIL ,(match arg [0 #"<"] [1 #"<="] [2 #"+"]))
-                                   binop-k
-                                   (list i j))))])]
+                        ,(let ((name-bytes (match arg [0 #"<"] [1 #"<="] [2 #"+"])))
+                           (gen-send c
+                                     `(obj-class* vm ,i)
+                                     name-bytes
+                                     `(mkbv NIL ,name-bytes)
+                                     binop-k
+                                     (list i j)))))])]
       [12 (let ((target (next-byte!)))
             (let@ [block `(mkffiv BLOCK ,(gen-block c arg ip))]
                   (translate target (cons block stack))))]
@@ -261,12 +304,14 @@
      ,body-exp))
 
 (define (finish-compilation c compile-time-vm inner-code)
+  (define litmap-list (hash->list (compilation-result-litmap (compilation-state c))))
   (define code
-    `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(vector->list (compilation-litnames c)))
-       ,@(for/list [(i (compilation-pic-count c))] `(define ,(mksym "pic~a" i) (pic)))
+    `(lambda (method super NIL TRUE FALSE ARRAY BLOCK ,@(map cdr litmap-list))
+       ,@(for/list [(i (compilation-result-pic-count (compilation-state c)))]
+           `(define ,(mksym "pic~a" i) (pic)))
        ,inner-code))
 
-  (log-vm/jit-debug "Resulting code:\n~a" (pretty-format code))
+  (log-vm/jit-info "Resulting code:\n~a" (pretty-format code))
   (define literals (slotAt (compilation-method c) 2))
   (define defining-class (slotAt (compilation-method c) 5))
   (apply (eval code ns)
@@ -277,7 +322,7 @@
          (VM-false compile-time-vm)
          (VM-Array compile-time-vm)
          (VM-Block compile-time-vm)
-         (vector->list (obj-slots literals))))
+         (map car litmap-list)))
 
 (define (compile-block-proc compile-time-vm
                             method
@@ -286,7 +331,7 @@
                             argument-location
                             initial-ip)
   (define class (obj-class* compile-time-vm (car outer-args)))
-  (define c (new-compilation compile-time-vm class method))
+  (define c (top-compilation compile-time-vm class method))
   (define body-code (gen-block c argument-location initial-ip)) ;; imperative!
   (define inner-code
     `(lambda (temporaries ,@(vector->list (compilation-argnames c)))
@@ -297,13 +342,12 @@
          outer-args))
 
 (define (compile-method-proc compile-time-vm class method)
-  (define c (new-compilation compile-time-vm class method))
+  (define c (top-compilation compile-time-vm class method))
   (define body-code (gen-jump-to-label c 0 '())) ;; imperative!
-  (define temp-count (slotAt method 4))
   (define inner-code
     `(lambda (vm k ,@(vector->list (compilation-argnames c)))
        (let ((outer-k k)
-             (temporaries ,(if (zero? temp-count) `'#() `(make-vector ,temp-count NIL))))
+             (temporaries ,(gen-fresh-temps method)))
          ,(gen-label-definitions c body-code))))
   (finish-compilation c compile-time-vm inner-code))
 
