@@ -365,7 +365,7 @@
     (if (eq? this-class class)
         (vector-ref pic (+ (* slot-index 2) 1))
         (let* ((next-slot-index (+ slot-index 1))
-               (more-slots-to-check? (< next-slot-index pic-entry-count)))
+               (more-slots-to-check? (and this-class (< next-slot-index pic-entry-count))))
           (if more-slots-to-check?
               (search-pic next-slot-index)
               (let ((method (lookup-method/cache vm class (bv-bytes selector))))
