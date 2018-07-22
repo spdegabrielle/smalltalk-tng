@@ -11,6 +11,9 @@
          ;;
          vm-block-callback
          smalltalk-frame%
+         oneshot
+         oneshot-set!
+         oneshot-ref
          log-vm/gui-debug
          log-vm/gui-info
          log-vm/gui-warning
