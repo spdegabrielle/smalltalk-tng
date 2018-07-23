@@ -12,6 +12,7 @@
 (define-logger vm/jit)
 (define-logger vm/jit/code)
 (define-logger vm/jit/recompile)
+(define-logger vm/jit/recompile/candidates)
 
 (define pic-reserved 0)
 (define pic-entry-count 3)
@@ -171,9 +172,9 @@
     [0 `'#()]
     [temp-count `(make-vector ,temp-count NIL)]))
 
-(define (inlineable-self-send? method)
+(define (bytecode-exceeding? method limit)
   (define bytecode (bv-bytes (slotAt method 1)))
-  (<= (bytes-length bytecode) 32))
+  (> (bytes-length bytecode) limit))
 
 (define (compilation-context c ip)
   (if (not c)
@@ -211,7 +212,7 @@
          (let ((outer-k k)
                (temporaries ,(gen-fresh-temps method)))
            ,(gen-label-definitions ic body-code)))))
-  (log-vm/jit/code-debug "INLINED:\n~a" (pretty-format inner-code))
+  ;; (log-vm/jit/code-debug "INLINED:\n~a" (pretty-format inner-code))
   inner-code)
 
 (define (analyse-pic c pic)
@@ -236,7 +237,7 @@
     [(and (equal? class-exp `(obj-class* vm self)) ;; self send
           (< (compilation-depth c) 2)
           method
-          (inlineable-self-send? method))
+          (not (bytecode-exceeding? method 32)))
      (gen-inline-send c send-ip receiver-class method k-exp arg-exps)]
     [else
      (define old-picmap (compilation-result-old-picmap (compilation-state c)))
@@ -256,7 +257,8 @@
               `(if (eq? actual-class ,(gen-lit* litmap predicted-class))
                    (begin
                      (pic-bump! ,pic-m ,counter)
-                     ,(if (already-compiling? c predicted-class predicted-bmethod)
+                     ,(if (or (already-compiling? c predicted-class predicted-bmethod)
+                              (bytecode-exceeding? predicted-bmethod 40))
                           `((unwrap-cached-method vm ,(gen-lit* litmap predicted-cm))
                             vm k-send ,@arg-exps)
                           (gen-inline-send c send-ip predicted-class predicted-bmethod 'k-send arg-exps)))
@@ -360,6 +362,8 @@
                      (translate ip (cons notNil (cdr stack))))])]
       [11 (match stack
             [(list* j i stack)
+             ;; TODO: Remove special-casing of these sends. REQUIRES
+             ;; IMAGE CHANGES, particularly in `addToSmallInt:`.
              (let@ [binop-k (gen-send-k c ip stack)]
                    `(if (and (number? ,i) (number? ,j))
                         ,(match arg
@@ -500,19 +504,20 @@
             (define receiver (slotAt (slotAt ctx 1) 0))
             (define receiver-class (obj-class* vm receiver))
             (define next-ctx (slotAt ctx 6))
-            (log-vm/jit/recompile-debug "  ~a" (method-name method receiver-class))
+            (log-vm/jit/recompile/candidates-debug "  ~a" (method-name method receiver-class))
             (define cached-method (bytecode->cached-compiled vm receiver-class method))
             (define compiled-method (unwrap-cached-method vm cached-method))
             (cond
               [(not compiled-method) (search next-ctx candidate candidate-class candidate-hotness)]
               [else
                (match-define (compiled-method-info bytecode-method pics stable?) (compiled-method))
-               (log-vm/jit/recompile-debug "    has ~a bytes of bytecode; ~a; ~a"
-                                           (bytes-length (bv-bytes (slotAt bytecode-method 1)))
-                                           (if (has-blocks? bytecode-method)
-                                               "HAS SOME BLOCKS"
-                                               "no blocks")
-                                           (if stable? "stable" "not yet stable"))
+               (log-vm/jit/recompile/candidates-debug
+                "    has ~a bytes of bytecode; ~a; ~a"
+                (bytes-length (bv-bytes (slotAt bytecode-method 1)))
+                (if (has-blocks? bytecode-method)
+                    "HAS SOME BLOCKS"
+                    "no blocks")
+                (if stable? "stable" "not yet stable"))
                (define (pic-entry-has-any-calls? entry)
                  (define pic (cdr entry))
                  (for/or [(i (in-range (pic-size pic)))] (positive? (pic@ pic i 2))))
@@ -530,7 +535,7 @@
                         (define slot-count (pic@ pic i 2))
                         (define bytecode-count (bytes-length (bv-bytes (slotAt slot-bmethod 1))))
                         (define weight (/ 40.0 bytecode-count))
-                        (log-vm/jit/recompile-debug
+                        (log-vm/jit/recompile/candidates-debug
                          "      ~a context ~a class ~a count ~a length ~a weight ~a"
                          (pic-info-name-bytes pi)
                          (pic-info-context pi)
@@ -538,8 +543,10 @@
                          slot-count
                          bytecode-count
                          weight)
-                        (* slot-count weight)]))))
-               (log-vm/jit/recompile-debug "    hotness: ~a" hotness)
+                        (if (< weight 1)
+                            0
+                            (* slot-count weight))]))))
+               (log-vm/jit/recompile/candidates-debug "    hotness: ~a" hotness)
                (if (and (> hotness candidate-hotness) (not stable?))
                    (search next-ctx method receiver-class hotness)
                    (search next-ctx candidate candidate-class candidate-hotness))])])))
@@ -686,7 +693,7 @@
 
 ;;===========================================================================
 
-(pretty-print-columns 132)
+(pretty-print-columns 230)
 (let* ((image-filename "SmallWorld/src/image")
        (vm (call-with-input-file image-filename
              (lambda (fh)
