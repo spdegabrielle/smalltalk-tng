@@ -51,7 +51,7 @@
 
 (struct cached-method (class name-bytes [bytecode-method #:mutable] [proc #:mutable]))
 
-(define (build-jit-context vm previous-context args method ip stack-top temporaries stack)
+(define (build-jit-context vm previous-context args method ip temporaries stack)
   ;; TODO: build block contexts instead of just pretending everything is a method...
   (define max-stack (slotAt method 3))
   (mkobj (VM-Context vm)
@@ -61,7 +61,7 @@
          (obj (VM-Array vm) (vector-append stack (make-vector (- max-stack (vector-length stack))
                                                               (VM-nil vm))))
          ip
-         stack-top
+         (vector-length stack)
          previous-context))
 
 (define (selector-string-arity str)
@@ -155,7 +155,6 @@
                       (vector ,@(vector->list (compilation-argnames c)))
                       method
                       ,ip
-                      ,(length stack)
                       temporaries
                       (vector ,@(reverse stack))))
 
