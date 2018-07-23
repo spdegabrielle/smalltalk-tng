@@ -165,7 +165,7 @@
 (define (gen-send-k c ip stack)
   (define result (gensym 'result))
   `(case-lambda [() ,(gen-build-jit-context c ip stack)]
-                [(,result) ,(gen-jump-to-label c ip (cons result stack))]))
+                [(,result) ,(gen-code c ip (cons result stack))]))
 
 (define (gen-fresh-temps method)
   (match (slotAt method 4)
