@@ -31,6 +31,9 @@
 (define empty-pic-extension (for/list [(i (in-range pic-entry-count))] '(#f #f)))
 (define (pic@ pic index offset) (vector-ref pic (+ pic-reserved offset (* index 3))))
 (define (pic@! pic index offset v) (vector-set! pic (+ pic-reserved offset (* index 3)) v))
+(define (pic-bump! pic index)
+  (define o (+ pic-reserved 2 (* index 3)))
+  (vector-set! pic o (+ 1 (vector-ref pic o))))
 
 (struct jit-VM VM (cache image-filename)
   #:methods gen:vm-callback
@@ -252,7 +255,7 @@
               (define predicted-bmethod (cached-method-bytecode-method predicted-cm))
               `(if (eq? actual-class ,(gen-lit* litmap predicted-class))
                    (begin
-                     (pic@! ,pic-m ,counter 2 (+ 1 (pic@ ,pic-m ,counter 2)))
+                     (pic-bump! ,pic-m ,counter)
                      ,(if (already-compiling? c predicted-class predicted-bmethod)
                           `((unwrap-cached-method vm ,(gen-lit* litmap predicted-cm))
                             vm k-send ,@arg-exps)
@@ -630,7 +633,7 @@
   (let search-pic ((slot-index 0))
     (define this-class (pic@ pic slot-index 0))
     (if (eq? this-class class)
-        (begin (pic@! pic slot-index 2 (+ 1 (pic@ pic slot-index 2)))
+        (begin (pic-bump! pic slot-index)
                (or (unwrap-cached-method vm (pic@ pic slot-index 1))
                    (send-dnu class selector)))
         (let* ((next-slot-index (+ slot-index 1))
