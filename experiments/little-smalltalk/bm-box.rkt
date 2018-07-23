@@ -10,6 +10,8 @@
 
 (define epoch 0)
 
+(struct quasi-box ([contents #:mutable]))
+
 (define (main)
   (define N 50000000)
 
@@ -40,6 +42,14 @@
   ;; (printf "by-embedding\n")
   ;; (for [(i 5)] (time (by-embedding)))
   ;; (newline)
+
+  (define (by-unboxing-via-struct)
+    (define f (eval '(quasi-box (lambda (x) (+ x 1))) ns))
+    (for/fold [(x 0)] [(n (in-range N))] ((quasi-box-contents f) x)))
+
+  (printf "by-unboxing-via-struct\n")
+  (for [(i 5)] (time (by-unboxing-via-struct)))
+  (newline)
 
   (define (by-unboxing-with-check)
     (define f (eval `(letrec ((b (box (lambda (x)
