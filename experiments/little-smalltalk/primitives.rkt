@@ -84,11 +84,12 @@
 (define-primitive vm [7 class count]
   (obj class (make-vector count (VM-nil vm))))
 
-(define-primitive vm [10 b a] (+ a b)) ;; TODO: overflow
+(define-primitive vm [10 a b] (+ a b)) ;; TODO: overflow
 (define-primitive vm [11 n d] (quotient n d))
 (define-primitive vm [12 n d] (modulo n d))
-(define-primitive vm [14 b a] (boolean->obj vm (= a b)))
-(define-primitive vm [15 b a] (* a b))
+(define-primitive vm [13 a b] (boolean->obj vm (< a b)))
+(define-primitive vm [14 a b] (boolean->obj vm (= a b)))
+(define-primitive vm [15 a b] (* a b))
 (define-primitive vm [16 a b] (- a b)) ;; NB. ordering
 
 (define-primitive vm [18 v] (log-vm-info "DEBUG: value ~v class ~v" v (obj-class* vm v)))
