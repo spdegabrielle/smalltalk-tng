@@ -518,12 +518,8 @@
                     "HAS SOME BLOCKS"
                     "no blocks")
                 (if stable? "stable" "not yet stable"))
-               (define (pic-entry-has-any-calls? entry)
-                 (define pic (cdr entry))
-                 (for/or [(i (in-range (pic-size pic)))] (positive? (pic@ pic i 2))))
-               (define used-pics (filter pic-entry-has-any-calls? pics))
                (define hotness
-                 (for/sum [(entry used-pics)]
+                 (for/sum [(entry pics)]
                    (match-define (cons pi pic) entry)
                    (for/sum [(i (in-range (pic-size pic)))]
                      (match (pic@ pic i 0)
