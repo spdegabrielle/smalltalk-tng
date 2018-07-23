@@ -571,7 +571,7 @@
   (define-values (candidate candidate-class) (recompilation-candidate vm ctx))
   (if candidate
       (recompile-method! vm candidate-class candidate)
-      (log-vm/jit/recompile-info "No recompilation candidate available?")))
+      (log-vm/jit/recompile-debug "No recompilation candidate available?")))
 
 (define (compile-method-proc compile-time-vm class method old-picmap)
   (define c (top-compilation compile-time-vm class method old-picmap))
@@ -600,7 +600,7 @@
           (set! call-counter (+ call-counter 1))
           ;; TODO: aging of call-counter by right-shifting at most once every few seconds, or so
           (when (= call-counter 1000)
-            (log-vm/jit/recompile-info "Method ~a is hot" ,(method-name method class))
+            (log-vm/jit/recompile-debug "Method ~a is hot" ,(method-name method class))
             (recompile-something vm (k))
             ;; (set! call-counter 0)
             )
