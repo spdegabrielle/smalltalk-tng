@@ -429,8 +429,7 @@
                 arg)])))
 
 (define (gen-label-definitions c body-exp)
-  `(letrec (,@(for/list [(entry (in-list (sort (hash->list (compilation-labels c)) < #:key car)))]
-                (match-define (cons ip label) entry)
+  `(letrec (,@(for/list [((ip label) (in-hash (compilation-labels c)))]
                 `(,(mksym "label~a" ip) ,label)))
      ,body-exp))
 
