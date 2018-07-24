@@ -25,6 +25,7 @@
 
          bv->string
          obj-class-name
+         method-name
          search-class-method-dictionary
          lookup-method
 
@@ -97,6 +98,13 @@
            (bv? (slotAt c 0)))
       (bv-bytes (slotAt c 0))
       #"???"))
+
+(define (method-name method [class #f])
+  (if class
+      (format "~a >> ~a"
+              (bv->string (slotAt class 0))
+              (bv->string (slotAt method 0)))
+      (bv->string (slotAt method 0))))
 
 (define (search-class-method-dictionary c name-bytes)
   (define methods (slotAt c 2))
