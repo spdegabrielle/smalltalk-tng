@@ -194,6 +194,10 @@
                               (compilation-method-name c))
   m)
 
+;; TODO: record dependency links properly, so that if a method is
+;; changed, inlined copies of the old version of the method are
+;; discarded.
+
 (define (gen-inline-send c c-ip class method k-exp arg-exps)
   (log-vm/jit/code-info "Inlining send of ~a into method ~a"
                         (method-name method class)
