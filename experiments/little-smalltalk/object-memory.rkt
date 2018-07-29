@@ -31,6 +31,7 @@
 
          read-image
          serialize-image
+         save-image-to-file
 
          boot-image)
 
@@ -229,6 +230,10 @@
       (loop)))
 
   (bytes-append* (reverse output-rev)))
+
+(define (save-image-to-file vm filename)
+  (let ((image-bytes (serialize-image vm)))
+    (display-to-file image-bytes filename #:exists 'replace)))
 
 (define (boot-image vm evaluator files-to-file-in)
   (define (doIt task)

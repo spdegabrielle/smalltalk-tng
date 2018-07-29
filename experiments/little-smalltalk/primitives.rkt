@@ -105,6 +105,8 @@
         [(bytes=? a b) 0]
         [(bytes>? a b) 1]))
 
+(define-primitive vm [29 filename] (save-image-to-file vm (bv->string filename)))
+
 (define-primitive vm [30 source index] (slotAt source (- index 1)))
 (define-primitive vm [31 v o] (obj (obj-class o) (vector-append (obj-slots o) (vector v))))
 

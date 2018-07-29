@@ -252,9 +252,7 @@
 (define-primitive vm [6 inner-ctx] ;; "new context execute"
   (execute vm inner-ctx))
 
-(define-primitive vm [116]
-  (let ((image-bytes (serialize-image vm)))
-    (display-to-file image-bytes (int-VM-image-filename vm) #:exists 'replace)))
+(define-primitive vm [116] (save-image-to-file vm (int-VM-image-filename vm)))
 
 ;;===========================================================================
 

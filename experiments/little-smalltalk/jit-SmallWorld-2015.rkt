@@ -664,9 +664,7 @@
   (define f (compile-method-proc vm (obj-class* vm (slotAt args 0)) (slotAt inner-ctx 0) #f))
   (apply f vm (outermost-k vm) (vector->list (obj-slots args))))
 
-(define-primitive vm [116]
-  (let ((image-bytes (serialize-image vm)))
-    (display-to-file image-bytes (jit-VM-image-filename vm) #:exists 'replace)))
+(define-primitive vm [116] (save-image-to-file vm (jit-VM-image-filename vm)))
 
 ;;===========================================================================
 ;; Entry point

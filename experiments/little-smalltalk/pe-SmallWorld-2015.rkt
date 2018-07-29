@@ -22,7 +22,7 @@
 ;;===========================================================================
 ;; Structures
 
-(struct jit-VM VM (cache image-filename)
+(struct pe-VM VM (cache image-filename)
   #:methods gen:vm-callback
   [(define (vm-block-callback vm action)
      ;; Runs action in a new thread
@@ -37,15 +37,9 @@
 ;; contexts at runtime describing a method activation, the JIT builds
 ;; contexts at compile time describing a method activation.
 ;;
-;; A complication is that, thanks to inlining, our contexts take two
-;; forms: "outer" and "inner", representing a regular entry point
-;; (with a statically unknown calling context) and an inlined entry
-;; point (with statically known context) to a method, respectively.
-;;
-;; Each outer context includes registers shared among all its inner
-;; contexts as well as registers particular to itself. Inner contexts
-;; know their outer context as well as their immediate calling
-;; context; sometimes these are one and the same.
+;; Each context includes accumulator registers shared among all
+;; contexts inlined into the top-level method being compiled, as well
+;; as registers particular to itself.
 ;;
 ;; Runtime contexts include these registers:
 ;;   - method, the bytecoded method being interpreted
@@ -60,7 +54,7 @@
 ;; everywhere that a runtime context refers to a value, our
 ;; compile-time contexts will refer to an abstract value instead.
 ;;
-;; Both outer and inner contexts will include common fields:
+;; Each context includes:
 ;;   - vm, the compile-time vm
 ;;   - method, a concrete value
 ;;   - arguments, a Racket vector of abstract-values
@@ -68,9 +62,11 @@
 ;;   - stack, a Racket list of abstract-values; car = top of stack
 ;;   - ip, a Racket number
 ;;   - labels, a hashtable of code fragments roughly corresponding to basic blocks
-;;   - home, #f or the home context of a block
+;;   - previous, the next context in the chain
+;;   - home, #f for non-blocks, otherwise the home context of a block
+;;   - state, accumulator registers
 ;;
-;; Outer contexts will include these fields alongside the common fields:
+;; The accumulator registers are:
 ;;   - litmap, a Racket mutable hash table mapping actual runtime
 ;;     values to compile-time variable names (symbols)
 ;;   - pic-list-rev, a Racket list of symbols naming PICs in the
@@ -80,18 +76,13 @@
 ;;   - histories, a Racket parameter holding a list of lists of
 ;;     `definition` structures
 ;;
-;; Inner contexts will include these fields alongside the common fields:
-;;   - previous, either an inner or an outer context (TODO: or #f ??)
-;;   - outer, the outermost context for this compilation
-;;
-(struct Ctx (vm method arguments temporaries stack ip labels home detail) #:transparent
+(struct DynamicCtx (var) #:transparent)
+(struct Ctx (vm method arguments temporaries stack ip labels previous home state) #:transparent
   #:methods gen:custom-write
   [(define (write-proc c port mode)
      (fprintf port "#<~a>" (format-Ctx c)))])
-(struct DynamicCtx (var) #:transparent)
 
-(struct OuterCtx (litmap [pic-list-rev #:mutable] old-picmap histories) #:transparent)
-(struct InnerCtx (previous outer) #:transparent)
+(struct State (litmap [pic-list-rev #:mutable] old-picmap histories) #:transparent)
 
 (struct compiled-method-info (bytecode-method pics stable?))
 
@@ -151,7 +142,7 @@
 ;; Method cache; relationship between bytecoded and compiled methods
 
 (define (lookup-method/cache vm class name-bytes)
-  (define class-cache (hash-ref! (jit-VM-cache vm) class make-weak-hash))
+  (define class-cache (hash-ref! (pe-VM-cache vm) class make-weak-hash))
   (hash-ref! class-cache
              name-bytes
              (lambda () (cached-method class name-bytes #f #f))))
@@ -210,7 +201,7 @@
 ;;===========================================================================
 ;; Compilation State
 
-(define (top-compilation vm receiver-class method old-picmap)
+(define (top-compilation vm receiver-class method old-picmap top-k)
   (define litmap (make-hasheq))
   (Ctx-log 'top-compilation
            (Ctx vm
@@ -223,11 +214,12 @@
                 '()
                 0
                 (make-hash)
+                (DynamicCtx top-k)
                 #f
-                (OuterCtx litmap
-                          '()
-                          old-picmap
-                          (make-parameter '())))))
+                (State litmap
+                       '()
+                       old-picmap
+                       (make-parameter '())))))
 
 (define (selector-string-arity str)
   (define colon-count (for/sum [(c str)] (if (eqv? c #\:) 1 0)))
@@ -238,42 +230,34 @@
 (define (mksym fmt . args) (string->symbol (apply format fmt args)))
 
 (define (Ctx-log who c)
-  (log-vm/jit/code-info "~a ~a defined in ~v (depth ~a)"
-                        who
-                        (Ctx-name c)
-                        (slotAt (Ctx-method c) 5)
-                        (Ctx-depth c))
-  (log-vm/jit/code-info "  bytecode: ~a\n----\n~a\n----"
-                        (bytes->hex-string (bv-bytes (slotAt (Ctx-method c) 1)))
-                        (bv->string (slotAt (Ctx-method c) 6)))
+  (log-vm/jit/code-debug "~a ~a ~adefined in ~v (depth ~a)"
+                         who
+                         (Ctx-name c)
+                         (if (Ctx-home c) "(BLOCK) " "")
+                         (slotAt (Ctx-method c) 5)
+                         (Ctx-depth c))
+  (log-vm/jit/code-debug "  bytecode: ~a\n----\n~a\n----"
+                         (bytes->hex-string (bv-bytes (slotAt (Ctx-method c) 1)))
+                         (bv->string (slotAt (Ctx-method c) 6)))
   c)
 
-(define (Ctx-outer c)
-  (define d (Ctx-detail c))
-  (if (OuterCtx? d)
-      d
-      (InnerCtx-outer d)))
-
-(define (inline-compilation previous method actual-avs temporaries ip home)
+(define (inline-compilation vm method actual-avs temporaries ip previous home state)
   (Ctx-log 'inline-compilation
-           (Ctx (Ctx-vm previous)
+           (Ctx vm
                 method
                 actual-avs
                 (or temporaries (gensym (format "temps~a" (method-name method))))
                 '()
                 ip
                 (make-hash)
+                previous
                 home
-                (InnerCtx previous
-                          (Ctx-outer previous)))))
-
-(define (Ctx-previous c)
-  (define d (Ctx-detail c))
-  (and (InnerCtx? d) (InnerCtx-previous d)))
+                state)))
 
 (define (Ctx-depth c)
-  (+ 1 (cond [(Ctx-previous c) => Ctx-depth]
-             [else 0])))
+  (if (DynamicCtx? c)
+      0
+      (+ 1 (Ctx-depth (Ctx-previous c)))))
 
 (define (Ctx-arg c n)
   (vector-ref (Ctx-arguments c) n))
@@ -289,9 +273,9 @@
 
 (define (already-compiling? c class method)
   (let check ((c c))
-    (cond [(and (eq? (Ctx-receiver-class c) class) (eq? (Ctx-method c) method)) #t]
-          [(Ctx-previous c) => check]
-          [else #f])))
+    (cond [(DynamicCtx? c) #f]
+          [(and (eq? (Ctx-receiver-class c) class) (eq? (Ctx-method c) method)) #t]
+          [else (check (Ctx-previous c))])))
 
 (define (gen-lit* litmap lit)
   (if (number? lit)
@@ -308,7 +292,7 @@
   (AbsVal (gen-lit* litmap lit) (Constant lit)))
 
 (define (Ctx-litmap c)
-  (OuterCtx-litmap (Ctx-outer c)))
+  (State-litmap (Ctx-state c)))
 
 (define (Ctx-lit c literal)
   (gen-lit (Ctx-litmap c) literal))
@@ -331,9 +315,10 @@
 (define (format-Ctx c)
   (string-join (reverse
                 (let pieces ((c c))
-                  (cons (format "~a @~a" (Ctx-name c) (Ctx-ip c))
-                        (cond [(Ctx-previous c) => pieces]
-                              [else '()]))))
+                  (if (DynamicCtx? c)
+                      '()
+                      (cons (format "~a @~a" (Ctx-name c) (Ctx-ip c))
+                            (pieces (Ctx-previous c))))))
                ","
                #:before-first "["
                #:after-last "]"))
@@ -342,12 +327,16 @@
 ;; Compilation and code generation
 
 (define (compile-method-proc compile-time-vm class method old-picmap)
-  (define c (top-compilation compile-time-vm class method old-picmap))
+  (define top-k (gensym 'top-k))
+  (define c (top-compilation compile-time-vm class method old-picmap top-k))
   (define body-code (gen-code c)) ;; imperative!
-  (define pic-infos (reverse (OuterCtx-pic-list-rev (Ctx-outer c))))
+  (define pic-infos (reverse (State-pic-list-rev (Ctx-state c))))
   (define pic-infos-exp (gen-lit* (Ctx-litmap c) pic-infos))
   (define stable? (equal? (if old-picmap (list->set (hash-keys old-picmap)) 'unknown)
-                          (list->set (map car pic-infos)))) ;; TODO too fine
+                          (list->set (map car pic-infos))))
+  (log-vm/jit/recompile-debug "Evaluating stability of ~a:" (Ctx-name c))
+  (log-vm/jit/recompile-debug "  old-picmap --> ~a" (if old-picmap (list->set (hash-keys old-picmap)) 'unknown))
+  (log-vm/jit/recompile-debug "  pic-infos  --> ~a" (list->set (map car pic-infos)))
   (when stable?
     (log-vm/jit/recompile-info "Compilation of ~a is now stable." (method-name method class)))
   (define inner-code
@@ -358,19 +347,19 @@
           (when (not cmi)
             (set! cmi
                   (compiled-method-info
-                   method
+                   ,(AbsVal-expr (Ctx-lit c method))
                    ,pic-infos-exp
                    ,stable?)))
           cmi]
-         [(k ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
-          (log-vm/jit-debug "Entering ~a with ~a"
-                            ,(method-name method class)
-                            (list ,@(map AbsVal-expr (vector->list (Ctx-arguments c)))))
+         [(,top-k ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
+          ;; (log-vm/jit-debug "Entering ~a with ~a"
+          ;;                   ,(method-name method class)
+          ;;                   (list ,@(map AbsVal-expr (vector->list (Ctx-arguments c)))))
           (set! call-counter (+ call-counter 1))
           ;; TODO: aging of call-counter by right-shifting at most once every few seconds, or so
           (when (= call-counter 1000)
             (log-vm/jit/recompile-debug "Method ~a is hot" ,(method-name method class))
-            (recompile-something vm (k))
+            (recompile-something vm (,top-k))
             ;; (set! call-counter 0)
             )
           ,(gen-fresh-temps c (gen-label-definitions c body-code))])))
@@ -378,13 +367,9 @@
 
 (define (finish-compilation c vm inner-code)
   (define litmap-list (hash->list (Ctx-litmap c)))
-  (define code
-    `(lambda (vm ,@(map cdr litmap-list))
-       ,inner-code))
+  (define code `(lambda (vm ,@(map cdr litmap-list)) ,inner-code))
   (log-vm/jit/code-debug "Resulting code for ~a:\n~a" (Ctx-name c) (pretty-format code))
-  (apply (eval code ns)
-         vm
-         (map car litmap-list)))
+  (apply (eval code ns) vm (map car litmap-list)))
 
 ;; (define (compile-block-proc compile-time-vm
 ;;                             method
@@ -416,14 +401,15 @@
     ))
 
 (define (gen-build-jit-context c)
-  `(build-jit-context vm
-                      ,(cond [(Ctx-previous c) => gen-build-jit-context]
-                             [else `k])
-                      (vector ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
-                      ,(AbsVal-expr (Ctx-lit c (Ctx-method c)))
-                      ,(Ctx-ip c)
-                      ,(Ctx-temporaries c)
-                      (vector ,@(map AbsVal-expr (reverse (Ctx-stack c))))))
+  (if (DynamicCtx? c)
+      `(,(DynamicCtx-var c))
+      `(build-jit-context vm
+                          ,(gen-build-jit-context (Ctx-previous c))
+                          (vector ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
+                          ,(AbsVal-expr (Ctx-lit c (Ctx-method c)))
+                          ,(Ctx-ip c)
+                          ,(Ctx-temporaries c)
+                          (vector ,@(map AbsVal-expr (reverse (Ctx-stack c)))))))
 
 (define (gen-fresh-temps c body-code)
   `(let ((,(Ctx-temporaries c)
@@ -441,12 +427,12 @@
                          limit)
   (> (bytes-length bytecode) limit))
 
-(define (gen-pic c extension)
+(define (gen-pic c name-bytes extension)
   (define p (if (null? extension)
                 (pic)
                 (apply extended-pic
                        (flatten (take (append extension empty-pic-extension) pic-entry-count)))))
-  (set-OuterCtx-pic-list-rev! (Ctx-outer c) (cons (cons c p) (OuterCtx-pic-list-rev (Ctx-outer c))))
+  (set-State-pic-list-rev! (Ctx-state c) (cons (list c name-bytes p) (State-pic-list-rev (Ctx-state c))))
   (gen-lit* (Ctx-litmap c) p))
 
 ;; TODO: record dependency links properly, so that if a method is
@@ -454,16 +440,20 @@
 ;; discarded.
 
 (define (gen-inline-send kc method arg-avs)
-  (define ic (inline-compilation kc method (list->vector arg-avs) #f 0 kc))
-  (log-vm/jit/code-info "Inlining send of ~a into method ~a" (Ctx-name ic) (Ctx-name kc))
+  (define ic
+    (inline-compilation (Ctx-vm kc) method (list->vector arg-avs) #f 0 kc #f (Ctx-state kc)))
+  (log-vm/jit/code-debug "Inlining send of ~a into method ~a" (Ctx-name ic) (Ctx-name kc))
   (define body-code
     `(begin
-       (log-vm/jit/code-debug "Entering inlined send of ~a returning to ~a with ~a"
-                              ,(method-name method)
-                              ,(format-Ctx kc)
-                              (list ,@(map AbsVal-expr arg-avs)))
+       ;; (log-vm/jit/code-debug "Entering inlined send of ~a returning to ~a with ~a"
+       ;;                        ,(method-name method)
+       ;;                        ,(format-Ctx kc)
+       ;;                        (list ,@(map AbsVal-expr arg-avs)))
        ,(gen-fresh-temps ic (gen-label-definitions ic (gen-code ic)))))
-  ;; (log-vm/jit/code-debug "INLINED:\n~a" (pretty-format body-code))
+  (log-vm/jit/code-debug "INLINED for send of ~a into method ~a:\n~a"
+                         (Ctx-name ic)
+                         (Ctx-name kc)
+                         (pretty-format body-code))
   body-code)
 
 (define (analyse-pic c pic)
@@ -477,21 +467,34 @@
 (define (tiny-method? bmethod) (not (bytecode-exceeding? bmethod 32)))
 (define (small-method? bmethod) (not (bytecode-exceeding? bmethod 40)))
 
+(define (remaining-basic-block-size-tiny? c)
+  (define method (Ctx-method c))
+  (define bytecode (bv-bytes (slotAt method 1)))
+  (define ip (Ctx-ip c))
+  (define remaining-bytes (- (bytes-length bytecode) ip)) ;; TODO: actually figure this out properly
+  (log-vm/jit-debug "Evaluating continuation size: ~a bytes left in ~a" remaining-bytes c)
+  (not (> remaining-bytes 6)))
+
 (define (Ctx->expr c)
-  (if c
-      (let ((result (gensym 'answer)))
+  (if (DynamicCtx? c)
+      (DynamicCtx-var c)
+      (let ((ans (gensym 'answer)))
         `(case-lambda [() ,(gen-build-jit-context c)]
-                      [(,result)
-                       (log-vm/jit-debug "Continuing ~a with ~a" ,(format-Ctx c) ,result)
-                       ,(truncate-histories c (gen-code (Ctx-push c (AbsVal result (Unknown)))))]))
-      `k))
+                      [(,ans)
+                       ;; (log-vm/jit-debug "Continuing ~a with ~a" ,(format-Ctx c) ,ans)
+                       ,(truncate-histories c (gen-continuation (Ctx-push c (AbsVal ans (Unknown)))))]))))
+
+(define (gen-continuation c)
+  (if (remaining-basic-block-size-tiny? c)
+      (gen-code c)
+      (gen-jump-to-label c)))
 
 (define (gen-send c class-absval name-bytes selector-absval arg-avs kc)
-  (log-vm/jit-info "Send of ~a at ~a returning to ~a" name-bytes c kc)
+  (log-vm/jit-debug "Send of ~a at ~a returning to ~a" name-bytes c kc)
   (define vm (Ctx-vm c))
   (define class-desc (AbsVal-desc class-absval))
-  ;; (log-vm/jit-info "class-absval is ~a" class-absval)
-  (log-vm/jit-info "arg-avs = ~a" arg-avs)
+  ;; (log-vm/jit-debug "class-absval is ~a" class-absval)
+  (log-vm/jit-debug "arg-avs = ~a" arg-avs)
   (if (Constant? class-desc)
       (let* ((class (Constant-value class-desc))
              (cm (lookup-method/cache vm class name-bytes))
@@ -505,10 +508,10 @@
               ,(Ctx->expr kc) ,@(map AbsVal-expr arg-avs))
             (gen-inline-send kc bmethod arg-avs)))
       (let ()
-        (define old-picmap (OuterCtx-old-picmap (Ctx-outer c)))
+        (define old-picmap (State-old-picmap (Ctx-state c)))
         (define old-entry (and old-picmap (hash-ref old-picmap c #f)))
-        (define previous-pic-entries (if old-entry (analyse-pic c old-entry) '()))
-        (define pic-m (gen-pic c previous-pic-entries))
+        (define previous-pic-entries (if old-entry (analyse-pic c (cadr old-entry)) '()))
+        (define pic-m (gen-pic c name-bytes previous-pic-entries))
         `(let ((k-send ,(Ctx->expr kc)))
            ,(let loop ((predictions previous-pic-entries) (counter pic-entry-count))
               (match predictions
@@ -539,8 +542,17 @@
 
 (define (gen-block c argument-location)
   (define temp-count (slotAt (Ctx-method c) 4))
-  `(lambda (k . block-arguments)
-     (log-vm/jit-info "Entering block at ~a with ~a" ,(format-Ctx c) block-arguments)
+  (define block-k (gensym 'block-k))
+  (define bc (inline-compilation (Ctx-vm c)
+                                 (Ctx-method c)
+                                 (Ctx-arguments c)
+                                 (Ctx-temporaries c)
+                                 (Ctx-ip c)
+                                 (DynamicCtx block-k)
+                                 (or (Ctx-home c) (Ctx-previous c)) ;; ??
+                                 (Ctx-state c)))
+  `(lambda (,block-k . block-arguments)
+     ;; (log-vm/jit-debug "Entering block at ~a with ~a" ,(format-Ctx bc) block-arguments)
      ,(let loop ((i argument-location))
         (if (>= i temp-count)
             `(void)
@@ -548,17 +560,16 @@
                (vector-set! ,(Ctx-temporaries c) ,i (car block-arguments))
                (let ((block-arguments (cdr block-arguments)))
                  ,(loop (+ i 1))))))
-     ,(let* ((c (struct-copy Ctx c [home (Ctx-previous c)])))
-        (truncate-histories c (gen-code c)))))
+     ,(truncate-histories bc (gen-label-definitions bc (gen-code bc)))))
 
 (define (emit* c var purity absval)
-  (define param (OuterCtx-histories (Ctx-outer c)))
+  (define param (State-histories (Ctx-state c)))
   (match-define (cons era hs) (param))
   (param (cons (cons (definition var purity absval) era) hs))
   (AbsVal var (AbsVal-desc absval)))
 
 (define (historical-match c purity expr)
-  (define param (OuterCtx-histories (Ctx-outer c)))
+  (define param (State-histories (Ctx-state c)))
   (and (eq? purity 'pure)
        (let search-hs ((hs (param)))
          (match hs
@@ -582,14 +593,14 @@
      (emit c-expr [(var (gensym 'var)) purity absval-expr] body-expr)]))
 
 (define-syntax-rule (residualize c code-expr)
-  (let ((param (OuterCtx-histories (Ctx-outer c))))
+  (let ((param (State-histories (Ctx-state c))))
     (parameterize ((param (cons '() (param))))
       (define code code-expr)
       (wrap-era (car (param)) code (free-names code)))))
 
 (define-syntax-rule (truncate-histories c-expr code-expr)
   (let* ((c c-expr)
-         (param (OuterCtx-histories (Ctx-outer c))))
+         (param (State-histories (Ctx-state c))))
     (parameterize ((param '()))
       (residualize c code-expr))))
 
@@ -604,7 +615,7 @@
          (wrap-era era body (set-remove outstanding var)))]))
 
 (define (free-names expr)
-  (log-vm-warning "free-names is a hideous overapproximation")
+  (log-vm-debug "free-names is a hideous overapproximation")
   (match expr
     [(? symbol? n) (seteq n)]
     [`(,exprs ...) (apply set-union (seteq) (map free-names exprs))]
@@ -726,35 +737,34 @@
                                              c))))])]
        [12 (let ((target (next-byte!))
                  (argument-location arg))
-             (emit c [block pure (AbsVal `(mkffiv ,(AbsVal-expr (Ctx-lit c (VM-Block vm)))
-                                                  ,(gen-block c argument-location))
-                                         (Ffiv (Ctx-lit c (VM-Block vm))
-                                               #f
-                                               (let ((c c))
-                                                 (lambda (kc arg-avs)
-                                                   (log-vm/jit-debug
-                                                    "Inlining block ~a returning to ~a"
-                                                    c
-                                                    kc)
-                                                   (define home (Ctx-previous c))
-                                                   (when (not home)
-                                                     (error 'inlining-block
-                                                            "Missing home context"))
-                                                   (define ic
-                                                     (inline-compilation kc
-                                                                         method
-                                                                         (Ctx-arguments c)
-                                                                         (Ctx-temporaries c)
-                                                                         (Ctx-ip c)
-                                                                         home))
-                                                   (for [(i (in-naturals argument-location))
-                                                         (arg arg-avs)]
-                                                     (define av
-                                                       (AbsVal
-                                                        `(vector-set! ,(Ctx-temporaries c) ,i ,arg)
-                                                        (Unknown)))
-                                                     (emit ic [blkarg effect av] (void)))
-                                                   (truncate-histories c (gen-code ic))))))]
+             (emit c [block pure
+                            (AbsVal
+                             `(mkffiv ,(AbsVal-expr (Ctx-lit c (VM-Block vm)))
+                                      ,(gen-block c argument-location))
+                             (Ffiv (Ctx-lit c (VM-Block vm))
+                                   #f
+                                   (let ((c c))
+                                     (lambda (kc arg-avs)
+                                       (log-vm/jit-debug "Inlining block ~a returning to ~a" c kc)
+                                       (define bc
+                                         (inline-compilation vm
+                                                             method
+                                                             (Ctx-arguments c)
+                                                             (Ctx-temporaries c)
+                                                             (Ctx-ip c)
+                                                             kc
+                                                             (or (Ctx-home c) (Ctx-previous c)) ;; ??
+                                                             (Ctx-state c)))
+                                       (for [(i (in-naturals argument-location)) (arg arg-avs)]
+                                         (define av
+                                           (AbsVal `(vector-set! ,(Ctx-temporaries c)
+                                                                 ,i
+                                                                 ,(AbsVal-expr arg))
+                                                   (Unknown)))
+                                         (emit bc [blkarg effect av] (void)))
+                                       (truncate-histories
+                                        bc
+                                        (gen-label-definitions bc (gen-code bc)))))))]
                    (translate (Ctx-push-and-goto c target block))))]
        [13 (define primitive-number (next-byte!))
            (define primitive-arg-count arg)
@@ -775,10 +785,11 @@
                       (block (last primitive-args))
                       (argc (- arg 1))
                       (primitive-args (reverse (cdr (reverse primitive-args)))))
-                  (if (and (Ffiv? block)
+                  (log-vm/jit-debug "Attempt to invoke block ~a" block)
+                  (if (and (Ffiv? (AbsVal-desc block))
                            (equal? (Constant (VM-Block vm)) (AbsVal-desc (ObjClass vm block))))
                       ;; NB relies on tail call effect of primitive 8 (!)
-                      ((Ffiv-value block) c primitive-args)
+                      ((Ffiv-value (AbsVal-desc block)) (Ctx-previous c) primitive-args)
                       `(match ,(AbsVal-expr block)
                          [(unffiv block-proc)
                           (block-proc
@@ -791,11 +802,12 @@
                           (log-vm/jit-warning "Unoptimized block!")
                           ,(let ((expr `((block->thunk vm
                                                        ,(AbsVal-expr block)
-                                                       (list ,@(map AbsVal-expr primitive-args)))))
-                                 (caller (Ctx-previous c)))
-                             (if caller
-                                 (gen-code (Ctx-push caller (AbsVal expr (Unknown))))
-                                 `(k ,expr)))])))]
+                                                       (list ,@(map AbsVal-expr primitive-args))))))
+                             (match (Ctx-previous c)
+                               [(DynamicCtx dk)
+                                `(,dk ,expr)]
+                               [caller
+                                (gen-code (Ctx-push caller (AbsVal expr (Unknown))))]))])))]
              [34 (Ctx-lit c (VM-nil vm))]
              [35 (emit c [ctxref pure (AbsVal (gen-build-jit-context c) (Unknown))]
                        (translate (Ctx-push c ctxref)))]
@@ -816,13 +828,13 @@
        [14 (emit c [clsvar pure (SlotAt c (ObjClass vm (Ctx-receiver c)) (+ arg 5))]
                  (translate (Ctx-push c clsvar)))]
        [15 (define (continue c av)
-             (if c
-                 (translate (Ctx-push c av))
-                 `(k ,(AbsVal-expr av))))
+             (match c
+               [(DynamicCtx dk) `(,dk ,(AbsVal-expr av))]
+               [_ (translate (Ctx-push c av))]))
            (match arg
              [1 (continue (Ctx-previous c) (Ctx-receiver c))]
              [2 (continue (Ctx-previous c) (car stack))]
-             [3 (translate (Ctx-push (Ctx-home c) (car stack)))]
+             [3 (continue (Ctx-home c) (car stack))]
              [5 (translate (Ctx-drop c 1))]
              [6 (gen-jump-to-label (Ctx-goto c (next-byte!)))]
              [7 (let ((target (next-byte!))
@@ -832,8 +844,8 @@
                   (if (equal? (Constant (VM-true vm)) (AbsVal-desc disc))
                       (gen-code (Ctx-goto c target))
                       `(if (eq? ,(AbsVal-expr disc) ,(AbsVal-expr (Ctx-lit c (VM-true vm))))
-                           ,(gen-jump-to-label (Ctx-goto c target))
-                           ,(gen-jump-to-label c))))]
+                           ,(gen-continuation (Ctx-goto c target))
+                           ,(gen-continuation c))))]
              [8 (let ((target (next-byte!))
                       (disc (car stack)))
                   (set! c (Ctx-drop c 1))
@@ -841,8 +853,8 @@
                   (if (equal? (Constant (VM-false vm)) (AbsVal-desc disc))
                       (gen-code (Ctx-goto c target))
                       `(if (eq? ,(AbsVal-expr disc) ,(AbsVal-expr (Ctx-lit c (VM-false vm))))
-                           ,(gen-jump-to-label (Ctx-goto c target))
-                           ,(gen-jump-to-label c))))]
+                           ,(gen-continuation (Ctx-goto c target))
+                           ,(gen-continuation c))))]
              ;; 11 inlined in the processing of bytecode 8
              [_ (error 'gen-code "Unhandled do-special case ~v" arg)])]
        [_ (error 'gen-code "~a - unhandled opcode ~v, arg ~v" (Ctx-name c) opcode arg)]))))
@@ -860,7 +872,7 @@
 ;;     (log-vm/jit-debug "  ~a: stack ~a" c (Ctx-stack c))
 ;;     (cond [(Ctx-previous c) => loop]
 ;;           [else (void)]))
-;;   (log-vm/jit-debug "HISTORIES: ~a" ((OuterCtx-histories (Ctx-outer c)))))
+;;   (log-vm/jit-debug "HISTORIES: ~a" ((State-histories (Ctx-state c)))))
 
 (define (gen-jump-to-label c)
   (define labels (Ctx-labels c))
@@ -873,18 +885,15 @@
     (hash-set! labels key (cons 'placeholder var))
     (define newstack (for/list [(i (length (Ctx-stack c)))] (AbsVal (mksym "stack~a" i) (Unknown))))
     (log-vm/jit-debug "Producing label ~a" var)
+    (define bb-k (gensym 'bb-k))
     (define expr (truncate-histories
                   c
-                  (let* ((c c)
-                         (c (Ctx-update c (Ctx-ip c) (lambda (_s) newstack)))
-                         (c (struct-copy Ctx c [detail (let ((d (Ctx-detail c)))
-                                                         (if (InnerCtx? d)
-                                                             (struct-copy InnerCtx d [previous #f])
-                                                             d))])))
+                  (let* ((c (Ctx-update c (Ctx-ip c) (lambda (_s) newstack)))
+                         (c (struct-copy Ctx c [previous (DynamicCtx bb-k)])))
                     ;; (dump-full-context c)
                     (gen-code c))))
     (log-vm/jit-debug "Produced label ~a" var)
-    (hash-set! labels key (cons `(lambda (k ,@(map AbsVal-expr newstack)) ,expr) var)))
+    (hash-set! labels key (cons `(lambda (,bb-k ,@(map AbsVal-expr newstack)) ,expr) var)))
   `(,(cdr (hash-ref labels key))
     ,(Ctx->expr (Ctx-previous c))
     ,@(map AbsVal-expr (Ctx-stack c))))
@@ -923,7 +932,7 @@
                                                       (if stable? "stable" "not yet stable"))
                (define hotness
                  (for/sum [(entry pics)]
-                   (match-define (cons c pic) entry)
+                   (match-define (list c _name-bytes pic) entry)
                    (for/sum [(i (in-range (pic-size pic)))]
                      (match (pic@ pic i 0)
                        [#f 0]
@@ -980,9 +989,7 @@
   (define f (compile-method-proc vm (obj-class* vm (slotAt args 0)) (slotAt inner-ctx 0) #f))
   (apply f (outermost-k vm) (vector->list (obj-slots args))))
 
-(define-primitive vm [116]
-  (let ((image-bytes (serialize-image vm)))
-    (display-to-file image-bytes (jit-VM-image-filename vm) #:exists 'replace)))
+(define-primitive vm [116] (save-image-to-file vm (pe-VM-image-filename vm)))
 
 ;;===========================================================================
 ;; Entry point
@@ -991,7 +998,7 @@
 (let* ((image-filename "SmallWorld/src/image")
        (vm (call-with-input-file image-filename
              (lambda (fh)
-               (read-image fh jit-VM (list (make-weak-hasheq) image-filename))))))
+               (read-image fh pe-VM (list (make-weak-hasheq) image-filename))))))
   (boot-image vm
               (lambda (vm source)
                 (define compiled-method
