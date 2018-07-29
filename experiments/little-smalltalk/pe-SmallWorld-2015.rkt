@@ -69,24 +69,26 @@
 ;; The accumulator registers are:
 ;;   - litmap, a Racket mutable hash table mapping actual runtime
 ;;     values to compile-time variable names (symbols)
-;;   - pic-list-rev, a Racket list of symbols naming PICs in the
-;;     compiled method
+;;   - picmap, a hash mapping PIC keys to (List Bytes PIC)
 ;;   - old-picmap, either #f or a hash indexing PICs from a previous
 ;;     compilation, for dynamic type feedback
 ;;   - histories, a Racket parameter holding a list of lists of
 ;;     `definition` structures
 ;;
-(struct DynamicCtx (var) #:transparent)
+(struct DynamicCtx (loc var) #:transparent)
 (struct Ctx (vm method arguments temporaries stack ip labels previous home state) #:transparent
   #:methods gen:custom-write
   [(define (write-proc c port mode)
      (fprintf port "#<~a>" (format-Ctx c)))])
 
-(struct State (litmap [pic-list-rev #:mutable] old-picmap histories) #:transparent)
+(struct State (litmap picmap old-picmap histories) #:transparent)
 
 (struct compiled-method-info (bytecode-method pics stable?))
 
-(struct cached-method (class name-bytes [bytecode-method #:mutable] [proc #:mutable]))
+(struct cached-method (class name-bytes [bytecode-method #:mutable] [proc #:mutable])
+  #:methods gen:custom-write
+  [(define (write-proc c port mode)
+     (fprintf port "#<cached-method:~a>" (cached-method-name-bytes c)))])
 
 (struct definition (var purity absval) #:transparent)
 
@@ -214,10 +216,10 @@
                 '()
                 0
                 (make-hash)
-                (DynamicCtx top-k)
+                (DynamicCtx 'top top-k)
                 #f
                 (State litmap
-                       '()
+                       (make-hash)
                        old-picmap
                        (make-parameter '())))))
 
@@ -330,13 +332,12 @@
   (define top-k (gensym 'top-k))
   (define c (top-compilation compile-time-vm class method old-picmap top-k))
   (define body-code (gen-code c)) ;; imperative!
-  (define pic-infos (reverse (State-pic-list-rev (Ctx-state c))))
-  (define pic-infos-exp (gen-lit* (Ctx-litmap c) pic-infos))
+  (define pic-infos (hash->list (State-picmap (Ctx-state c))))
   (define stable? (equal? (if old-picmap (list->set (hash-keys old-picmap)) 'unknown)
                           (list->set (map car pic-infos))))
-  (log-vm/jit/recompile-debug "Evaluating stability of ~a:" (Ctx-name c))
-  (log-vm/jit/recompile-debug "  old-picmap --> ~a" (if old-picmap (list->set (hash-keys old-picmap)) 'unknown))
-  (log-vm/jit/recompile-debug "  pic-infos  --> ~a" (list->set (map car pic-infos)))
+  ;; (log-vm/jit/recompile-debug "Evaluating stability of ~a:" (Ctx-name c))
+  ;; (log-vm/jit/recompile-debug "  old-picmap --> ~a" (if old-picmap (list->set (hash-keys old-picmap)) 'unknown))
+  ;; (log-vm/jit/recompile-debug "  pic-infos  --> ~a" (list->set (map car pic-infos)))
   (when stable?
     (log-vm/jit/recompile-info "Compilation of ~a is now stable." (method-name method class)))
   (define inner-code
@@ -348,7 +349,7 @@
             (set! cmi
                   (compiled-method-info
                    ,(AbsVal-expr (Ctx-lit c method))
-                   ,pic-infos-exp
+                   ,(AbsVal-expr (Ctx-lit c pic-infos))
                    ,stable?)))
           cmi]
          [(,top-k ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
@@ -369,7 +370,14 @@
   (define litmap-list (hash->list (Ctx-litmap c)))
   (define code `(lambda (vm ,@(map cdr litmap-list)) ,inner-code))
   (log-vm/jit/code-debug "Resulting code for ~a:\n~a" (Ctx-name c) (pretty-format code))
-  (apply (eval code ns) vm (map car litmap-list)))
+  (define boot
+    (let-values (((results cpu-ms wall-ms gc-ms) (time-apply (lambda () (eval code ns)) '())))
+      (define msg (format "Compiled code for ~a in ~a ms" (Ctx-name c) wall-ms))
+      (cond [(>= wall-ms 100) (log-vm/jit/code-warning "SLOW: ~a" msg)]
+            [(>= wall-ms 10) (log-vm/jit/code-info "Slowish: ~a" msg)]
+            [else (log-vm/jit/code-debug "~a" msg)])
+      (car results)))
+  (apply boot vm (map car litmap-list)))
 
 ;; (define (compile-block-proc compile-time-vm
 ;;                             method
@@ -428,12 +436,28 @@
   (> (bytes-length bytecode) limit))
 
 (define (gen-pic c name-bytes extension)
-  (define p (if (null? extension)
-                (pic)
-                (apply extended-pic
-                       (flatten (take (append extension empty-pic-extension) pic-entry-count)))))
-  (set-State-pic-list-rev! (Ctx-state c) (cons (list c name-bytes p) (State-pic-list-rev (Ctx-state c))))
-  (gen-lit* (Ctx-litmap c) p))
+  (define key (Ctx->pic-key c))
+  (define picmap (State-picmap (Ctx-state c)))
+  (define p
+    (cadr
+     (hash-ref! picmap
+                key
+                (lambda ()
+                  (list name-bytes
+                        (if (null? extension)
+                            (pic)
+                            (apply extended-pic
+                                   (flatten (take (append extension empty-pic-extension)
+                                                  pic-entry-count)))))))))
+  (define m (gen-lit* (Ctx-litmap c) p))
+  (log-vm/jit/recompile-debug "Produced pic ~a for send of ~a at ~a (~a)" m name-bytes c p)
+  m)
+
+(define (Ctx->pic-key c)
+  (if (DynamicCtx? c)
+      (list (DynamicCtx-loc c))
+      (cons (list (Ctx-receiver-class c) (Ctx-method c) (Ctx-ip c))
+            (Ctx->pic-key (Ctx-previous c)))))
 
 ;; TODO: record dependency links properly, so that if a method is
 ;; changed, inlined copies of the old version of the method are
@@ -509,7 +533,8 @@
             (gen-inline-send kc bmethod arg-avs)))
       (let ()
         (define old-picmap (State-old-picmap (Ctx-state c)))
-        (define old-entry (and old-picmap (hash-ref old-picmap c #f)))
+        (define old-entry (and old-picmap (hash-ref old-picmap (Ctx->pic-key c) #f)))
+        (log-vm/jit/recompile-debug "old-entry for send of ~a at ~a = ~a" name-bytes c old-entry)
         (define previous-pic-entries (if old-entry (analyse-pic c (cadr old-entry)) '()))
         (define pic-m (gen-pic c name-bytes previous-pic-entries))
         `(let ((k-send ,(Ctx->expr kc)))
@@ -533,8 +558,8 @@
                       ,(loop more-predictions (+ counter 1)))]))))))
 
 (define (sufficiently-static? c avs)
-  (or (andmap (lambda (av) (not (Unknown? (AbsVal-desc av)))) avs)
-      (< (Ctx-depth c) 3)))
+  (and (< (Ctx-depth c) 4)
+       (andmap (lambda (av) (not (Unknown? (AbsVal-desc av)))) avs)))
 
 (define (augment-receiver-class c arg-avs class)
   (match-define (cons (AbsVal expr _desc) rest) arg-avs)
@@ -548,7 +573,7 @@
                                  (Ctx-arguments c)
                                  (Ctx-temporaries c)
                                  (Ctx-ip c)
-                                 (DynamicCtx block-k)
+                                 (DynamicCtx 'block block-k)
                                  (or (Ctx-home c) (Ctx-previous c)) ;; ??
                                  (Ctx-state c)))
   `(lambda (,block-k . block-arguments)
@@ -804,7 +829,7 @@
                                                        ,(AbsVal-expr block)
                                                        (list ,@(map AbsVal-expr primitive-args))))))
                              (match (Ctx-previous c)
-                               [(DynamicCtx dk)
+                               [(DynamicCtx _ dk)
                                 `(,dk ,expr)]
                                [caller
                                 (gen-code (Ctx-push caller (AbsVal expr (Unknown))))]))])))]
@@ -829,7 +854,7 @@
                  (translate (Ctx-push c clsvar)))]
        [15 (define (continue c av)
              (match c
-               [(DynamicCtx dk) `(,dk ,(AbsVal-expr av))]
+               [(DynamicCtx _ dk) `(,dk ,(AbsVal-expr av))]
                [_ (translate (Ctx-push c av))]))
            (match arg
              [1 (continue (Ctx-previous c) (Ctx-receiver c))]
@@ -889,7 +914,8 @@
     (define expr (truncate-histories
                   c
                   (let* ((c (Ctx-update c (Ctx-ip c) (lambda (_s) newstack)))
-                         (c (struct-copy Ctx c [previous (DynamicCtx bb-k)])))
+                         (c (struct-copy Ctx c [previous (DynamicCtx (list 'label key) bb-k)]))
+                         )
                     ;; (dump-full-context c)
                     (gen-code c))))
     (log-vm/jit-debug "Produced label ~a" var)
@@ -967,8 +993,8 @@
       (values (car entry) (cdr entry))))
   (when (not (hash-empty? old-picmap))
     (log-vm/jit/recompile-info "Retrieved old pics for method ~a" (method-name method class))
-    (for [((c p) (in-hash old-picmap))]
-      (log-vm/jit/recompile-info "   ~a --> ~v" (format-Ctx c) p)))
+    (for [((pic-key p) (in-hash old-picmap))]
+      (log-vm/jit/recompile-info "   ~a --> ~v" pic-key p)))
   (define recompiled-proc (compile-method-proc vm class method old-picmap))
   (log-vm/jit/recompile-info "Updating cached compiled method for ~a" (method-name method class))
   (set-cached-method-proc! cached-method recompiled-proc))
