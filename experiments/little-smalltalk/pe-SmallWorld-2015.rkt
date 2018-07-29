@@ -157,13 +157,12 @@
 
 (define (unwrap-cached-method vm cm)
   (or (cached-method-proc cm)
-      (match cm
-        [(cached-method class name-bytes _bcm _proc)
-         (define bcm (lookup-method vm class name-bytes))
-         (define proc (and bcm (compile-method-proc vm class bcm #f)))
-         (set-cached-method-bytecode-method! cm bcm)
-         (set-cached-method-proc! cm proc)
-         proc])))
+      (match cm [(cached-method class name-bytes _bcm _proc)
+                 (define bcm (lookup-method vm class name-bytes))
+                 (define proc (and bcm (compile-method-proc vm class bcm #f)))
+                 (set-cached-method-bytecode-method! cm bcm)
+                 (set-cached-method-proc! cm proc)
+                 proc])))
 
 (define (invalidate-cached-method! cm)
   (set-cached-method-bytecode-method! cm #f)
@@ -261,17 +260,12 @@
       0
       (+ 1 (Ctx-depth (Ctx-previous c)))))
 
-(define (Ctx-arg c n)
-  (vector-ref (Ctx-arguments c) n))
-
-(define (Ctx-receiver c)
-  (Ctx-arg c 0))
+(define (Ctx-name c) (method-name (Ctx-method c) (Ctx-receiver-class c)))
+(define (Ctx-arg c n) (vector-ref (Ctx-arguments c) n))
+(define (Ctx-receiver c) (Ctx-arg c 0))
 
 (define (Ctx-receiver-class c)
   (Constant-value (AbsVal-desc (ObjClass (Ctx-vm c) (Ctx-receiver c)))))
-
-(define (Ctx-name c)
-  (method-name (Ctx-method c) (Ctx-receiver-class c)))
 
 (define (already-compiling? c class method)
   (let check ((c c))
@@ -279,51 +273,35 @@
           [(and (eq? (Ctx-receiver-class c) class) (eq? (Ctx-method c) method)) #t]
           [else (check (Ctx-previous c))])))
 
-(define (gen-lit* litmap lit)
-  (if (number? lit)
-      lit
-      (hash-ref! litmap lit (lambda ()
-                              (define n (hash-count litmap))
-                              (cond
-                                [(bv? lit) (mksym "lit~a-~a" n (bv->string lit))]
-                                [(list? lit) (mksym "lit~a" n)]
-                                [(vector? lit) (mksym "pic~a" n)]
-                                [else (mksym "lit~a-~a" n lit)])))))
-
 (define (gen-lit litmap lit)
-  (AbsVal (gen-lit* litmap lit) (Constant lit)))
+  (define var (if (number? lit)
+                  lit
+                  (hash-ref! litmap lit (lambda ()
+                                          (define n (hash-count litmap))
+                                          (cond [(bv? lit) (mksym "lit~a-~a" n (bv->string lit))]
+                                                [(list? lit) (mksym "lit~a" n)]
+                                                [(vector? lit) (mksym "pic~a" n)]
+                                                [else (mksym "lit~a-~a" n lit)])))))
+  (AbsVal var (Constant lit)))
 
-(define (Ctx-litmap c)
-  (State-litmap (Ctx-state c)))
-
-(define (Ctx-lit c literal)
-  (gen-lit (Ctx-litmap c) literal))
+(define (Ctx-lit c literal) (gen-lit (State-litmap (Ctx-state c)) literal))
+(define (Ctx-lit* c literal) (AbsVal-expr (Ctx-lit c literal)))
 
 (define (Ctx-update c new-ip stack-transformer)
   (struct-copy Ctx c [ip new-ip] [stack (stack-transformer (Ctx-stack c))]))
 
-(define (Ctx-push c v)
-  (Ctx-update c (Ctx-ip c) (lambda (s) (cons v s))))
-
-(define (Ctx-drop c n)
-  (Ctx-update c (Ctx-ip c) (lambda (s) (drop s n))))
-
-(define (Ctx-goto c ip)
-  (Ctx-update c ip values))
-
-(define (Ctx-push-and-goto c ip v)
-  (Ctx-update c ip (lambda (s) (cons v s))))
+(define (Ctx-push c v) (Ctx-update c (Ctx-ip c) (lambda (s) (cons v s))))
+(define (Ctx-drop c n) (Ctx-update c (Ctx-ip c) (lambda (s) (drop s n))))
+(define (Ctx-goto c ip) (Ctx-update c ip values))
+(define (Ctx-push-and-goto c ip v) (Ctx-update c ip (lambda (s) (cons v s))))
 
 (define (format-Ctx c)
-  (string-join (reverse
-                (let pieces ((c c))
-                  (if (DynamicCtx? c)
-                      '()
-                      (cons (format "~a @~a" (Ctx-name c) (Ctx-ip c))
-                            (pieces (Ctx-previous c))))))
-               ","
-               #:before-first "["
-               #:after-last "]"))
+  (define pieces
+    (let loop ((c c))
+      (if (DynamicCtx? c)
+          '()
+          (cons (format "~a @~a" (Ctx-name c) (Ctx-ip c)) (loop (Ctx-previous c))))))
+  (string-join (reverse pieces) "," #:before-first "[" #:after-last "]"))
 
 ;;===========================================================================
 ;; Compilation and code generation
@@ -335,27 +313,16 @@
   (define pic-infos (hash->list (State-picmap (Ctx-state c))))
   (define stable? (equal? (if old-picmap (list->set (hash-keys old-picmap)) 'unknown)
                           (list->set (map car pic-infos))))
-  ;; (log-vm/jit/recompile-debug "Evaluating stability of ~a:" (Ctx-name c))
-  ;; (log-vm/jit/recompile-debug "  old-picmap --> ~a" (if old-picmap (list->set (hash-keys old-picmap)) 'unknown))
-  ;; (log-vm/jit/recompile-debug "  pic-infos  --> ~a" (list->set (map car pic-infos)))
   (when stable?
     (log-vm/jit/recompile-info "Compilation of ~a is now stable." (method-name method class)))
   (define inner-code
-    `(let ((call-counter 0)
-           (cmi #f))
+    `(let ((call-counter 0) (cmi #f))
        (case-lambda
          [()
           (when (not cmi)
-            (set! cmi
-                  (compiled-method-info
-                   ,(AbsVal-expr (Ctx-lit c method))
-                   ,(AbsVal-expr (Ctx-lit c pic-infos))
-                   ,stable?)))
+            (set! cmi (compiled-method-info ,(Ctx-lit* c method) ,(Ctx-lit* c pic-infos) ,stable?)))
           cmi]
          [(,top-k ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
-          ;; (log-vm/jit-debug "Entering ~a with ~a"
-          ;;                   ,(method-name method class)
-          ;;                   (list ,@(map AbsVal-expr (vector->list (Ctx-arguments c)))))
           (set! call-counter (+ call-counter 1))
           ;; TODO: aging of call-counter by right-shifting at most once every few seconds, or so
           (when (= call-counter 1000)
@@ -367,7 +334,7 @@
   (finish-compilation c compile-time-vm inner-code))
 
 (define (finish-compilation c vm inner-code)
-  (define litmap-list (hash->list (Ctx-litmap c)))
+  (define litmap-list (hash->list (State-litmap (Ctx-state c))))
   (define code `(lambda (vm ,@(map cdr litmap-list)) ,inner-code))
   (log-vm/jit/code-debug "Resulting code for ~a:\n~a" (Ctx-name c) (pretty-format code))
   (define boot
@@ -414,7 +381,7 @@
       `(build-jit-context vm
                           ,(gen-build-jit-context (Ctx-previous c))
                           (vector ,@(map AbsVal-expr (vector->list (Ctx-arguments c))))
-                          ,(AbsVal-expr (Ctx-lit c (Ctx-method c)))
+                          ,(Ctx-lit* c (Ctx-method c))
                           ,(Ctx-ip c)
                           ,(Ctx-temporaries c)
                           (vector ,@(map AbsVal-expr (reverse (Ctx-stack c)))))))
@@ -423,8 +390,7 @@
   `(let ((,(Ctx-temporaries c)
           ,(match (slotAt (Ctx-method c) 4)
              [0 `'#()]
-             [temp-count
-              `(make-vector ,temp-count ,(AbsVal-expr (Ctx-lit c (VM-nil (Ctx-vm c)))))])))
+             [temp-count `(make-vector ,temp-count ,(Ctx-lit* c (VM-nil (Ctx-vm c))))])))
      ,body-code))
 
 (define (bytecode-exceeding? method limit)
@@ -438,18 +404,14 @@
 (define (gen-pic c name-bytes extension)
   (define key (Ctx->pic-key c))
   (define picmap (State-picmap (Ctx-state c)))
-  (define p
-    (cadr
-     (hash-ref! picmap
-                key
-                (lambda ()
-                  (list name-bytes
-                        (if (null? extension)
-                            (pic)
-                            (apply extended-pic
-                                   (flatten (take (append extension empty-pic-extension)
-                                                  pic-entry-count)))))))))
-  (define m (gen-lit* (Ctx-litmap c) p))
+  (define (mkpic)
+    (list name-bytes (if (null? extension)
+                         (pic)
+                         (apply extended-pic
+                                (flatten (take (append extension empty-pic-extension)
+                                               pic-entry-count))))))
+  (define p (cadr (hash-ref! picmap key mkpic)))
+  (define m (Ctx-lit* c p))
   (log-vm/jit/recompile-debug "Produced pic ~a for send of ~a at ~a (~a)" m name-bytes c p)
   m)
 
@@ -467,13 +429,7 @@
   (define ic
     (inline-compilation (Ctx-vm kc) method (list->vector arg-avs) #f 0 kc #f (Ctx-state kc)))
   (log-vm/jit/code-debug "Inlining send of ~a into method ~a" (Ctx-name ic) (Ctx-name kc))
-  (define body-code
-    `(begin
-       ;; (log-vm/jit/code-debug "Entering inlined send of ~a returning to ~a with ~a"
-       ;;                        ,(method-name method)
-       ;;                        ,(format-Ctx kc)
-       ;;                        (list ,@(map AbsVal-expr arg-avs)))
-       ,(gen-fresh-temps ic (gen-label-definitions ic (gen-code ic)))))
+  (define body-code (gen-fresh-temps ic (gen-label-definitions ic (gen-code ic))))
   (log-vm/jit/code-debug "INLINED for send of ~a into method ~a:\n~a"
                          (Ctx-name ic)
                          (Ctx-name kc)
@@ -503,10 +459,9 @@
   (if (DynamicCtx? c)
       (DynamicCtx-var c)
       (let ((ans (gensym 'answer)))
-        `(case-lambda [() ,(gen-build-jit-context c)]
-                      [(,ans)
-                       ;; (log-vm/jit-debug "Continuing ~a with ~a" ,(format-Ctx c) ,ans)
-                       ,(truncate-histories c (gen-continuation (Ctx-push c (AbsVal ans (Unknown)))))]))))
+        `(case-lambda
+           [() ,(gen-build-jit-context c)]
+           [(,ans) ,(truncate-histories c (gen-continuation (Ctx-push c (AbsVal ans (Unknown)))))]))))
 
 (define (gen-continuation c)
   (if (remaining-basic-block-size-tiny? c)
@@ -517,7 +472,6 @@
   (log-vm/jit-debug "Send of ~a at ~a returning to ~a" name-bytes c kc)
   (define vm (Ctx-vm c))
   (define class-desc (AbsVal-desc class-absval))
-  ;; (log-vm/jit-debug "class-absval is ~a" class-absval)
   (log-vm/jit-debug "arg-avs = ~a" arg-avs)
   (if (Constant? class-desc)
       (let* ((class (Constant-value class-desc))
@@ -528,7 +482,7 @@
         (if (or (already-compiling? c class bmethod)
                 (not (tiny-method? bmethod))
                 (not (sufficiently-static? c arg-avs)))
-            `((unwrap-cached-method vm ,(AbsVal-expr (Ctx-lit c cm)))
+            `((unwrap-cached-method vm ,(Ctx-lit* c cm))
               ,(Ctx->expr kc) ,@(map AbsVal-expr arg-avs))
             (gen-inline-send kc bmethod arg-avs)))
       (let ()
@@ -546,13 +500,13 @@
                 [(cons (list predicted-class predicted-cm) more-predictions)
                  (define predicted-bmethod (cached-method-bytecode-method predicted-cm))
                  (define final-arg-avs (augment-receiver-class c arg-avs predicted-class))
-                 `(if (eq? ,(AbsVal-expr class-absval) ,(AbsVal-expr (Ctx-lit c predicted-class)))
+                 `(if (eq? ,(AbsVal-expr class-absval) ,(Ctx-lit* c predicted-class))
                       (begin
                         (pic-bump! ,pic-m ,counter)
                         ,(if (or (already-compiling? c predicted-class predicted-bmethod)
                                  (not (small-method? predicted-bmethod))
                                  (not (sufficiently-static? c final-arg-avs)))
-                             `((unwrap-cached-method vm ,(AbsVal-expr (Ctx-lit c predicted-cm)))
+                             `((unwrap-cached-method vm ,(Ctx-lit* c predicted-cm))
                                k-send ,@(map AbsVal-expr final-arg-avs))
                              (gen-inline-send kc predicted-bmethod final-arg-avs)))
                       ,(loop more-predictions (+ counter 1)))]))))))
@@ -577,7 +531,6 @@
                                  (or (Ctx-home c) (Ctx-previous c)) ;; ??
                                  (Ctx-state c)))
   `(lambda (,block-k . block-arguments)
-     ;; (log-vm/jit-debug "Entering block at ~a with ~a" ,(format-Ctx bc) block-arguments)
      ,(let loop ((i argument-location))
         (if (>= i temp-count)
             `(void)
@@ -722,14 +675,14 @@
              [0 (emit c [isNil pure
                                (if (equal? (Constant (VM-nil vm)) (AbsVal-desc (car stack)))
                                    (Ctx-lit c (VM-true vm))
-                                   (AbsVal `(boolean->obj vm (eq? ,(AbsVal-expr (Ctx-lit c (VM-nil vm)))
+                                   (AbsVal `(boolean->obj vm (eq? ,(Ctx-lit* c (VM-nil vm))
                                                                   ,(AbsVal-expr (car stack))))
                                            (Unknown)))]
                       (translate (Ctx-push (Ctx-drop c 1) isNil)))]
              [1 (emit c [notNil pure
                                 (if (equal? (Constant (VM-nil vm)) (AbsVal-desc (car stack)))
                                     (Ctx-lit c (VM-false vm))
-                                    (AbsVal `(boolean->obj vm (not (eq? ,(AbsVal-expr (Ctx-lit c (VM-nil vm)))
+                                    (AbsVal `(boolean->obj vm (not (eq? ,(Ctx-lit* c (VM-nil vm))
                                                                         ,(AbsVal-expr (car stack)))))
                                             (Unknown)))]
                       (translate (Ctx-push (Ctx-drop c 1) notNil)))])]
@@ -753,43 +706,33 @@
                                    (gen-send c0
                                              (ObjClass vm iv)
                                              name-bytes
-                                             (AbsVal `(mkbv ,(AbsVal-expr (Ctx-lit c (VM-nil vm)))
-                                                            ,name-bytes)
-                                                     (Bv (Ctx-lit c (VM-nil vm))
-                                                         (vector)
-                                                         name-bytes))
+                                             (AbsVal `(mkbv ,(Ctx-lit* c (VM-nil vm)) ,name-bytes)
+                                                     (Bv (Ctx-lit c (VM-nil vm)) (vector) name-bytes))
                                              (list iv jv)
                                              c))))])]
        [12 (let ((target (next-byte!))
                  (argument-location arg))
+             (define inline-block
+               (let ((c c))
+                 (lambda (kc arg-avs)
+                   (log-vm/jit-debug "Inlining block ~a returning to ~a" c kc)
+                   (define bc (inline-compilation vm
+                                                  method
+                                                  (Ctx-arguments c)
+                                                  (Ctx-temporaries c)
+                                                  (Ctx-ip c)
+                                                  kc
+                                                  (or (Ctx-home c) (Ctx-previous c)) ;; ??
+                                                  (Ctx-state c)))
+                   (for [(i (in-naturals argument-location)) (arg arg-avs)]
+                     (define av
+                       (AbsVal `(vector-set! ,(Ctx-temporaries c) ,i ,(AbsVal-expr arg)) (Unknown)))
+                     (emit bc [blkarg effect av] (void)))
+                   (truncate-histories bc (gen-label-definitions bc (gen-code bc))))))
              (emit c [block pure
                             (AbsVal
-                             `(mkffiv ,(AbsVal-expr (Ctx-lit c (VM-Block vm)))
-                                      ,(gen-block c argument-location))
-                             (Ffiv (Ctx-lit c (VM-Block vm))
-                                   #f
-                                   (let ((c c))
-                                     (lambda (kc arg-avs)
-                                       (log-vm/jit-debug "Inlining block ~a returning to ~a" c kc)
-                                       (define bc
-                                         (inline-compilation vm
-                                                             method
-                                                             (Ctx-arguments c)
-                                                             (Ctx-temporaries c)
-                                                             (Ctx-ip c)
-                                                             kc
-                                                             (or (Ctx-home c) (Ctx-previous c)) ;; ??
-                                                             (Ctx-state c)))
-                                       (for [(i (in-naturals argument-location)) (arg arg-avs)]
-                                         (define av
-                                           (AbsVal `(vector-set! ,(Ctx-temporaries c)
-                                                                 ,i
-                                                                 ,(AbsVal-expr arg))
-                                                   (Unknown)))
-                                         (emit bc [blkarg effect av] (void)))
-                                       (truncate-histories
-                                        bc
-                                        (gen-label-definitions bc (gen-code bc)))))))]
+                             `(mkffiv ,(Ctx-lit* c (VM-Block vm)) ,(gen-block c argument-location))
+                             (Ffiv (Ctx-lit c (VM-Block vm)) #f inline-block))]
                    (translate (Ctx-push-and-goto c target block))))]
        [13 (define primitive-number (next-byte!))
            (define primitive-arg-count arg)
@@ -802,8 +745,7 @@
                 (emit c [(obj (gensym (class-temp-name class)))
                          effect
                          (AbsVal `(obj ,(AbsVal-expr class)
-                                       (make-vector ,(AbsVal-expr count)
-                                                    ,(AbsVal-expr (Ctx-lit c (VM-nil vm)))))
+                                       (make-vector ,(AbsVal-expr count) ,(Ctx-lit* c (VM-nil vm))))
                                  (Obj class #f))]
                       (translate (Ctx-push c obj)))]
              [8 (let ((v (gensym 'blockresult))
@@ -823,7 +765,7 @@
                            ;; ^ reason being the image BUGGILY (?!?) relies on primitive 8
                            ;; immediately returning to the surrounding context!!
                            ,@(map AbsVal-expr primitive-args))]
-                         [(obj (== ,(AbsVal-expr (Ctx-lit c (VM-Block vm)))) _)
+                         [(obj (== ,(Ctx-lit* c (VM-Block vm))) _)
                           (log-vm/jit-warning "Unoptimized block!")
                           ,(let ((expr `((block->thunk vm
                                                        ,(AbsVal-expr block)
@@ -836,7 +778,7 @@
              [34 (Ctx-lit c (VM-nil vm))]
              [35 (emit c [ctxref pure (AbsVal (gen-build-jit-context c) (Unknown))]
                        (translate (Ctx-push c ctxref)))]
-             [36 (emit c [arr effect (AbsVal `(mkobj ,(AbsVal-expr (Ctx-lit c (VM-Array vm)))
+             [36 (emit c [arr effect (AbsVal `(mkobj ,(Ctx-lit* c (VM-Array vm))
                                                      ,@(map AbsVal-expr primitive-args))
                                              (Obj (Ctx-lit c (VM-Array vm))
                                                   (list->vector primitive-args)))]
@@ -868,7 +810,7 @@
                   (log-vm/jit-debug "if ~a true jump to ~a, else continue at ~a" disc target (Ctx-ip c))
                   (if (equal? (Constant (VM-true vm)) (AbsVal-desc disc))
                       (gen-code (Ctx-goto c target))
-                      `(if (eq? ,(AbsVal-expr disc) ,(AbsVal-expr (Ctx-lit c (VM-true vm))))
+                      `(if (eq? ,(AbsVal-expr disc) ,(Ctx-lit* c (VM-true vm)))
                            ,(gen-continuation (Ctx-goto c target))
                            ,(gen-continuation c))))]
              [8 (let ((target (next-byte!))
@@ -877,7 +819,7 @@
                   (log-vm/jit-debug "if ~a false jump to ~a, else continue at ~a" disc target (Ctx-ip c))
                   (if (equal? (Constant (VM-false vm)) (AbsVal-desc disc))
                       (gen-code (Ctx-goto c target))
-                      `(if (eq? ,(AbsVal-expr disc) ,(AbsVal-expr (Ctx-lit c (VM-false vm))))
+                      `(if (eq? ,(AbsVal-expr disc) ,(Ctx-lit* c (VM-false vm)))
                            ,(gen-continuation (Ctx-goto c target))
                            ,(gen-continuation c))))]
              ;; 11 inlined in the processing of bytecode 8
@@ -891,22 +833,11 @@
     [_
      "newobj"]))
 
-;; (define (dump-full-context c)
-;;   (log-vm/jit-debug "FULL CONTEXT:")
-;;   (let loop ((c c))
-;;     (log-vm/jit-debug "  ~a: stack ~a" c (Ctx-stack c))
-;;     (cond [(Ctx-previous c) => loop]
-;;           [else (void)]))
-;;   (log-vm/jit-debug "HISTORIES: ~a" ((State-histories (Ctx-state c)))))
-
 (define (gen-jump-to-label c)
   (define labels (Ctx-labels c))
   (define key (Ctx-ip c))
   (when (not (hash-has-key? labels key))
-    (define var
-      (gensym (mksym "label-~a-~a-"
-                     (bv->string (slotAt (Ctx-method c) 0))
-                     (Ctx-ip c))))
+    (define var (gensym (mksym "label-~a-~a-" (bv->string (slotAt (Ctx-method c) 0)) (Ctx-ip c))))
     (hash-set! labels key (cons 'placeholder var))
     (define newstack (for/list [(i (length (Ctx-stack c)))] (AbsVal (mksym "stack~a" i) (Unknown))))
     (log-vm/jit-debug "Producing label ~a" var)
@@ -914,9 +845,7 @@
     (define expr (truncate-histories
                   c
                   (let* ((c (Ctx-update c (Ctx-ip c) (lambda (_s) newstack)))
-                         (c (struct-copy Ctx c [previous (DynamicCtx (list 'label key) bb-k)]))
-                         )
-                    ;; (dump-full-context c)
+                         (c (struct-copy Ctx c [previous (DynamicCtx (list 'label key) bb-k)])))
                     (gen-code c))))
     (log-vm/jit-debug "Produced label ~a" var)
     (hash-set! labels key (cons `(lambda (,bb-k ,@(map AbsVal-expr newstack)) ,expr) var)))
