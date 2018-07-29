@@ -85,8 +85,19 @@
   (check-equal? (send (make-object int%) benchfib** 10) 177)
   (check-equal? (send (make-object int%) benchfib/k 10) 177))
 
-(time (benchfib 28))
-(time (send (make-object int%) benchfib 28))
-(time (send (make-object int%) benchfib* 28 values))
-(time (send (make-object int%) benchfib** 28))
-(time (send (make-object int%) benchfib/k 28))
+(define-syntax-rule (time-benchfib expr)
+  (let-values (((results cpu-ms wall-ms gc-ms) (time-apply (lambda () expr) '())))
+    (match-define (list result) results)
+    (printf "~a returned ~a in ~a CPU-ms (~a without GC time) -> ~a sends/sec\n"
+            'expr
+            result
+            cpu-ms
+            (- cpu-ms gc-ms)
+            (/ result (/ cpu-ms 1000.0)))
+    (flush-output)))
+
+(time-benchfib (benchfib 28))
+(time-benchfib (send (make-object int%) benchfib 28))
+(time-benchfib (send (make-object int%) benchfib* 28 values))
+(time-benchfib (send (make-object int%) benchfib** 28))
+(time-benchfib (send (make-object int%) benchfib/k 28))
