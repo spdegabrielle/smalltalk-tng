@@ -610,7 +610,7 @@ static obj prim_bytesCmp(unsigned primNumber, VM &vm, obj args) {
   obj a = slotAt(args, 0);
   obj b = slotAt(args, 1);
   int alen = bytesCount(a);
-  int blen = bytesCount(a);
+  int blen = bytesCount(b);
   int minlen = alen < blen ? alen : blen;
   int result = memcmp(bvBytes(a), bvBytes(b), minlen);
   if (result == 0) {
