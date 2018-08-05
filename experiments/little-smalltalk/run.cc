@@ -3,12 +3,14 @@
 #include <cstdlib>
 #include <cstdint>
 #include <ctime>
+#include <cassert>
 
 #include <string>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
 #include <vector>
+#include <deque>
 
 #include <netinet/in.h>
 
@@ -21,23 +23,37 @@ static inline int isSmi(obj o) { return ((intptr_t) o) & 1; }
 static inline obj mkSmi(intptr_t v) { return (obj) ((v << 1) | 1); }
 static inline smi unSmi(obj o) { return ((smi) o) >> 1; }
 
-static inline intptr_t rawCount(obj o) { return ((intptr_t *) o)[0]; }
-static inline int isBytes(obj o) { return rawCount(o) & 1; }
-static inline unsigned slotCount(obj o) { return rawCount(o) >> 1; }
-static inline unsigned bytesCount(obj o) { return rawCount(o) >> 1; }
-static inline obj slotAt(obj o, unsigned i) { return ((obj *) o)[i + 2]; }
-static inline void slotAtPut(obj o, unsigned i, obj v) { ((obj *) o)[i + 2] = v; }
+static inline intptr_t objHeader(obj o) { return ((intptr_t *) o)[0]; }
+static inline int isUnused(obj o) { return objHeader(o) == 0; }
+static inline int isMarked(obj o) { return objHeader(o) & 1; }
+static inline int isBytes(obj o) { return objHeader(o) & 2; }
+static inline unsigned slotCount(obj o) { return (objHeader(o) >> 2) - 1; }
+static inline unsigned bytesCount(obj o) { return (objHeader(o) >> 2) - 1; }
+static inline void mark(obj o) { ((intptr_t *) o)[0] |= 1; }
+static inline void unmark(obj o) { ((intptr_t *) o)[0] &= ~((intptr_t) 1); }
+
+static inline obj *classAddr(obj o) { return &(((obj *) o)[1]); }
+static inline obj *slotAddr(obj o, unsigned i) { return &(((obj *) o)[i + 2]); }
+static inline obj slotAt(obj o, unsigned i) { return *slotAddr(o, i); }
+static inline void slotAtPut(obj o, unsigned i, obj v) { *slotAddr(o, i) = v; }
 static inline uint8_t *bvBytes(obj o) { return (uint8_t *) &(((obj *) o)[2]); }
 static inline string bvString(obj o) { return string((char *) bvBytes(o), bytesCount(o)); }
 
-static inline intptr_t rawCount(unsigned count, int isBs) {
-  return (intptr_t) count << 1 | (isBs & 1);
+static inline intptr_t objHeader(unsigned count, int isBs) {
+  return (((intptr_t) count + 1) << 2) | (isBs ? 2 : 0);
+}
+
+static inline intptr_t freeHeader(unsigned blockWords) {
+  assert(blockWords >= 2);
+  return objHeader(blockWords - 2, 0);
+}
+
+static inline unsigned roundUpAllocation(unsigned nBytes) {
+  return (nBytes + sizeof(obj) - 1) & ~(sizeof(obj) - 1);
 }
 
 static inline void _fillWith(obj o, unsigned n, obj v) {
-  for (unsigned i = 0; i < n; i++) {
-    slotAtPut(o, i, v);
-  }
+  fill(slotAddr(o, 0), slotAddr(o, n), v);
 }
 
 static int32_t nextInt(istream &f) {
@@ -46,14 +62,29 @@ static int32_t nextInt(istream &f) {
   return ntohl(i);
 }
 
+static long operator-(struct timespec const &a, struct timespec const &b) {
+  long delta = (a.tv_sec - b.tv_sec) * 1000000;
+  return delta + ((a.tv_nsec - b.tv_nsec) / 1000);
+}
+
 struct VM;
+
+struct Root {
+  VM *vm;
+  obj *ptr;
+  Root *next;
+
+  Root(VM *vm, obj *ptr);
+  ~Root();
+};
 
 typedef obj (*primitive_handler_t)(unsigned, VM &, obj);
 
 static obj unhandledPrimitive(unsigned, VM &, obj);
 
 struct VM {
-  obj *allocBase;
+  int gcEnabled;
+  vector<obj> heap;
   obj *allocPtr;
   obj *allocLimit;
 
@@ -65,10 +96,21 @@ struct VM {
   obj _Context;
   obj _Integer;
 
+  obj _i;
+  obj _j;
+
+  obj activeCtx, __method, __args, __temps, __stack, __prevCtx, __receiver, __literals;
+  unsigned __ip, __stackTop;
+  uint8_t *__bytecode;
+
+  Root *rootStack;
+
   primitive_handler_t primitiveTable[256];
 
+  struct timespec mutatorStart;
+
   inline obj objClass(obj o) {
-    return isSmi(o) ? _Integer : ((obj *) o)[1];
+    return isSmi(o) ? _Integer : *classAddr(o);
   }
 
   string className(obj c) {
@@ -81,43 +123,228 @@ struct VM {
   }
 
   VM() {
-    unsigned heapSize = 1048576000;
-    allocBase = allocPtr = new obj[heapSize];
-    allocLimit = &allocPtr[heapSize];
-    for (int i = 0; i < 256; i++) primitiveTable[i] = unhandledPrimitive;
+    unsigned heapSize = 64 * 1048576;
+    heap.resize(heapSize, 0);
+    cerr << "Heap bounds: " << &heap[0] << "-" << &heap[heapSize] << endl;
+    allocPtr = &heap[0];
+    *allocPtr = (obj) freeHeader(heapSize);
+    allocLimit = allocPtr + heapSize;
+    gcEnabled = 0; // during image loading
+    fill(&primitiveTable[0], &primitiveTable[256], unhandledPrimitive);
+    rootStack = 0;
+    new Root(this, &_nil);
+    new Root(this, &_true);
+    new Root(this, &_false);
+    new Root(this, &_Array);
+    new Root(this, &_Block);
+    new Root(this, &_Context);
+    new Root(this, &_Integer);
+    new Root(this, &activeCtx);
+    new Root(this, &_i);
+    new Root(this, &_j);
+  }
+
+  void scheduleMark(deque<obj *> &q, obj *p) {
+    // cerr << "  scheduling mark of " << p << " (" << *p << ")" << endl;
+    q.push_back(p);
   }
 
   void gc() {
-    cerr << "GC! urk" << endl;
-    exit(1);
+    struct timespec gcStart;
+    clock_gettime(CLOCK_MONOTONIC, &gcStart);
+
+    unsigned liveCount = 0;
+    unsigned scanCount = 0;
+    unsigned byteCount = 0;
+
+    deque<obj *> q;
+    // cerr << "VM this = " << this << "-" << (this + 1) << endl;
+    for (Root *r = rootStack; r != 0; r = r->next) {
+      scheduleMark(q, r->ptr);
+    }
+    while (!q.empty()) {
+      obj *op = q.front();
+      q.pop_front();
+      scanCount++;
+      // cerr << "Scan of " << op;
+      obj o = *op;
+      // cerr << " (" << o << ")" << endl;
+      if (isSmi(o)) continue;
+      if (isMarked(o)) continue;
+      // cerr << "Marking " << o << " which is "; print(cerr, o); cerr << endl;
+      mark(o);
+      liveCount++;
+      scheduleMark(q, classAddr(o));
+      if (!isBytes(o)) {
+        for (int i = 0; i < slotCount(o); i++) {
+          scheduleMark(q, slotAddr(o, i));
+        }
+      } else {
+        byteCount += bytesCount(o);
+      }
+    }
+    // {
+    //   obj *p = &heap[0];
+    //   cerr << "-------------- allocBase == " << &heap[0] << endl;
+    //   while (p < allocLimit) {
+    //     obj o = (obj) p;
+    //     cerr << o << (isUnused(o) ? " (unused)" :
+    //                   isMarked(o) ? " (marked) " :
+    //                   " (      ) ");
+    //     if (isUnused(o)) {
+    //       p++;
+    //     } else {
+    //       if (isBytes(o)) {
+    //         cerr << bytesCount(o) << " bytes";
+    //       } else {
+    //         cerr << slotCount(o) << " slots";
+    //       }
+    //       p += objSize(p);
+    //       if (!isMarked(o)) {
+    //         // TODO remove
+    //         uint8_t *stomple = ((uint8_t *) o) + sizeof(obj);
+    //         unsigned stompcount = ((uint8_t *) p) - stomple;
+    //         cerr << " (stomping on " << stompcount << " bytes)";
+    //         memset(stomple, 0x5a, stompcount);
+    //       }
+    //     }
+    //     cerr << endl;
+    //   }
+    //   cerr << "-------------- end of sweep" << endl;
+    // }
+    allocPtr = &heap[0];
+
+    struct timespec gcEnd;
+    clock_gettime(CLOCK_MONOTONIC, &gcEnd);
+    long gc_us = gcEnd - gcStart;
+    long mutator_us = gcStart - mutatorStart;
+    double mutator_percentage = (100.0 * mutator_us) / (mutator_us + gc_us);
+    cerr << " complete in " << gc_us << "μs."
+         << " Mutator ran for " << mutator_us << "μs (" << mutator_percentage << "%)."
+         << " " << liveCount << " live objects; "
+         << scanCount << " words scanned, "
+         << byteCount << " bytes skipped."
+         << endl;
+    mutatorStart = gcEnd;
+  }
+
+  unsigned objSize(obj o) {
+    if (isBytes(o)) {
+      return (roundUpAllocation(bytesCount(o)) / sizeof(obj)) + 2;
+    } else {
+      return slotCount(o) + 2;
+    }
+  }
+
+  unsigned chunkSizeAt(obj *p) {
+    obj o = (obj) p;
+    return
+      isUnused(o) ? 1 :
+      isMarked(o) ? 0 :
+      objSize(o);
+  }
+
+  void findFree(unsigned nObj, obj *&candidate, unsigned &candidateSize) {
+    candidate = allocPtr;
+    // cerr << "Hunting for " << nObj << " words at " << candidate << endl;
+
+  restart:
+    obj *scan = candidate;
+    candidateSize = 0;
+    while ((candidateSize < nObj) && (scan < allocLimit)) {
+      unsigned nextChunkSize = chunkSizeAt(scan);
+      if (nextChunkSize == 0) { // marked block - not at allocLimit by loop condition
+        unmark((obj) scan);
+        candidate = scan + objSize(scan);
+        goto restart;
+      }
+      candidateSize += nextChunkSize;
+      // cerr << "  after nextChunkSize==" << nextChunkSize
+      //      << " at " << scan << "-" << (scan + nextChunkSize)
+      //      << ", candidateSize==" << candidateSize << endl;
+      scan += nextChunkSize;
+    }
+
+    // cerr << "  Final candidateSize: " << candidateSize << endl;
+    if (candidateSize < nObj) {
+      candidate = 0;
+    }
+  }
+
+  // void growHeap() {
+  //   // BOGUS: resizing likely moves the base pointer, forcing rewrite
+  //   // of all live pointers. We could in principle do this, but it'd
+  //   // be more convenient to choose our moment so that, say, we have a
+  //   // guarantee that only the pointers in the root set are live.
+
+  //   unsigned oldSize = heap.size();
+  //   unsigned newSize = oldSize * 2;
+  //   cerr << "Growing heap from " << oldSize << " words to " << newSize << " words" << endl;
+  //   heap.resize(newSize, 0);
+  //   cerr << "Heap bounds: " << &heap[0] << "-" << &heap[newSize] << endl;
+  //   allocPtr = &heap[oldSize];
+  //   *allocPtr = (obj) freeHeader(newSize - oldSize);
+  //   allocLimit = allocPtr + newSize;
+  // }
+
+  obj *allocBlock(unsigned nObj) {
+    obj *candidate = 0;
+    unsigned candidateSize = 0;
+    findFree(nObj, candidate, candidateSize);
+
+    if (candidate == 0) {
+      if (gcEnabled) {
+        cerr << "gc()...";
+        storeRegisters();
+        gc();
+        findFree(nObj, candidate, candidateSize);
+      }
+      if (candidate == 0) {
+        cerr << "Out of memory, heap resizing not yet implemented" << endl;
+        exit(1);
+      }
+      // while (candidate == 0) {
+      //   growHeap();
+      //   findFree(nObj, candidate, candidateSize);
+      // }
+    }
+
+    // cerr << "  candidate==" << candidate
+    //      << ", candidateSize==" << candidateSize
+    //      << ", nObj+2==" << (nObj + 2)
+    //      << ", possibleLeftoverInclHeader==" << (candidateSize - nObj)
+    //      << endl;
+    assert(candidateSize >= nObj);
+
+    if (candidateSize > (nObj + 2)) {
+      allocPtr = candidate + nObj;
+      *allocPtr = (obj) freeHeader(candidateSize - nObj);
+    } else {
+      fill(candidate + nObj, candidate + candidateSize, (obj) 0);
+      allocPtr = candidate + candidateSize;
+    }
+
+    // if (allocPtr == allocLimit) {
+    //   cerr << "Next allocation will GC!" << endl;
+    // }
+
+    return candidate;
   }
 
   obj allocObj(unsigned nSlots, obj klass) {
-  retry:
-    obj result = (obj) allocPtr;
-    *allocPtr++ = (obj) rawCount(nSlots, 0);
-    *allocPtr++ = klass;
-    allocPtr += nSlots;
-    if (allocPtr >= allocLimit) {
-      allocPtr = (obj *) result;
-      gc();
-      goto retry;
-    }
+    obj *p = allocBlock(nSlots + 2);
+    obj result = (obj) p;
+    *p++ = (obj) objHeader(nSlots, 0);
+    *p++ = klass;
+    fill(p, p + nSlots, _nil);
     return result;
   }
 
   obj allocBytes(unsigned nBytes, obj klass) {
-  retry:
-    obj result = (obj) allocPtr;
-    *allocPtr++ = (obj) rawCount(nBytes, 1);
-    *allocPtr++ = klass;
-    nBytes = (nBytes + sizeof(obj) - 1) & ~(sizeof(obj) - 1);
-    allocPtr = (obj *) (((uint8_t *) allocPtr) + nBytes);
-    if (allocPtr >= allocLimit) {
-      allocPtr = (obj *) result;
-      gc();
-      goto retry;
-    }
+    obj *p = allocBlock((roundUpAllocation(nBytes) / sizeof(obj)) + 2);
+    obj result = (obj) p;
+    *p++ = (obj) objHeader(nBytes, 1);
+    *p++ = klass;
     return result;
   }
 
@@ -224,17 +451,23 @@ struct VM {
       }
     }
 
+    cerr << "Loading: starting fixup" << endl;
+
     for (vector<obj>::iterator it = table.begin(); it != table.end(); ++it) {
       obj o = *it;
       if (!isSmi(o)) {
-        unsigned count = 1 + (isBytes(o) ? 0 : slotCount(o));
-        for (unsigned i = 0; i < count; i++) {
-          (((obj *) o)[i + 1]) = table[unSmi(((obj *) o)[i + 1])];
+        *classAddr(o) = table[unSmi(*classAddr(o))];
+        if (!isBytes(o)) {
+          for (unsigned i = 0; i < slotCount(o); i++) {
+            *slotAddr(o, i) = table[unSmi(*slotAddr(o, i))];
+          }
         }
       }
     }
 
-    _nil = table[0];
+    cerr << "Loading: fixup complete" << endl;
+
+    _i = _j = _nil = table[0];
     _true = table[1];
     _false = table[2];
     _Array = table[3];
@@ -261,23 +494,22 @@ struct VM {
     return 0;
   }
 
-  obj buildContext(obj prevCtx, obj args, obj method) {
-    unsigned tempCount = (unsigned) unSmi(slotAt(method, 4));
-    unsigned maxStack = (unsigned) unSmi(slotAt(method, 3));
-    obj ctx = allocObj(7, _Context);
-    slotAtPut(ctx, 0, method);
-    slotAtPut(ctx, 1, args);
-    slotAtPut(ctx, 2, allocArray(tempCount));
-    slotAtPut(ctx, 3, allocArray(maxStack));
-    slotAtPut(ctx, 4, mkSmi(0));
-    slotAtPut(ctx, 5, mkSmi(0));
-    slotAtPut(ctx, 6, prevCtx);
-    return ctx;
+  void buildContext_i_j(obj prevCtx) {
+    unsigned tempCount = (unsigned) unSmi(slotAt(_j, 4));
+    unsigned maxStack = (unsigned) unSmi(slotAt(_j, 3));
+    {
+      obj ctx = allocObj(7, _Context);
+      slotAtPut(ctx, 0, _j); // method
+      slotAtPut(ctx, 1, _i); // args
+      _i = ctx;
+    }
+    slotAtPut(_i, 2, allocArray(tempCount));
+    slotAtPut(_i, 3, allocArray(maxStack));
+    slotAtPut(_i, 4, mkSmi(0));
+    slotAtPut(_i, 5, mkSmi(0));
+    slotAtPut(_i, 6, prevCtx);
+    _j = _nil;
   }
-
-  obj __ctx, __method, __args, __temps, __stack, __prevCtx, __receiver, __literals;
-  unsigned __ip, __stackTop;
-  uint8_t *__bytecode;
 
   void push(obj v) {
     slotAtPut(__stack, __stackTop++, v);
@@ -295,13 +527,10 @@ struct VM {
     return __bytecode[__ip++];
   }
 
-  obj popArray(uint8_t count) {
-    obj a = allocRawArray(count);
+  void popArray_i(uint8_t count) {
+    _i = allocRawArray(count);
     __stackTop -= count;
-    for (int i = 0; i < count; i++) {
-      slotAtPut(a, i, slotAt(__stack, __stackTop + i));
-    }
-    return a;
+    copy(slotAddr(__stack, __stackTop), slotAddr(__stack, __stackTop + count), slotAddr(_i, 0));
   }
 
   void loadContext(obj ctx);
@@ -312,8 +541,8 @@ struct VM {
   }
 
   void storeRegisters() {
-    slotAtPut(__ctx, 4, mkSmi(__ip));
-    slotAtPut(__ctx, 5, mkSmi(__stackTop));
+    slotAtPut(activeCtx, 4, mkSmi(__ip));
+    slotAtPut(activeCtx, 5, mkSmi(__stackTop));
   }
 
   obj lookupMethod(obj c, obj selector) {
@@ -326,25 +555,28 @@ struct VM {
     return 0;
   }
 
-  void sendMessage(obj c, obj newArgs, obj selector) {
+  void sendMessage_i_j(obj c) {
     storeRegisters();
-    // cerr << "Sending " << bvString(selector) << " via " << className(c) << " to ";
-    // print(cerr, slotAt(newArgs, 0));
+    // cerr << "Sending " << bvString(_j) << " via " << className(c) << " to ";
+    // print(cerr, slotAt(_i, 0));
     // cerr << endl;
-    obj method = lookupMethod(c, selector);
+    obj method = lookupMethod(c, _j);
     if (method == 0) {
       cerr << "DNU ";
-      print(cerr, slotAt(newArgs, 0));
+      print(cerr, slotAt(_i, 0));
       cerr << ' ';
-      print(cerr, selector);
+      print(cerr, _j);
       cerr << endl;
       exit(2);
     }
-    loadContext(buildContext(__ctx, newArgs, method));
+    _j = method;
+    buildContext_i_j(activeCtx);
+    loadContext(_i);
+    _i = _j = _nil;
   }
 
   void interpret() {
-    while (__ctx != _nil) {
+    while (activeCtx != _nil) {
       uint8_t opcode, arg;
       opcode = nextByte();
       arg = opcode & 0xf;
@@ -354,13 +586,13 @@ struct VM {
         arg = nextByte();
       }
 
-      // cout << (int) opcode << ' ' << (int) arg;
+      // cerr << (int) opcode << ' ' << (int) arg;
       // for (int i = 0; i < __stackTop; i++) {
-      //   cout << ' ';
-      //   print(cout, slotAt(__stack, i));
+      //   cerr << ' ';
+      //   print(cerr, slotAt(__stack, i));
       // }
-      // cout << endl;
-      // cout << flush;
+      // cerr << endl;
+      // cerr << flush;
 
       switch (opcode) {
         case 1: push(slotAt(__receiver, arg)); continue;
@@ -380,10 +612,16 @@ struct VM {
           continue;
         case 6: slotAtPut(__receiver, arg, peek()); continue;
         case 7: slotAtPut(__temps, arg, peek()); continue;
-        case 8: push(popArray(arg)); continue;
+        case 8: {
+          popArray_i(arg);
+          push(_i);
+          _i = _nil;
+          continue;
+        }
         case 9: {
-          obj newArgs = pop();
-          sendMessage(objClass(slotAt(newArgs, 0)), newArgs, slotAt(__literals, arg));
+          _i = pop();
+          _j = slotAt(__literals, arg);
+          sendMessage_i_j(objClass(slotAt(_i, 0)));
           continue;
         }
         case 10:
@@ -392,42 +630,46 @@ struct VM {
             case 1: push((pop() != _nil) ? _true : _false); continue;
           }
         case 11: {
-          obj j = pop();
-          obj i = pop();
-          if (isSmi(i) && isSmi(j)) {
+          _j = pop();
+          _i = pop();
+          if (isSmi(_i) && isSmi(_j)) {
             switch (arg) {
-              case 0: push((unSmi(i) < unSmi(j)) ? _true : _false); continue;
-              case 1: push((unSmi(i) <= unSmi(j)) ? _true : _false); continue;
-              case 2: push(mkSmi(unSmi(i) + unSmi(j))); continue;
+              case 0: push((unSmi(_i) < unSmi(_j)) ? _true : _false); break;
+              case 1: push((unSmi(_i) <= unSmi(_j)) ? _true : _false); break;
+              case 2: push(mkSmi(unSmi(_i) + unSmi(_j))); break;
             }
+            _i = _j = _nil;
           } else {
-            obj newArgs = allocRawArray(2);
-            slotAtPut(newArgs, 0, i);
-            slotAtPut(newArgs, 1, j);
-            obj selector;
-            switch (arg) {
-              case 0: selector = allocBytes("<", _nil); break;
-              case 1: selector = allocBytes("<=", _nil); break;
-              case 2: selector = allocBytes("+", _nil); break;
+            {
+              obj newArgs = allocRawArray(2);
+              slotAtPut(newArgs, 0, _i);
+              slotAtPut(newArgs, 1, _j);
+              _i = newArgs;
             }
-            sendMessage(objClass(i), newArgs, selector);
-            continue;
+            switch (arg) {
+              case 0: _j = allocBytes("<", _nil); break;
+              case 1: _j = allocBytes("<=", _nil); break;
+              case 2: _j = allocBytes("+", _nil); break;
+            }
+            sendMessage_i_j(objClass(slotAt(_i, 0)));
           }
+          continue;
         }
         case 12: {
           uint8_t target = nextByte();
-          obj block = allocObj(10, _Block);
-          slotAtPut(block, 0, __method);
-          slotAtPut(block, 1, __args);
-          slotAtPut(block, 2, __temps);
-          slotAtPut(block, 3, __stack);
-          slotAtPut(block, 4, mkSmi(__ip));
-          slotAtPut(block, 5, mkSmi(0));
-          slotAtPut(block, 6, __prevCtx);
-          slotAtPut(block, 7, mkSmi(arg));
-          slotAtPut(block, 8, __ctx);
-          slotAtPut(block, 9, mkSmi(__ip));
-          push(block);
+          _i = allocObj(10, _Block);
+          slotAtPut(_i, 0, __method);
+          slotAtPut(_i, 1, __args);
+          slotAtPut(_i, 2, __temps);
+          slotAtPut(_i, 3, __stack);
+          slotAtPut(_i, 4, mkSmi(__ip));
+          slotAtPut(_i, 5, mkSmi(0));
+          slotAtPut(_i, 6, __prevCtx);
+          slotAtPut(_i, 7, mkSmi(arg));
+          slotAtPut(_i, 8, activeCtx);
+          slotAtPut(_i, 9, mkSmi(__ip));
+          push(_i);
+          _i = _nil;
           __ip = target;
           continue;
         }
@@ -440,34 +682,35 @@ struct VM {
               continue;
             }
             case 8: {
-              obj block = pop();
-              unsigned argloc = unSmi(slotAt(block, 7));
+              _j = pop();
+              unsigned argloc = unSmi(slotAt(_j, 7));
               unsigned argcount = arg - 1;
-              for (unsigned i = 0; i < argcount; i++) {
-                slotAtPut(slotAt(block, 2),
-                          argloc + i,
-                          slotAt(__stack, __stackTop - argcount + i));
-              }
+              copy(slotAddr(__stack, __stackTop - argcount),
+                   slotAddr(__stack, __stackTop),
+                   slotAddr(slotAt(_j, 2), argloc));
               __stackTop = __stackTop - argcount;
               storeRegisters();
-              obj blockCtx = allocObj(10, _Block);
-              slotAtPut(blockCtx, 0, slotAt(block, 0));
-              slotAtPut(blockCtx, 1, slotAt(block, 1));
-              slotAtPut(blockCtx, 2, slotAt(block, 2));
-              slotAtPut(blockCtx, 3, allocArray(slotCount(slotAt(block, 3))));
-              slotAtPut(blockCtx, 4, slotAt(block, 9));
-              slotAtPut(blockCtx, 5, mkSmi(0));
-              slotAtPut(blockCtx, 6, slotAt(__ctx, 6));
-              slotAtPut(blockCtx, 7, slotAt(block, 7));
-              slotAtPut(blockCtx, 8, slotAt(block, 8));
-              slotAtPut(blockCtx, 9, slotAt(block, 9));
-              loadContext(blockCtx);
+              _i = allocObj(10, _Block);
+              slotAtPut(_i, 0, slotAt(_j, 0));
+              slotAtPut(_i, 1, slotAt(_j, 1));
+              slotAtPut(_i, 2, slotAt(_j, 2));
+              slotAtPut(_i, 3, allocArray(slotCount(slotAt(_j, 3))));
+              slotAtPut(_i, 4, slotAt(_j, 9));
+              slotAtPut(_i, 5, mkSmi(0));
+              slotAtPut(_i, 6, slotAt(activeCtx, 6));
+              slotAtPut(_i, 7, slotAt(_j, 7));
+              slotAtPut(_i, 8, slotAt(_j, 8));
+              slotAtPut(_i, 9, slotAt(_j, 9));
+              loadContext(_i);
+              _i = _j = _nil;
               continue;
             }
             case 34: return;
-            case 35: push(__ctx); continue;
+            case 35: push(activeCtx); continue;
             default:
-              push(primitiveTable[primNumber](primNumber, *this, popArray(arg)));
+              popArray_i(arg);
+              push(primitiveTable[primNumber](primNumber, *this, _i));
+              _i = _nil;
               continue;
           }
         }
@@ -476,7 +719,7 @@ struct VM {
           switch (arg) {
             case 1: loadContextAndPush(__prevCtx, __receiver); continue;
             case 2: loadContextAndPush(__prevCtx, pop()); continue;
-            case 3: loadContextAndPush(slotAt(slotAt(__ctx, 8), 6), pop()); continue;
+            case 3: loadContextAndPush(slotAt(slotAt(activeCtx, 8), 6), pop()); continue;
             case 4: push(peek()); continue;
             case 5: pop(); continue;
             case 6: __ip = nextByte(); continue;
@@ -491,11 +734,9 @@ struct VM {
               continue;
             }
             case 11: {
-              obj selector = slotAt(__literals, nextByte());
-              obj newArgs = pop();
-              obj definingClass = slotAt(__method, 5);
-              obj super = slotAt(definingClass, 1);
-              sendMessage(super, newArgs, selector);
+              _i = pop();
+              _j = slotAt(__literals, nextByte());
+              sendMessage_i_j(slotAt(slotAt(__method, 5), 1));
               continue;
             }
             default:
@@ -515,7 +756,7 @@ struct VM {
 };
 
 void VM::loadContext(obj ctx) {
-  __ctx = ctx;
+  activeCtx = ctx;
   if (ctx != _nil) {
     __method = slotAt(ctx, 0);
     __args = slotAt(ctx, 1);
@@ -530,6 +771,21 @@ void VM::loadContext(obj ctx) {
     __bytecode = bvBytes(slotAt(__method, 1));
     __literals = slotAt(__method, 2);
   }
+}
+
+Root::Root(VM *vm, obj *ptr) {
+  this->vm = vm;
+  this->ptr = ptr;
+  this->next = vm->rootStack;
+  vm->rootStack = this;
+}
+
+Root::~Root() {
+  if (vm->rootStack != this) {
+    cerr << "Root stack corruption" << endl;
+    exit(1);
+  }
+  vm->rootStack = next;
 }
 
 static obj unhandledPrimitive(unsigned primNumber, VM &vm, obj args) {
@@ -629,25 +885,25 @@ static obj prim_extendObj(unsigned primNumber, VM &vm, obj args) {
   obj v = slotAt(args, 0);
   obj o = slotAt(args, 1);
   obj r = vm.allocObj(slotCount(o) + 1, vm.objClass(o));
-  for (int i = 0; i < slotCount(o); i++) slotAtPut(r, i, slotAt(o, i));
+  copy(slotAddr(o, 0), slotAddr(o, slotCount(o)), slotAddr(r, 0));
   slotAtPut(r, slotCount(o), v);
   return r;
 }
 
 static obj prim_createWindow(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Creating window ";
-  vm.print(cerr, slotAt(args, 0));
-  cerr << endl;
+  cout << "Creating window ";
+  vm.print(cout, slotAt(args, 0));
+  cout << endl;
   return vm.allocObj(0, slotAt(args, 0));
 }
 
 static obj prim_showWindow(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Show/hide window " << slotAt(args, 0) << " " << (slotAt(args, 1) == vm._true) << endl;
+  cout << "Show/hide window " << slotAt(args, 0) << " " << (slotAt(args, 1) == vm._true) << endl;
   return slotAt(args, 1);
 }
 
 static obj prim_setContentPane(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Setting content pane " << slotAt(args, 0) << endl;
+  cout << "Setting content pane " << slotAt(args, 0) << endl;
   return slotAt(args, 0);
 }
 
@@ -674,16 +930,16 @@ static obj prim_repaintWindow(unsigned primNumber, VM &vm, obj args) {
 }
 
 static obj prim_createButton(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Creating button ";
-  vm.print(cerr, slotAt(args, 0));
-  cerr << " with label " << bvString(slotAt(args, 1)) << endl;
+  cout << "Creating button ";
+  vm.print(cout, slotAt(args, 0));
+  cout << " with label " << bvString(slotAt(args, 1)) << endl;
   return vm.allocObj(0, slotAt(args, 0));
 }
 
 static obj prim_createTextArea(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Creating textarea ";
-  vm.print(cerr, slotAt(args, 0));
-  cerr << endl;
+  cout << "Creating textarea ";
+  vm.print(cout, slotAt(args, 0));
+  cout << endl;
   return vm.allocObj(0, slotAt(args, 0));
 }
 
@@ -693,21 +949,21 @@ static obj prim_updateTextArea(unsigned primNumber, VM &vm, obj args) {
 }
 
 static obj prim_createMenu(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Creating menu ";
-  vm.print(cerr, slotAt(args, 0));
-  cerr << " with title " << bvString(slotAt(args, 1)) << endl;
+  cout << "Creating menu ";
+  vm.print(cout, slotAt(args, 0));
+  cout << " with title " << bvString(slotAt(args, 1)) << endl;
   return vm.allocObj(0, slotAt(args, 0));
 }
 
 static obj prim_createMenuItem(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Creating menu item ";
-  vm.print(cerr, slotAt(args, 0));
-  cerr << " with title " << bvString(slotAt(args, 1)) << endl;
+  cout << "Creating menu item ";
+  vm.print(cout, slotAt(args, 0));
+  cout << " with title " << bvString(slotAt(args, 1)) << endl;
   return slotAt(args, 0);
 }
 
 static obj prim_closeWindowHandler(unsigned primNumber, VM &vm, obj args) {
-  cerr << "Ignoring prim_closeWindowHandler" << endl;
+  cout << "Ignoring prim_closeWindowHandler" << endl;
   return slotAt(args, 0);
 }
 
@@ -715,9 +971,7 @@ static struct timespec ts_start;
 static obj prim_getMilliseconds(unsigned primNumber, VM &vm, obj args) {
   struct timespec ts_end;
   clock_gettime(CLOCK_MONOTONIC, &ts_end);
-  intptr_t delta = (ts_end.tv_sec - ts_start.tv_sec) * 1000;
-  delta += (ts_end.tv_nsec / 1000000) - (ts_start.tv_nsec / 1000000);
-  return mkSmi(delta);
+  return mkSmi((ts_end - ts_start) / 1000);
 }
 
 int main(int argc, char *argv[]) {
@@ -762,7 +1016,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  cout << "Loaded!" << endl;
+  cerr << "Loaded!" << endl;
 
   {
     string bootCode = "[SmallWorld startUp. \
@@ -774,12 +1028,15 @@ Transcript show: 0 tinyBenchmarks.] value";
     obj args = vm.allocRawArray(1);
     slotAtPut(args, 0, code);
     obj doIt = vm.searchClassMethodDictionary(vm.objClass(code), selector);
-    obj ctx = vm.buildContext(vm._nil, args, doIt);
-    vm.loadContext(ctx);
+    vm._i = args;
+    vm._j = doIt;
+    vm.buildContext_i_j(vm._nil);
+    vm.loadContext(vm._i);
+    vm.gcEnabled = 1;
+    clock_gettime(CLOCK_MONOTONIC, &vm.mutatorStart);
+    cerr << "gcEnabled --> 1" << endl;
     vm.interpret();
-    cout << "Boot complete" << endl;
-    cout << "Used: " << vm.allocPtr - vm.allocBase << endl;
-    cout << flush;
+    cerr << "Boot complete" << endl;
   }
 
   return 0;
