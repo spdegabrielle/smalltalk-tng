@@ -96,11 +96,19 @@ struct VM {
   obj _Context;
   obj _Integer;
 
+  obj _activeCtx;
   obj _i;
   obj _j;
 
-  obj activeCtx, __method, __args, __temps, __stack, __prevCtx, __receiver, __literals;
-  unsigned __ip, __stackTop;
+  obj __method;
+  obj __args;
+  obj __temps;
+  obj __stack;
+  obj __prevCtx;
+  obj __receiver;
+  obj __literals;
+  unsigned __ip;
+  unsigned __stackTop;
   uint8_t *__bytecode;
 
   Root *rootStack;
@@ -139,7 +147,7 @@ struct VM {
     new Root(this, &_Block);
     new Root(this, &_Context);
     new Root(this, &_Integer);
-    new Root(this, &activeCtx);
+    new Root(this, &_activeCtx);
     new Root(this, &_i);
     new Root(this, &_j);
   }
@@ -494,7 +502,7 @@ struct VM {
     return 0;
   }
 
-  void buildContext_i_j(obj prevCtx) {
+  void callMethod_i_j() {
     unsigned tempCount = (unsigned) unSmi(slotAt(_j, 4));
     unsigned maxStack = (unsigned) unSmi(slotAt(_j, 3));
     {
@@ -507,8 +515,9 @@ struct VM {
     slotAtPut(_i, 3, allocArray(maxStack));
     slotAtPut(_i, 4, mkSmi(0));
     slotAtPut(_i, 5, mkSmi(0));
-    slotAtPut(_i, 6, prevCtx);
-    _j = _nil;
+    slotAtPut(_i, 6, _activeCtx);
+    loadContext(_i);
+    _i = _j = _nil;
   }
 
   void push(obj v) {
@@ -541,8 +550,8 @@ struct VM {
   }
 
   void storeRegisters() {
-    slotAtPut(activeCtx, 4, mkSmi(__ip));
-    slotAtPut(activeCtx, 5, mkSmi(__stackTop));
+    slotAtPut(_activeCtx, 4, mkSmi(__ip));
+    slotAtPut(_activeCtx, 5, mkSmi(__stackTop));
   }
 
   obj lookupMethod(obj c, obj selector) {
@@ -570,13 +579,11 @@ struct VM {
       exit(2);
     }
     _j = method;
-    buildContext_i_j(activeCtx);
-    loadContext(_i);
-    _i = _j = _nil;
+    callMethod_i_j();
   }
 
   void interpret() {
-    while (activeCtx != _nil) {
+    while (_activeCtx != _nil) {
       uint8_t opcode, arg;
       opcode = nextByte();
       arg = opcode & 0xf;
@@ -666,7 +673,7 @@ struct VM {
           slotAtPut(_i, 5, mkSmi(0));
           slotAtPut(_i, 6, __prevCtx);
           slotAtPut(_i, 7, mkSmi(arg));
-          slotAtPut(_i, 8, activeCtx);
+          slotAtPut(_i, 8, _activeCtx);
           slotAtPut(_i, 9, mkSmi(__ip));
           push(_i);
           _i = _nil;
@@ -697,7 +704,7 @@ struct VM {
               slotAtPut(_i, 3, allocArray(slotCount(slotAt(_j, 3))));
               slotAtPut(_i, 4, slotAt(_j, 9));
               slotAtPut(_i, 5, mkSmi(0));
-              slotAtPut(_i, 6, slotAt(activeCtx, 6));
+              slotAtPut(_i, 6, slotAt(_activeCtx, 6));
               slotAtPut(_i, 7, slotAt(_j, 7));
               slotAtPut(_i, 8, slotAt(_j, 8));
               slotAtPut(_i, 9, slotAt(_j, 9));
@@ -706,7 +713,7 @@ struct VM {
               continue;
             }
             case 34: return;
-            case 35: push(activeCtx); continue;
+            case 35: push(_activeCtx); continue;
             default:
               popArray_i(arg);
               push(primitiveTable[primNumber](primNumber, *this, _i));
@@ -719,7 +726,7 @@ struct VM {
           switch (arg) {
             case 1: loadContextAndPush(__prevCtx, __receiver); continue;
             case 2: loadContextAndPush(__prevCtx, pop()); continue;
-            case 3: loadContextAndPush(slotAt(slotAt(activeCtx, 8), 6), pop()); continue;
+            case 3: loadContextAndPush(slotAt(slotAt(_activeCtx, 8), 6), pop()); continue;
             case 4: push(peek()); continue;
             case 5: pop(); continue;
             case 6: __ip = nextByte(); continue;
@@ -756,7 +763,7 @@ struct VM {
 };
 
 void VM::loadContext(obj ctx) {
-  activeCtx = ctx;
+  _activeCtx = ctx;
   if (ctx != _nil) {
     __method = slotAt(ctx, 0);
     __args = slotAt(ctx, 1);
@@ -1028,10 +1035,10 @@ Transcript show: 0 tinyBenchmarks.] value";
     obj args = vm.allocRawArray(1);
     slotAtPut(args, 0, code);
     obj doIt = vm.searchClassMethodDictionary(vm.objClass(code), selector);
+    vm._activeCtx = vm._nil;
     vm._i = args;
     vm._j = doIt;
-    vm.buildContext_i_j(vm._nil);
-    vm.loadContext(vm._i);
+    vm.callMethod_i_j();
     vm.gcEnabled = 1;
     clock_gettime(CLOCK_MONOTONIC, &vm.mutatorStart);
     cerr << "gcEnabled --> 1" << endl;
