@@ -131,7 +131,7 @@ struct VM {
   }
 
   VM() {
-    unsigned heapSize = 64 * 1048576;
+    unsigned heapSize = 8 * 1048576;
     heap.resize(heapSize, 0);
     cerr << "Heap bounds: " << &heap[0] << "-" << &heap[heapSize] << endl;
     allocPtr = &heap[0];
