@@ -573,7 +573,7 @@ struct VM {
     // cerr << "Sending " << bvString(_j) << " via " << className(c) << " to ";
     // print(cerr, slotAt(_i, 0));
     // cerr << endl;
-    unsigned probe = ((((intptr_t) c) * 5 + ((intptr_t) _j)) % methodCacheCount) * 3;
+    unsigned probe = ((((intptr_t) c >> 3) * 5 + ((intptr_t) _j >> 3)) % methodCacheCount) * 3;
     obj method;
     if ((methodCache[probe] == c) && (methodCache[probe + 1] == _j)) {
       method = methodCache[probe + 2];
