@@ -115,6 +115,10 @@ struct VM {
 
   primitive_handler_t primitiveTable[256];
 
+  static unsigned const methodCacheCount = 2039;
+  static unsigned const methodCacheLimit = 3 * methodCacheCount;
+  obj methodCache[methodCacheLimit];
+
   struct timespec mutatorStart;
 
   inline obj objClass(obj o) {
@@ -569,7 +573,16 @@ struct VM {
     // cerr << "Sending " << bvString(_j) << " via " << className(c) << " to ";
     // print(cerr, slotAt(_i, 0));
     // cerr << endl;
-    obj method = lookupMethod(c, _j);
+    unsigned probe = ((((intptr_t) c) * 5 + ((intptr_t) _j)) % methodCacheCount) * 3;
+    obj method;
+    if ((methodCache[probe] == c) && (methodCache[probe + 1] == _j)) {
+      method = methodCache[probe + 2];
+    } else {
+      method = lookupMethod(c, _j);
+      methodCache[probe] = c;
+      methodCache[probe + 1] = _j;
+      methodCache[probe + 2] = method;
+    }
     if (method == 0) {
       cerr << "DNU ";
       print(cerr, slotAt(_i, 0));
